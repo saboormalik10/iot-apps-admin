@@ -39,10 +39,8 @@ app.use(
 );
 app.use(
   cors({
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://dashboard.observator.com', 'https://admin.observator.com']
-      : true,
-    credentials: true,
+    origin: '*',
+    credentials: false,
   }),
 );
 
