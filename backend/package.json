@@ -5,7 +5,7 @@
   "main": "dist/app.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
-    "build": "tsc",
+    "build": "tsc && node dist/scripts/generateSwagger.js",
     "start": "node dist/app.js",
     "seed": "ts-node src/scripts/seed.ts",
     "lint": "eslint src --ext .ts",

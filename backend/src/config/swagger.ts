@@ -1,13 +1,12 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 import path from 'path';
+import fs from 'fs';
 
 // __dirname = .../src/config (dev) or .../dist/config (prod)
-// path.resolve ensures absolute paths — swagger-jsdoc requires them to find files.
 const srcOrDist = path.resolve(__dirname, '..');
 
-const options: swaggerJsdoc.Options = {
-  definition: {
-    openapi: '3.0.3',
+export const swaggerDefinition: swaggerJsdoc.OAS3Definition = {
+  openapi: '3.0.3',
     info: {
       title: 'Observator Instruments — Cloud API',
       version: '1.0.0',
@@ -404,14 +403,23 @@ All responses follow a consistent envelope:
       { name: 'Sync', description: 'Unified sync API — idempotent upload and download for both MET-LINK and NEP-LINK mobile apps' },
       { name: 'System', description: 'Health check and version endpoints' },
     ],
-  },
-  // Paths are resolved via __dirname so they work regardless of process.cwd().
-  // In dev  → .../src/config/.. = .../src  → reads .ts source files
-  // In prod → .../dist/config/.. = .../dist → reads compiled .js files
-  apis: [
-    path.join(srcOrDist, '**', '*.routes.' + (process.env.NODE_ENV === 'production' ? 'js' : 'ts')),
-    path.join(srcOrDist, 'app.' + (process.env.NODE_ENV === 'production' ? 'js' : 'ts')),
-  ],
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+// In production: load the pre-generated JSON baked into the Docker image at build time.
+// This avoids runtime glob scanning which is unreliable in Alpine containers.
+// Fallback to dynamic generation for local dev and CI.
+const preGenPath = path.resolve(__dirname, '..', 'swagger-spec.json');
+
+export const swaggerSpec: object = (() => {
+  if (process.env.NODE_ENV === 'production' && fs.existsSync(preGenPath)) {
+    return JSON.parse(fs.readFileSync(preGenPath, 'utf8'));
+  }
+  const ext = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
+  return swaggerJsdoc({
+    definition: swaggerDefinition,
+    apis: [
+      path.join(srcOrDist, '**', `*.routes.${ext}`),
+      path.join(srcOrDist, `app.${ext}`),
+    ],
+  });
+})();
