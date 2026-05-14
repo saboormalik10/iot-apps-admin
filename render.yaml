@@ -5,8 +5,8 @@ services:
     region: oregon           # Closest to AU — change to singapore if latency matters
     plan: free               # Upgrade to starter ($7/mo) for always-on
     branch: main
-    rootDir: backend         # Monorepo: backend/ lives inside adminpanel/
-    dockerfilePath: ./Dockerfile   # Relative to rootDir (backend/Dockerfile)
+    rootDir: backend              # Monorepo: build context = backend/
+    dockerfilePath: ./backend/Dockerfile  # Relative to repo root
     healthCheckPath: /health
 
     # Auto-deploy on push to main
