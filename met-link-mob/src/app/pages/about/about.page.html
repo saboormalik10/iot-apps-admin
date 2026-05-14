@@ -1,0 +1,44 @@
+<ion-header>
+  <ion-toolbar [color]="theme()">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    <ion-title>About</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="card-subtitle ion-text-center">
+    <h3>MET-LINK smartphone application</h3>
+  </div>
+  <div class="card-subtitle ion-text-center">for MaxiMet hand measurement</div>
+  <br />
+  <div class="card-subtitle ion-text-center">
+    Compatible with Android Version 6.0 and above
+  </div>
+  <br />
+  <div class="card-subtitle ion-text-center">
+    App Version: {{ versionName }} ({{ versionCode }})
+  </div>
+  <br />
+  <div class="card-subtitle ion-text-center">
+    BLE Module: {{ bleModuleSerialNo }} ({{ bleModuleFirmwareVersion }})
+  </div>
+  <br />
+  <div class="card-subtitle ion-text-center">Firmware version 0.1</div>
+  <div class="card-subtitle ion-text-center">&copy;2025 Observator Instruments</div>
+  <br />
+  <div class="card-subtitle ion-text-center">
+    For more information, please contact us:
+    <p (click)="writeInfoMail()" style="text-align: center; color: blue">
+      info.au&#64;observator.com
+    </p>
+  </div>
+
+  <h4 (click)="goTo()" style="text-align: center; color: blue">
+    <u>www.observator.com</u>
+  </h4>
+  <p style="text-align: center">
+    <img src="assets/img/Logo.jpeg" />
+  </p>
+</ion-content>

@@ -1,0 +1,44 @@
+:host {
+  .card-information {
+    padding: 10px;
+    text-align: center;
+    margin: 20px 0;
+  }
+
+  ion-toggle {
+    --background: var(--ion-color-medium);
+    --background-checked: var(--ion-color-primary);
+  }
+
+  // ── Flex layout: list grows, button stays at the bottom ───────────────────
+  // ion-content wraps a full-height flex column:
+  //   logging-list-area  → flex-grow: 1  (takes all remaining space)
+  //   logging-footer-btn → fixed height at the very bottom
+  // This eliminates the dark ion-footer bar while keeping the button
+  // always visible at the bottom of the scrollable area.
+  .logging-scroll-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%; // stretch to fill ion-content's inner height
+  }
+
+  .logging-list-area {
+    flex: 1 1 auto; // grow to fill available space
+  }
+
+  .logging-footer-btn {
+    flex: 0 0 auto; // don't grow — just wrap the button
+    padding-top: 0; // ion-padding already adds 16px; remove top dup
+  }
+
+  ion-button[expand="block"] {
+    margin: 0 auto;
+    max-width: 300px;
+  }
+
+  @media (min-width: 768px) {
+    ion-button[expand="block"] {
+      max-width: 400px;
+    }
+  }
+}

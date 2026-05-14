@@ -1,0 +1,29 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="close()">
+        <ion-icon name="close" slot="icon-only"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  @if (origi == 0) {
+  <div class="flatCenter">
+    <img [src]="photo.url_maps" />
+  </div>
+  }
+
+  @if (origi == 1) {
+  <div>
+    <swiper-container pagination="true">
+      @for (picture of photo; track $index) {
+      <swiper-slide>
+        <img [src]="picture.base64" class="picture" />
+      </swiper-slide>
+      }
+    </swiper-container>
+  </div>
+  }
+</ion-content>

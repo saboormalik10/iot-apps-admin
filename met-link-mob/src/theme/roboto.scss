@@ -1,0 +1,40 @@
+// Roboto Font
+// Google
+// Apache License, version 2.0
+// http://www.apache.org/licenses/LICENSE-2.0.html
+
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 300;
+  src: local("Roboto Light"), local("Roboto-Light"),
+    url("../assets/fonts/roboto-light.ttf") format("truetype"),
+    url("../assets/fonts/roboto-light.woff") format("woff");
+}
+
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 400;
+  src: local("Roboto"), local("Roboto-Regular"),
+    url("../assets/fonts/roboto-regular.ttf") format("truetype"),
+    url("../assets/fonts/roboto-regular.woff") format("woff");
+}
+
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 500;
+  src: local("Roboto Medium"), local("Roboto-Medium"),
+    url("../assets/fonts/roboto-medium.ttf") format("truetype"),
+    url("../assets/fonts/roboto-medium.woff") format("woff");
+}
+
+@font-face {
+  font-family: "Roboto";
+  font-style: normal;
+  font-weight: 700;
+  src: local("Roboto Bold"), local("Roboto-Bold"),
+    url("../assets/fonts/roboto-bold.ttf") format("truetype"),
+    url("../assets/fonts/roboto-bold.woff") format("woff");
+}

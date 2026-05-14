@@ -1,0 +1,104 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    @if (!bluetoothService.loggingActive) {
+    <ion-title>Logging</ion-title>
+    } @if (bluetoothService.recIsVisible) {
+    <ion-buttons slot="end">
+      <ion-button (click)="stopLogging()" class="rec-btn">
+        <ion-icon
+          color="danger"
+          name="pause-circle-outline"
+          slot="start"
+        ></ion-icon>
+        <span class="rec-text"
+          >REC {{ bluetoothService.recHours }}:{{ bluetoothService.recMinutes
+          }}:{{ bluetoothService.recSeconds }}</span
+        >
+      </ion-button>
+    </ion-buttons>
+    } @if (bluetoothService.loggingActive) {
+    <ion-buttons slot="end">
+      <ion-button (click)="takePictureMidSession()">
+        <ion-icon name="camera"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    <ion-buttons slot="end">
+      @if (bluetoothService.statsReceived && bluetoothService.battCapacity !=
+      null) {
+      <ion-button>
+        <ion-label>
+          @if (!bluetoothService.battCharging) {
+          <ion-icon name="battery-full"></ion-icon>
+          } @else {
+          <ion-icon name="battery-charging"></ion-icon>
+          } {{ bluetoothService.battCapacity }}
+        </ion-label>
+      </ion-button>
+      }
+    </ion-buttons>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (!dataItemsAvailable) {
+  <p class="ion-text-center ion-padding-top" color="medium">
+    No data available.
+  </p>
+  } @else { @if ((bluetoothService.dataItems | dataFilter).length === 0) {
+  <ion-card class="card-information">
+    <ion-card-content>
+      No data parameters enabled. Go to Configuration → Show data to enable
+      some.
+    </ion-card-content>
+  </ion-card>
+  } @else {
+  <ion-list>
+    @for (data of (bluetoothService.dataItems | dataFilter); track $index; let i
+    = $index) {
+
+    <ion-item [color]="i % 2 === 0 ? themeL : 'light'">
+      <ion-label>
+        <ion-row>{{ data.Type }}</ion-row>
+        <ion-row><i>{{ data.Desc }}</i></ion-row>
+      </ion-label>
+      <ion-toggle
+        slot="end"
+        [color]="theme"
+        [checked]="data.EnLogging === 1"
+        [disabled]="bluetoothService.loggingActive"
+        (ionChange)="toggle(data)"
+      ></ion-toggle>
+    </ion-item>
+    }
+  </ion-list>
+  } }
+  <div class="ion-padding">
+    @if (bluetoothService.loggingActive) {
+    <ion-button expand="block" [color]="theme" (click)="stopLogging()">
+      Stop Logging
+    </ion-button>
+    } @else if (dataItemsAvailable && logItemCnt > 0) {
+    <ion-button expand="block" [color]="theme" (click)="startLogging()">
+      Start Logging
+    </ion-button>
+    } @else {
+    <ion-button expand="block" [color]="theme" disabled>
+      Select data to log
+    </ion-button>
+    }
+  </div>
+</ion-content>
+
+<!-- <ion-footer class="ion-no-border">
+</ion-footer> -->

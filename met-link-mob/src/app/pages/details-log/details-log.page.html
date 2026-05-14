@@ -1,0 +1,73 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/view-record"></ion-back-button>
+    </ion-buttons>
+    <ion-title>{{record?.dateStart || 'Details'}}</ion-title>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="presentActionSheet()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (logItems && logItems.length > 0) {
+  <div>
+    <ion-item>
+      <ion-select
+        [(ngModel)]="graphData"
+        (ionChange)="selectData()"
+        label="Selected data"
+      >
+        @for (data of logItems; track $index; let i = $index) {
+        <ion-select-option [value]="i">
+          {{ data }}
+        </ion-select-option>
+        }
+      </ion-select>
+    </ion-item>
+
+    <div class="chart-container">
+      <canvas id="myChart" width="400" height="250"></canvas>
+    </div>
+  </div>
+  } @else {
+  <div class="no-data-message">
+    <p>No graph data available for this record.</p>
+  </div>
+  }
+
+  <ion-grid>
+    <ion-row>
+      <ion-col>
+        <ion-item>
+          <ion-label position="stacked">Comments</ion-label>
+          <ion-input id="comment" type="text" [(ngModel)]="comment"></ion-input>
+          <ion-button slot="end" fill="clear" (click)="saveComment()">
+            <ion-icon name="checkmark-done"></ion-icon>
+          </ion-button>
+        </ion-item>
+      </ion-col>
+    </ion-row>
+    @if (photo && photo.length > 0) {
+    <ion-row>
+      <ion-col size="12">
+        <swiper-container
+          pagination="true"
+          class="picture"
+          (click)="phototapped($event)"
+        >
+          @for (picture of photo; track $index) {
+          <swiper-slide>
+            <img [src]="picture.base64" />
+          </swiper-slide>
+          }
+        </swiper-container>
+      </ion-col>
+    </ion-row>
+    }
+  </ion-grid>
+</ion-content>

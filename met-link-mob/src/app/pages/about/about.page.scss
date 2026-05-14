@@ -1,0 +1,15 @@
+:host {
+  ion-content {
+    background-color: var(--ion-background-color);
+  }
+
+  .card-subtitle {
+    text-align: center;
+    font-size: 16px;
+    color: var(--ion-text-color);
+  }
+
+  p {
+    cursor: pointer;
+  }
+}

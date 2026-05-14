@@ -1,0 +1,47 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-title>{{currentDirectoryName}}</ion-title>
+    <ion-buttons slot="end">
+      @if (customLocation) {
+      <ion-button (click)="selectDir()">
+        Select directory
+        <ion-icon name="checkmark" slot="end"></ion-icon>
+      </ion-button>
+      }
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+
+  @if (!customLocation) {
+  <ion-item (click)="cardTapped({name: 'appFolder'})">
+    <ion-label>Application folder</ion-label>
+    <ion-icon [color]="theme" name="folder" slot="end"></ion-icon>
+  </ion-item>
+
+  <ion-item (click)="cardTapped({name: 'phoneFolder'})">
+    <ion-label>Phone folder</ion-label>
+    <ion-icon [color]="theme" name="folder" slot="end"></ion-icon>
+  </ion-item>
+  }
+
+  @if (customLocation) {
+  <ion-item (click)="goToPrevious()">
+    <ion-label>RETURN</ion-label>
+    <ion-icon [color]="theme" name="arrow-back" slot="end"></ion-icon>
+  </ion-item>
+
+  <ion-list>
+    @for (data of (currDirectory | directories); track $index) {
+    <ion-item>
+      @if (data.isFile === 0) {
+      <ion-label (click)="cardTapped(data)">{{data.name}}</ion-label>
+      }
+      <ion-icon [color]="theme" name="folder" slot="end"></ion-icon>
+    </ion-item>
+    }
+  </ion-list>
+  }
+
+</ion-content>

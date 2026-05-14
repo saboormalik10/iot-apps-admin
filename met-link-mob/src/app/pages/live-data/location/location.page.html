@@ -1,0 +1,105 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    <ion-title>Location</ion-title>
+
+    @if (bluetoothService.recIsVisible) {
+    <ion-buttons slot="end">
+      <ion-button (click)="stopLogging()" class="rec-btn">
+        <ion-icon color="danger" name="arrow-forward-outline" slot="start"></ion-icon>
+        <span class="rec-text">REC {{bluetoothService.recHours}}:{{bluetoothService.recMinutes}}:{{bluetoothService.recSeconds}}</span>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    @if (bluetoothService.loggingActive) {
+    <ion-buttons slot="end">
+      <ion-button (click)="bluetoothService.takePicture()">
+        <ion-icon name="camera"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    <ion-buttons slot="end">
+      @if (bluetoothService.battCapacity != null) {
+      <ion-button>
+        <ion-label>
+          @if (!bluetoothService.battCharging) {
+          <ion-icon name="battery-full"></ion-icon>
+          } @else {
+          <ion-icon name="battery-charging"></ion-icon>
+          }
+          {{ bluetoothService.battCapacity }}
+        </ion-label>
+      </ion-button>
+      }
+    </ion-buttons>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <ion-grid>
+    <ion-row>
+      <ion-col size="6">
+        <ion-card>
+          <ion-item [color]="themeLight">
+            <ion-label class="ion-text-center">
+              <h2>{{latitudeData.Type}}:</h2>
+              <p class="data-value">{{latitude}}</p>
+            </ion-label>
+          </ion-item>
+        </ion-card>
+      </ion-col>
+      <ion-col size="6">
+        <ion-card>
+          <ion-item [color]="themeLight">
+            <ion-label class="ion-text-center">
+              <h2>{{longitudeData.Type}}:</h2>
+              <p class="data-value">{{longitude}}</p>
+            </ion-label>
+          </ion-item>
+        </ion-card>
+      </ion-col>
+    </ion-row>
+    <ion-row>
+      <ion-col>
+        <ion-card>
+          <ion-item [color]="themeLight">
+            <ion-label class="ion-text-center">
+              {{heightData.Type}}: {{heightData.Data}} {{heightData.Unit}}
+            </ion-label>
+          </ion-item>
+        </ion-card>
+      </ion-col>
+    </ion-row>
+  </ion-grid>
+
+  <div class="map-container">
+    <div #map id="map"></div>
+    @if (!mapInitialized && !mapLoadError) {
+    <div class="map-loading">
+      <ion-label>Activate device GPS for location</ion-label>
+    </div>
+    }
+    @if (mapLoadError) {
+    <div class="map-error">
+      <ion-icon name="warning-outline" color="danger"></ion-icon>
+      <ion-label color="danger">{{ mapLoadError }}</ion-label>
+    </div>
+    }
+  </div>
+
+  <div class="data-source-container">
+    <ion-button expand="block" [color]="theme" (click)="toggleDataSource()">
+      Data Source: {{dataSource}}
+    </ion-button>
+  </div>
+</ion-content>

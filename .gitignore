@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+backend/dist/
+met-link-mob/www/
+observator-nep-link-ble/android/
+observator-nep-link-ble/ios/
+
+# Environment — NEVER commit secrets
+backend/.env
+.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

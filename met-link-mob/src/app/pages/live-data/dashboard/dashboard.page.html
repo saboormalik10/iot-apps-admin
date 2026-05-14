@@ -1,0 +1,183 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button> </ion-menu-button>
+    </ion-buttons>
+    <ion-title>Dashboard</ion-title>
+
+    @if (bluetoothService.recIsVisible) {
+    <ion-buttons slot="end">
+      <ion-button (click)="stopLogging()" class="rec-btn">
+        <ion-icon color="danger" name="arrow-forward-outline" slot="start"></ion-icon>
+        <span class="rec-text">REC {{bluetoothService.recHours}}:{{bluetoothService.recMinutes}}:{{bluetoothService.recSeconds}}</span>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    @if (bluetoothService.loggingActive) {
+    <ion-buttons slot="end">
+      <ion-button (click)="toggleDemo()">
+        <ion-icon name="flask-outline"></ion-icon>
+        @if (bluetoothService.isDemoActive) {
+        <ion-badge color="danger" class="demo-badge"></ion-badge>
+        }
+      </ion-button>
+      <ion-button (click)="bluetoothService.takePicture()">
+        <ion-icon name="camera"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    <ion-buttons slot="end">
+      @if (bluetoothService.battCapacity != null) {
+      <ion-button>
+        <ion-label>
+          @if (!bluetoothService.battCharging) {
+          <ion-icon name="battery-full"></ion-icon>
+          } @else {
+          <ion-icon name="battery-charging"></ion-icon>
+          }
+          {{ bluetoothService.battCapacity }}
+        </ion-label>
+      </ion-button>
+      }
+    </ion-buttons>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (pageLayout === 0) {
+  <ion-grid>
+    <!-- Graph Display -->
+    @if (graphicalType === 'graph') {
+    <div class="graph-container">
+      <ion-card>
+        <ion-item [color]="themeLight" class="ion-text-center">
+          <ion-label>{{graphHeader}}</ion-label>
+        </ion-item>
+      </ion-card>
+      <div class="canvas-container">
+        <canvas
+          (click)="selectWindRose()"
+          id="Graph"
+          width="500"
+          height="300"
+          style="width: 100%; height: auto; max-height: 300px"
+        ></canvas>
+      </div>
+    </div>
+    }
+
+    <!-- Wind Rose Display -->
+    @if (graphicalType === 'rose') {
+    <div class="wind-rose-container">
+      <ion-card>
+        <ion-item [color]="themeLight" class="ion-text-center">
+          <ion-label>{{windRoseOrientHeader}}</ion-label>
+        </ion-item>
+      </ion-card>
+      <div class="canvas-container">
+        <canvas
+          (click)="selectWindRose()"
+          id="Windrose"
+          width="600"
+          height="600"
+        ></canvas>
+      </div>
+    </div>
+    }
+
+    <!-- Layout Data Display -->
+    <ion-row>
+      @for (data of layoutData.slice(0, 2); track $index; let i = $index) {
+      <ion-col size="6">
+        <ion-card (click)="selectLayoutData(i)" class="data-card" button>
+          <ion-card-header>
+            <ion-card-title>{{data.Type}}</ion-card-title>
+          </ion-card-header>
+          <ion-card-content class="ion-text-center">
+            <h2>{{data.Data}} {{data.Unit}}</h2>
+            <p><i>{{data.Desc}}</i></p>
+          </ion-card-content>
+        </ion-card>
+      </ion-col>
+      }
+    </ion-row>
+  </ion-grid>
+  }
+
+  <!-- Layout 1 -->
+  @if (pageLayout === 1) {
+  <ion-grid>
+    <ion-row>
+      @for (data of layoutData.slice(0, 2); track $index; let i = $index) {
+      <ion-col size="6">
+        <ion-card (click)="selectLayoutData(i)" class="data-card" button>
+          <ion-card-header>
+            <ion-card-title>{{data.Type}}</ion-card-title>
+          </ion-card-header>
+          <ion-card-content class="ion-text-center">
+            <h2>{{data.Data}} {{data.Unit}}</h2>
+            <p><i>{{data.Desc}}</i></p>
+          </ion-card-content>
+        </ion-card>
+      </ion-col>
+      }
+    </ion-row>
+
+    <!-- Graph or Wind Rose based on selection -->
+    @if (graphicalType === 'graph') {
+    <div class="graph-container">
+      <ion-card>
+        <ion-item [color]="themeLight" class="ion-text-center">
+          <ion-label>{{graphHeader}}</ion-label>
+        </ion-item>
+      </ion-card>
+      <div class="canvas-container">
+        <canvas (click)="selectWindRose()" id="Graph"></canvas>
+      </div>
+    </div>
+    }
+
+    @if (graphicalType === 'rose') {
+    <div class="wind-rose-container">
+      <ion-card>
+        <ion-item [color]="themeLight" class="ion-text-center">
+          <ion-label>{{windRoseOrientHeader}}</ion-label>
+        </ion-item>
+      </ion-card>
+      <div class="canvas-container">
+        <canvas (click)="selectWindRose()" id="Windrose"></canvas>
+      </div>
+    </div>
+    }
+  </ion-grid>
+  }
+
+  <!-- Layout 2 -->
+  @if (pageLayout === 2) {
+  <ion-grid>
+    <ion-row>
+      @for (data of layoutData; track $index; let i = $index) {
+      <ion-col size="6">
+        <ion-card (click)="selectLayoutData(i)" class="data-card">
+          <ion-card-header>
+            <ion-card-title>{{data.Type}}</ion-card-title>
+          </ion-card-header>
+          <ion-card-content class="ion-text-center">
+            <h2>{{data.Data}} {{data.Unit}}</h2>
+            <p><i>{{data.Desc}}</i></p>
+          </ion-card-content>
+        </ion-card>
+      </ion-col>
+      }
+    </ion-row>
+  </ion-grid>
+  }
+</ion-content>

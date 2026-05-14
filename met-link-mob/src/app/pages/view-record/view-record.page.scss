@@ -1,0 +1,37 @@
+:host {
+  .no-records {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--ion-color-medium);
+  }
+
+  ion-card {
+    margin-bottom: 16px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  ion-card:hover {
+    transform: translateY(-2px);
+    transition: transform 0.3s;
+  }
+
+  ion-card ion-item h2 {
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  ion-card ion-item p {
+    font-size: 14px;
+    color: var(--ion-color-medium);
+  }
+
+  .record-comment {
+    margin-top: 6px;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--ion-color-dark-tint);
+    border-left: 3px solid var(--ion-color-primary);
+    padding-left: 8px;
+    white-space: normal;
+  }
+}

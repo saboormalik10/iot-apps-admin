@@ -1,0 +1,32 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/configuration"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Units</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @for (group of groups(); track group.prefKey; let gi = $index) {
+  <ion-item color="light">
+    <ion-label><b>{{ group.label }}</b></ion-label>
+  </ion-item>
+
+  <ion-list>
+    <ion-radio-group [value]="group.units[group.selected].value">
+      @for (unit of group.units; track unit.value; let ui = $index) {
+      <ion-item>
+        <ion-radio
+          [value]="unit.value"
+          [color]="theme"
+          (click)="onUnitChange(gi, ui)"
+        >
+          {{ unit.label }}
+        </ion-radio>
+      </ion-item>
+      }
+    </ion-radio-group>
+  </ion-list>
+  }
+</ion-content>

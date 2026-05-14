@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: observator-backend
+    runtime: node
+    region: oregon           # Closest to AU — change to singapore if latency matters
+    plan: free               # Upgrade to starter ($7/mo) for always-on
+    branch: main
+    rootDir: backend         # Monorepo: backend/ lives inside adminpanel/
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+
+    # Auto-deploy on push to main
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 3000
+
+      # MongoDB Atlas — set this in Render Dashboard → Environment
+      - key: MONGO_URI
+        sync: false           # Do NOT commit the real URI; set it in Render UI
+
+      # JWT secrets — set in Render Dashboard
+      - key: JWT_ACCESS_SECRET
+        sync: false
+
+      - key: JWT_REFRESH_SECRET
+        sync: false
+
+      # API base URL — Render assigns this automatically; override if using custom domain
+      - key: API_BASE_URL
+        sync: false           # e.g. https://observator-backend.onrender.com
+
+      # Nodemailer — Gmail SMTP
+      - key: EMAIL_MAILER
+        sync: false           # saboordev8@gmail.com
+
+      - key: EMAIL_PASSWORD
+        sync: false           # Gmail App Password
+
+      - key: EMAIL_FROM
+        value: Observator <noreply@observator.com>
+
+      # Mobile static API key — hardcode in MET-LINK and NEP-LINK apps
+      - key: MOBILE_API_KEY
+        sync: false           # obs_mob_...
+
+      - key: MOBILE_ORG_ID
+        sync: false           # ObjectId of the organisation in Atlas

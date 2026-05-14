@@ -1,0 +1,31 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button> </ion-menu-button>
+    </ion-buttons>
+    <ion-title>Terminal</ion-title>
+    <ion-buttons slot="end">
+      @if (bluetoothService.pauseData) {
+      <ion-button (click)="pauseData()">
+        <ion-icon name="play"></ion-icon>
+        <ion-label>play</ion-label>
+      </ion-button>
+      } @else {
+      <ion-button (click)="pauseData()">
+        <ion-icon name="pause"></ion-icon>
+        <ion-label>pause</ion-label>
+      </ion-button>
+      }
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="terminal-content" #scrollArea id="scroll">
+  <ion-list lines="none">
+    @for (data of (bluetoothService.allData | dataFilter); track $index) {
+    <ion-item class="terminal-item">
+      {{data}}
+    </ion-item>
+    }
+  </ion-list>
+</ion-content>

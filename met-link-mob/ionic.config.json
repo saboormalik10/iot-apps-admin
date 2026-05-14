@@ -1,0 +1,7 @@
+{
+  "name": "met-link-mob",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}

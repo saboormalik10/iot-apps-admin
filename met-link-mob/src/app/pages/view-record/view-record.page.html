@@ -1,0 +1,47 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    <ion-title>Records ({{ recordsCount() }})</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (isLoading()) {
+  <div class="ion-text-center ion-margin-top">
+    <ion-spinner name="crescent"></ion-spinner>
+  </div>
+  } @else if (!hasRecords()) {
+  <div class="no-records ion-text-center ion-margin-top">
+    <ion-icon name="document-outline" size="large" color="medium"></ion-icon>
+    <h3>No records found</h3>
+    <p>Go to Live Data and start a new logging session.</p>
+  </div>
+  } @else { @for (record of records(); track record.id_record) {
+  <ion-card>
+    <ion-item lines="none">
+      <ion-label (click)="cardTapped(record)" class="ion-activatable">
+        <h2>{{ record.deviceName || 'Unknown Device' }}</h2>
+        <p>{{ formatDate(record.dateStart) }}</p>
+        @if (record.comment) {
+        <p class="record-comment">{{ record.comment }}</p>
+        }
+      </ion-label>
+      <ion-button
+        slot="end"
+        fill="clear"
+        [color]="theme"
+        (click)="presentActionSheet(record)"
+      >
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-item>
+  </ion-card>
+  } }
+</ion-content>

@@ -1,0 +1,53 @@
+:host {
+  .dataField {
+    margin-bottom: 5px;
+  }
+
+  .data-value {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-top: 8px;
+  }
+
+  .data-source-container {
+    margin: 16px 0;
+    text-align: center;
+  }
+
+  .map-container {
+    width: 100%;
+    height: 50vh;
+    margin: 16px 0;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+  }
+
+  .map-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  ion-card {
+    margin-bottom: 8px;
+  }
+
+  @media (min-width: 768px) {
+    .map-container {
+      height: 60vh;
+    }
+  }
+}

@@ -1,0 +1,61 @@
+<ion-header>
+  <ion-toolbar [color]="theme()">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    <ion-title>Devices</ion-title>
+
+    <ion-buttons slot="end">
+      @if (bluetoothService.statsReceived) {
+      <ion-button>
+        <ion-label>
+          @if (bluetoothService.battCharging) {
+          <ion-icon name="battery-charging"></ion-icon>
+          } @else {
+          <ion-icon name="battery-full"></ion-icon>
+          } {{ bluetoothService.battCapacity }}
+        </ion-label>
+      </ion-button>
+      }
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <div class="card-background-page">
+    <ion-card>
+      <img src="assets/img/meteo_hydro.jpg" alt="MET-LINK" />
+      <div class="card-title">MET-LINK app</div>
+      <div class="card-subtitle ion-margin-top">Observator Instruments</div>
+    </ion-card>
+  </div>
+
+  @if (isConnected()) {
+  <ion-button expand="block" [color]="theme()" (click)="disconnectDevice()">
+    Disconnect {{ deviceName() }}
+  </ion-button>
+  } @else {
+  <ion-button expand="block" [color]="theme()" (click)="findDevices()">
+    Find devices
+  </ion-button>
+  } @if (isScanning()) {
+  <div class="ion-text-center ion-margin-top">
+    <ion-spinner name="circles"></ion-spinner>
+    <p>Scanning for MET-LINK devices...</p>
+  </div>
+  }
+
+  <ion-list>
+    @for (device of devices(); track device.deviceId) {
+    <ion-item (click)="connectToDevice(device)" button detail>
+      <ion-label>
+        <h2>{{ device.name || 'Unknown Device' }}</h2>
+        <p>{{ device.deviceId }}</p>
+      </ion-label>
+    </ion-item>
+    }
+  </ion-list>
+</ion-content>

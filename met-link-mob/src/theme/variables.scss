@@ -1,0 +1,143 @@
+// For information on how to create your own theme, please see:
+// http://ionicframework.com/docs/theming/
+
+:root {
+  /* ── Standard Ionic colors ──────────────────────────────────────── */
+  --ion-color-primary: #387ef5;
+  --ion-color-primary-rgb: 56, 126, 245;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #3171d8;
+  --ion-color-primary-tint: #4c8bf6;
+
+  --ion-color-secondary: #32db64;
+  --ion-color-danger: #f53d3d;
+  --ion-color-light: #f4f4f4;
+  --ion-color-dark: #222222;
+  --ion-color-medium: #989aa2;
+
+  --ion-color-favorite: #69bb7b;
+  --ion-color-orange: #ff8c00;
+
+  /* ── Custom theme: Observator Black ────────────────────────────── */
+  --ion-color-obsblack: #1a1a1a;
+  --ion-color-obsblack-rgb: 26, 26, 26;
+  --ion-color-obsblack-contrast: #ffffff;
+  --ion-color-obsblack-contrast-rgb: 255, 255, 255;
+  --ion-color-obsblack-shade: #111111;
+  --ion-color-obsblack-tint: #2a2a2a;
+
+  /* ── Custom theme: Observator Black Light (used for items) ─────── */
+  --ion-color-obsblackL: rgba(0, 0, 0, 0.75);
+  --ion-color-obsblackL-rgb: 0, 0, 0;
+  --ion-color-obsblackL-contrast: #ffffff;
+  --ion-color-obsblackL-contrast-rgb: 255, 255, 255;
+  --ion-color-obsblackL-shade: rgba(0, 0, 0, 0.85);
+  --ion-color-obsblackL-tint: rgba(40, 40, 40, 0.75);
+
+  /* ── Custom theme: Observator Grey ─────────────────────────────── */
+  --ion-color-obsgrey: #5e5e5e;
+  --ion-color-obsgrey-rgb: 94, 94, 94;
+  --ion-color-obsgrey-contrast: #ffffff;
+  --ion-color-obsgrey-contrast-rgb: 255, 255, 255;
+  --ion-color-obsgrey-shade: #4a4a4a;
+  --ion-color-obsgrey-tint: #757575;
+
+  /* ── Custom theme: Observator Grey Light ───────────────────────── */
+  --ion-color-obsgreyL: rgba(80, 80, 80, 0.85);
+  --ion-color-obsgreyL-rgb: 80, 80, 80;
+  --ion-color-obsgreyL-contrast: #ffffff;
+  --ion-color-obsgreyL-contrast-rgb: 255, 255, 255;
+  --ion-color-obsgreyL-shade: rgba(60, 60, 60, 0.85);
+  --ion-color-obsgreyL-tint: rgba(100, 100, 100, 0.85);
+
+  /* ── Custom theme: Observator Blue ─────────────────────────────── */
+  --ion-color-obsblue: #082094;
+  --ion-color-obsblue-rgb: 8, 32, 148;
+  --ion-color-obsblue-contrast: #ffffff;
+  --ion-color-obsblue-contrast-rgb: 255, 255, 255;
+  --ion-color-obsblue-shade: #061a7a;
+  --ion-color-obsblue-tint: #1a35a0;
+
+  /* ── Custom theme: Observator Blue Light ───────────────────────── */
+  --ion-color-obsblueL: rgba(8, 32, 148, 0.85);
+  --ion-color-obsblueL-rgb: 8, 32, 148;
+  --ion-color-obsblueL-contrast: #ffffff;
+  --ion-color-obsblueL-contrast-rgb: 255, 255, 255;
+  --ion-color-obsblueL-shade: rgba(6, 26, 122, 0.85);
+  --ion-color-obsblueL-tint: rgba(26, 53, 160, 0.85);
+
+  /* ── Toolbar defaults ───────────────────────────────────────────── */
+  --ion-toolbar-background: #1371ff;
+  --ion-toolbar-color: #ffffff;
+  --ion-toolbar-button-color: #ffffff;
+
+  /* ── Modal sizes ────────────────────────────────────────────────── */
+  --modal-inset-min-width: 350px;
+  --modal-inset-min-height-small: 1000px;
+  --modal-inset-min-height-large: 650px;
+  --modal-inset-width: 50%;
+  --modal-inset-height-small: 75%;
+  --modal-inset-height-large: 75%;
+
+  /* ── Typography ─────────────────────────────────────────────────── */
+  --ion-font-family: "Roboto", "Helvetica Neue", sans-serif;
+}
+
+/* Ionic requires mirror classes for custom colors so [color] binding works */
+.ion-color-obsblack {
+  --ion-color-base: var(--ion-color-obsblack);
+  --ion-color-base-rgb: var(--ion-color-obsblack-rgb);
+  --ion-color-contrast: var(--ion-color-obsblack-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsblack-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsblack-shade);
+  --ion-color-tint: var(--ion-color-obsblack-tint);
+}
+
+.ion-color-obsblackL {
+  --ion-color-base: var(--ion-color-obsblackL);
+  --ion-color-base-rgb: var(--ion-color-obsblackL-rgb);
+  --ion-color-contrast: var(--ion-color-obsblackL-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsblackL-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsblackL-shade);
+  --ion-color-tint: var(--ion-color-obsblackL-tint);
+}
+
+.ion-color-obsgrey {
+  --ion-color-base: var(--ion-color-obsgrey);
+  --ion-color-base-rgb: var(--ion-color-obsgrey-rgb);
+  --ion-color-contrast: var(--ion-color-obsgrey-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsgrey-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsgrey-shade);
+  --ion-color-tint: var(--ion-color-obsgrey-tint);
+}
+
+.ion-color-obsgreyL {
+  --ion-color-base: var(--ion-color-obsgreyL);
+  --ion-color-base-rgb: var(--ion-color-obsgreyL-rgb);
+  --ion-color-contrast: var(--ion-color-obsgreyL-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsgreyL-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsgreyL-shade);
+  --ion-color-tint: var(--ion-color-obsgreyL-tint);
+}
+
+.ion-color-obsblue {
+  --ion-color-base: var(--ion-color-obsblue);
+  --ion-color-base-rgb: var(--ion-color-obsblue-rgb);
+  --ion-color-contrast: var(--ion-color-obsblue-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsblue-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsblue-shade);
+  --ion-color-tint: var(--ion-color-obsblue-tint);
+}
+
+.ion-color-obsblueL {
+  --ion-color-base: var(--ion-color-obsblueL);
+  --ion-color-base-rgb: var(--ion-color-obsblueL-rgb);
+  --ion-color-contrast: var(--ion-color-obsblueL-contrast);
+  --ion-color-contrast-rgb: var(--ion-color-obsblueL-contrast-rgb);
+  --ion-color-shade: var(--ion-color-obsblueL-shade);
+  --ion-color-tint: var(--ion-color-obsblueL-tint);
+}
+
+@import "./roboto.scss";
+@import "./noto-sans.scss";

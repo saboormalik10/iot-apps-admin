@@ -1,0 +1,100 @@
+<ion-header>
+  <ion-toolbar [color]="theme">
+    <ion-buttons slot="start">
+      <ion-menu-button></ion-menu-button>
+    </ion-buttons>
+    <ion-title>All Data</ion-title>
+
+    @if (bluetoothService.recIsVisible) {
+    <ion-buttons slot="end">
+      <ion-button (click)="stopLogging()" class="rec-btn">
+        <ion-icon color="danger" name="arrow-forward-outline" slot="start"></ion-icon>
+        <span class="rec-text">REC {{bluetoothService.recHours}}:{{bluetoothService.recMinutes}}:{{bluetoothService.recSeconds}}</span>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    @if (bluetoothService.loggingActive) {
+    <ion-buttons slot="end">
+      <ion-button (click)="bluetoothService.takePicture()">
+        <ion-icon name="camera"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+    }
+
+    <ion-buttons slot="end">
+      @if (bluetoothService.battCapacity != null) {
+      <ion-button>
+        <ion-label>
+          @if (!bluetoothService.battCharging) {
+          <ion-icon name="battery-full"></ion-icon>
+          } @else {
+          <ion-icon name="battery-charging"></ion-icon>
+          }
+          {{ bluetoothService.battCapacity }}
+        </ion-label>
+      </ion-button>
+      }
+    </ion-buttons>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="goToConfig()">
+        <ion-icon name="ellipsis-vertical"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  @if (!hasData) {
+  <div class="no-data">
+    <p>No data available. Connect to a MET-LINK device first.</p>
+  </div>
+  }
+
+  @if (hasData) {
+  <ion-list>
+    @if (filteredItems.length === 0) {
+    <div class="ion-padding">
+      <ion-card>
+        <ion-card-content>
+          No data parameters enabled. Go to the configuration to add new data
+          parameters with "Show data".
+        </ion-card-content>
+      </ion-card>
+    </div>
+    }
+
+    @for (group of filteredItems | groupBy: 'NMEA'; track group.key) {
+    <ion-item-group>
+      <ion-item-divider [color]="theme">
+        <ion-label>{{ group.key }}</ion-label>
+      </ion-item-divider>
+
+      @for (item of group.value; track $index; let i = $index) {
+      <ion-item [color]="i % 2 === 0 ? themeLight : 'light'">
+        <ion-grid>
+          <ion-row>
+            <ion-col size="12"> {{ item.Type }} </ion-col>
+          </ion-row>
+          <ion-row>
+            <ion-col size="4"></ion-col>
+            <ion-col size="4" [ngClass]="{'important-data': i % 2 === 0}">
+              @if (i % 2 === 0) {
+              <strong>{{ item.Data }} {{ item.Unit }}</strong>
+              } @else {
+              <span>{{ item.Data }} {{ item.Unit }}</span>
+              }
+            </ion-col>
+            <ion-col size="4">
+              <i>{{ item.Desc }}</i>
+            </ion-col>
+          </ion-row>
+        </ion-grid>
+      </ion-item>
+      }
+    </ion-item-group>
+    }
+  </ion-list>
+  }
+</ion-content>

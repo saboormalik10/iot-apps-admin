@@ -1,0 +1,25 @@
+.terminal-content {
+  font-family: monospace;
+  font-size: 12px !important;
+
+  .terminal-item {
+    --padding-start: 8px;
+    --padding-end: 8px;
+    --padding-top: 2px;
+    --padding-bottom: 2px;
+    --min-height: auto;
+    --background: transparent;
+    --border-color: transparent;
+
+    &:nth-child(odd) {
+      --background: rgba(0, 0, 0, 0.05);
+    }
+  }
+}
+
+:host {
+  ion-list {
+    padding: 0;
+    background: transparent;
+  }
+}
