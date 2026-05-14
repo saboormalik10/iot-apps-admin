@@ -1,4 +1,9 @@
 import swaggerJsdoc from 'swagger-jsdoc';
+import path from 'path';
+
+// __dirname = .../src/config (dev) or .../dist/config (prod)
+// path.resolve ensures absolute paths — swagger-jsdoc requires them to find files.
+const srcOrDist = path.resolve(__dirname, '..');
 
 const options: swaggerJsdoc.Options = {
   definition: {
@@ -400,11 +405,13 @@ All responses follow a consistent envelope:
       { name: 'System', description: 'Health check and version endpoints' },
     ],
   },
-  // In production (Docker) TypeScript sources are absent — read compiled JS instead.
-  // Comments are preserved by tsc (no removeComments flag), so swagger-jsdoc works fine.
-  apis: process.env.NODE_ENV === 'production'
-    ? ['./dist/**/*.routes.js', './dist/app.js']
-    : ['./src/**/*.routes.ts', './src/app.ts'],
+  // Paths are resolved via __dirname so they work regardless of process.cwd().
+  // In dev  → .../src/config/.. = .../src  → reads .ts source files
+  // In prod → .../dist/config/.. = .../dist → reads compiled .js files
+  apis: [
+    path.join(srcOrDist, '**', '*.routes.' + (process.env.NODE_ENV === 'production' ? 'js' : 'ts')),
+    path.join(srcOrDist, 'app.' + (process.env.NODE_ENV === 'production' ? 'js' : 'ts')),
+  ],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
