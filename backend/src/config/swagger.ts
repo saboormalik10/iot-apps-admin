@@ -36,12 +36,12 @@ All responses follow a consistent envelope:
     },
     servers: [
       {
-        url: 'http://localhost:3000/v1',
-        description: 'Local development',
+        url: 'https://iot-apps-admin.onrender.com/v1',
+        description: 'Production (Render)',
       },
       {
-        url: 'https://api.observator.railway.app/v1',
-        description: 'Production (Railway)',
+        url: 'http://localhost:3000/v1',
+        description: 'Local development',
       },
     ],
     components: {

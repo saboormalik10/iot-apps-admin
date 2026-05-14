@@ -51,20 +51,29 @@ app.use(cookieParser());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ── Swagger UI ───────────────────────────────────────────────────────────────
-// Available at: GET /api
-app.use(
-  '/api',
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
+// Patch the servers list at runtime so Swagger UI uses the actual host.
+// This works for localhost, Render, and any future domain — no hardcoding needed.
+const swaggerSpecWithHost = (req: Request): object => {
+  const protocol = req.headers['x-forwarded-proto'] ?? req.protocol;
+  const host = req.headers['x-forwarded-host'] ?? req.get('host');
+  return {
+    ...(swaggerSpec as Record<string, unknown>),
+    servers: [{ url: `${protocol}://${host}/v1`, description: 'Current server' }],
+  };
+};
+
+app.use('/api', swaggerUi.serve);
+app.get('/api', (req: Request, res: Response, next) => {
+  swaggerUi.setup(swaggerSpecWithHost(req), {
     customSiteTitle: 'Observator API Docs',
     swaggerOptions: { persistAuthorization: true },
-  }),
-);
+  })(req, res, next);
+});
 
 // Serve raw OpenAPI JSON spec for tooling (e.g. Postman import)
-app.get('/api.json', (_req: Request, res: Response) => {
+app.get('/api.json', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
+  res.send(swaggerSpecWithHost(req));
 });
 
 // ── API Routes ───────────────────────────────────────────────────────────────
