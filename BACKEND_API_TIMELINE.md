@@ -4,7 +4,8 @@
 **Client:** Observator Instruments (AU / NL) — Contact: Dana Galbraith  
 **Date:** May 2026  
 **Stack:** Node.js + TypeScript + Express + Mongoose (MongoDB)  
-**Hosting:** Railway | **DB:** MongoDB Atlas  
+**Hosting:** Render (Docker) | **DB:** MongoDB Atlas  
+> ⚠️ **Month 1 Actual:** Deployed to **Render** (not Railway). Live URL: `https://iot-apps-admin.onrender.com`
 
 ---
 
@@ -1686,6 +1687,8 @@ export const refreshInterceptor: HttpInterceptorFn = (req, next) => {
 
 **Month 1 Goal:** Cloud server live on Railway. Hassan has a live API URL + Swagger. Can show Dana a working dashboard skeleton by end of Month 1. No sensor data yet — that's Month 2.
 
+> ✅ **Month 1 Actual:** Deployed to **Render** (Docker runtime, free tier). Live: `https://iot-apps-admin.onrender.com` | Swagger: `https://iot-apps-admin.onrender.com/api/` | 39 endpoints working.
+
 ---
 
 #### Week 1 (May 12–16)
@@ -1721,16 +1724,16 @@ export const refreshInterceptor: HttpInterceptorFn = (req, next) => {
 
 #### Week 3 (May 26–30)
 
-**Theme:** MET-LINK records + measure parsing + Deploy to Railway
+**Theme:** MET-LINK records + measure parsing + Deploy to Render *(actual: Render, not Railway)*
 
 | # | Task | File/Module | Effort | Priority |
 |---|---|---|---|---|
 | 1 | MET-LINK records module: full CRUD. `POST /records/:id/measures` — bulk insert, parse sensor fields from CSV `dataSentence` string on ingest into indexed fields (`windSpeedMs`, `tempC`, `pressureHpa`, etc.) | `/backend/src/records/` | 2 days | HIGH |
 | 2 | CSV measure parsing utility: given `"12.5,m/s,Wind speed,045.0,°,relative,23.4,°C,Temperature,..."` → extract and store all numeric fields | `measure-parser.util.ts` | 1 day | HIGH |
-| 3 | Deploy to Railway: MongoDB Atlas addon or Atlas connection string, all env vars set, HTTPS auto, `/health` live. Share live URL with Hassan | Railway config | 0.5 day | HIGH |
-| 4 | Swagger / OpenAPI docs auto-generated. Share `https://api.yourbackend.railway.app/api` with Hassan — this is the live API contract | `swagger.config.ts` | 0.5 day | HIGH |
+| 3 | ~~Deploy to Railway~~: Deploy to **Render** (Docker runtime): MongoDB Atlas connection string, all env vars set, HTTPS auto, `/health` live. Share live URL with Hassan | `render.yaml` + `/Dockerfile` | 0.5 day | HIGH |
+| 4 | Swagger / OpenAPI docs auto-generated. Pre-generate `swagger-spec.json` at build time (Alpine Linux glob fix). Share `https://iot-apps-admin.onrender.com/api/` with Hassan — this is the live API contract | `swagger.ts` + `generateSwagger.ts` | 0.5 day | HIGH |
 
-**Week 3 Deliverable:** Live HTTPS URL on Railway. Swagger at `/api`. Hassan can start building Angular dashboard against real data. **THIS UNBLOCKS ALL FRONTEND WORK.**
+**Week 3 Deliverable:** ✅ Live HTTPS URL on **Render**: `https://iot-apps-admin.onrender.com`. Swagger at `https://iot-apps-admin.onrender.com/api/` (39 endpoints, try-it-out working). Hassan can start building Angular dashboard against real data. **THIS UNBLOCKS ALL FRONTEND WORK.**
 
 ---
 
@@ -1740,8 +1743,8 @@ export const refreshInterceptor: HttpInterceptorFn = (req, next) => {
 
 | # | Task | File/Module | Effort | Priority |
 |---|---|---|---|---|
-| 1 | File upload: `POST /sessions/:id/files` + `POST /records/:id/pictures` — multipart to Cloudflare R2. Validate MIME + 10MB max. Store only `storageKey` in DB | `/backend/src/files/` | 1 day | MEDIUM |
-| 2 | Presigned download URL generation (1hr expiry) for `GET /sessions/:id/files` + `GET /records/:id/pictures` | `files.service.ts` | 0.5 day | MEDIUM |
+| 1 | File upload: `POST /sessions/:id/files` + `POST /records/:id/pictures` — multipart, MIME validate, 10MB max. Store files on **local disk** (`/uploads/`) for Month 1 — R2 deferred to Month 2 | `/backend/src/files/` | 1 day | MEDIUM |
+| 2 | Download URL generation for `GET /sessions/:id/files` + `GET /records/:id/pictures` — returns server-relative URLs from disk (Month 1). ~~Presigned R2 URLs~~ deferred to Month 2 | `files.service.ts` | 0.5 day | MEDIUM |
 | 3 | Sync API: `GET /sync/status`, `POST /sync/upload` (upsert by UUID, idempotent), `GET /sync/download` | `/backend/src/sync/` | 1 day | MEDIUM |
 | 4 | Forgot password / reset password endpoints via Resend email | `auth.service.ts` | 0.5 day | MEDIUM |
 | 5 | README complete: local dev setup, env variable list (values via secure channel — NOT WhatsApp), API contract link | `README.md` | 0.5 day | HIGH |
