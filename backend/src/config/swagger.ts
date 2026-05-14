@@ -406,20 +406,33 @@ All responses follow a consistent envelope:
 };
 
 // In production: load the pre-generated JSON baked into the Docker image at build time.
-// This avoids runtime glob scanning which is unreliable in Alpine containers.
-// Fallback to dynamic generation for local dev and CI.
+// Using require() rather than fs.readFileSync — more reliable in Alpine containers.
+// Falls back to dynamic ts-node generation for local dev (no dist/ pre-gen file).
 const preGenPath = path.resolve(__dirname, '..', 'swagger-spec.json');
 
 export const swaggerSpec: object = (() => {
-  if (process.env.NODE_ENV === 'production' && fs.existsSync(preGenPath)) {
-    return JSON.parse(fs.readFileSync(preGenPath, 'utf8'));
+  // Try pre-generated file first (always present in Docker image after npm run build)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const spec = require(preGenPath) as Record<string, unknown>;
+    const count = Object.keys((spec.paths ?? {}) as object).length;
+    console.log(`📋 Swagger: loaded pre-gen spec (${count} endpoints) from ${preGenPath}`);
+    if (count > 0) return spec;
+    console.warn('⚠️  Swagger: pre-gen spec has 0 endpoints — falling back to dynamic scan');
+  } catch {
+    console.log(`📋 Swagger: pre-gen file not found at ${preGenPath} — using dynamic scan`);
   }
+
+  // Fallback: dynamic scan (local ts-node dev)
   const ext = process.env.NODE_ENV === 'production' ? 'js' : 'ts';
-  return swaggerJsdoc({
+  const spec = swaggerJsdoc({
     definition: swaggerDefinition,
     apis: [
       path.join(srcOrDist, '**', `*.routes.${ext}`),
       path.join(srcOrDist, `app.${ext}`),
     ],
   });
+  const count = Object.keys(((spec as Record<string, unknown>).paths ?? {}) as object).length;
+  console.log(`📋 Swagger: dynamic scan found ${count} endpoints`);
+  return spec;
 })();
