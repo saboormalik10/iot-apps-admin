@@ -1,13 +1,12 @@
 services:
   - type: web
     name: observator-backend
-    runtime: node
+    env: docker
     region: oregon           # Closest to AU — change to singapore if latency matters
     plan: free               # Upgrade to starter ($7/mo) for always-on
     branch: main
     rootDir: backend         # Monorepo: backend/ lives inside adminpanel/
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile   # Relative to rootDir (backend/Dockerfile)
     healthCheckPath: /health
 
     # Auto-deploy on push to main
