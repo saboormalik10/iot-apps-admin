@@ -24,7 +24,19 @@ const MONGO_URI = process.env.MONGO_URI ?? '';
 console.log('🔧 Initialising Express app...');
 
 // ── Security Middleware ──────────────────────────────────────────────────────
-app.use(helmet());
+// Allow swagger-ui inline scripts/styles in all environments
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+  }),
+);
 app.use(
   cors({
     origin: process.env.NODE_ENV === 'production'

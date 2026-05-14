@@ -400,7 +400,11 @@ All responses follow a consistent envelope:
       { name: 'System', description: 'Health check and version endpoints' },
     ],
   },
-  apis: ['./src/**/*.routes.ts', './src/app.ts'],
+  // In production (Docker) TypeScript sources are absent — read compiled JS instead.
+  // Comments are preserved by tsc (no removeComments flag), so swagger-jsdoc works fine.
+  apis: process.env.NODE_ENV === 'production'
+    ? ['./dist/**/*.routes.js', './dist/app.js']
+    : ['./src/**/*.routes.ts', './src/app.ts'],
 };
 
 export const swaggerSpec = swaggerJsdoc(options);
