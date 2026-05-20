@@ -134,6 +134,7 @@ export class SessionsService {
 
   async getSession(organizationId: string, sessionId: string): Promise<INepSession> {
     const session = await NepSession.findOne({ id: sessionId, organizationId: new Types.ObjectId(organizationId), deletedAt: null });
+    if (!session) throw Object.assign(new Error('Session not found'), { statusCode: 404, code: 'NOT_FOUND' });
     return session;
   }
 
@@ -157,6 +158,7 @@ export class SessionsService {
   }
 
   async bulkInsertSamples(organizationId: string, sessionId: string, samples: BulkSampleInput[]): Promise<{ inserted: number }> {
+    if (!Array.isArray(samples) || samples.length === 0)
       throw Object.assign(new Error('samples array is required and must not be empty'), { statusCode: 400, code: 'VALIDATION_ERROR' });
     if (samples.length > MAX_SAMPLES_PER_REQUEST)
       throw Object.assign(new Error('Maximum ' + MAX_SAMPLES_PER_REQUEST + ' samples per request'), { statusCode: 400, code: 'TOO_MANY_SAMPLES' });
@@ -186,11 +188,17 @@ export class SessionsService {
       const buckets = new Map<number, Bucket>();
       for (const s of rawSamples) {
         const bucketStart = Math.floor(s.timestamp / ONE_MINUTE_MS) * ONE_MINUTE_MS;
+        let b = buckets.get(bucketStart);
+        if (!b) {
+          b = { bucketStart, turbidities: [], temperatures: [], lats: [], lngs: [], batteries: [], probeRange: null };
+          buckets.set(bucketStart, b);
+        }
         if (s.turbidityValue != null) b.turbidities.push(s.turbidityValue);
         if (s.temperatureValue != null) b.temperatures.push(s.temperatureValue);
         if (s.locationLat != null) b.lats.push(s.locationLat);
         if (s.locationLng != null) b.lngs.push(s.locationLng);
         if (s.batteryLevel != null) b.batteries.push(s.batteryLevel);
+        if (s.probeRange) b.probeRange = s.probeRange as string;
       }
       const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
       const downsampled = Array.from(buckets.values()).map((b) => ({ timestamp: b.bucketStart, turbidityValue: avg(b.turbidities), temperatureValue: avg(b.temperatures), locationLat: avg(b.lats), locationLng: avg(b.lngs), batteryLevel: avg(b.batteries), probeRange: b.probeRange, _downsampled: true }));
@@ -210,7 +218,6 @@ export class SessionsService {
       const time = d.toISOString().slice(11, 19);
       lines.push([date, time, s.locationLat ?? '', s.locationLng ?? '', s.turbidityValue ?? '', s.temperatureValue ?? '', '', '', s.batteryLevel ?? ''].join(','));
     }
-    return lines.join('
-');
+    return lines.join('\n');
   }
 }

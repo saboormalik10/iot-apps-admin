@@ -1,75 +1,106 @@
-import { Request, Response, NextFunction } from 'express';
-import * as DevicesService from './devices.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JWTPayload } from '../utils/jwt';
+import { DevicesService } from './devices.service';
 
-export async function listDevices(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const { type, page, limit } = req.query as Record<string, string | undefined>;
-    const result = await DevicesService.listDevices({
-      organizationId: req.user!.organizationId,
-      type: type as 'MET-LINK' | 'NEP-LINK' | undefined,
+@ApiTags('Devices')
+@ApiBearerAuth()
+@Controller('devices')
+export class DevicesController {
+  constructor(private readonly devicesService: DevicesService) {}
+
+  @ApiOperation({ summary: 'List all devices in org' })
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async listDevices(
+    @Query('type') type?: 'MET-LINK' | 'NEP-LINK',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    return this.devicesService.listDevices({
+      organizationId: user!.organizationId,
+      type,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
     });
-    res.json(result);
-  } catch (err) {
-    next(err);
   }
-}
 
-export async function createDevice(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const device = await DevicesService.createDevice(
-      req.user!.organizationId,
-      req.body,
-      { userId: req.user!.userId, email: req.user!.email ?? '' },
+  @ApiOperation({ summary: 'Register a new device' })
+  @Post()
+  @HttpCode(201)
+  @UseGuards(JwtOrApiKeyGuard)
+  async createDevice(
+    @Body() body: { bleId: string; name: string; type: 'MET-LINK' | 'NEP-LINK'; serialNo?: string; firmwareVersion?: string; customName?: string },
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const device = await this.devicesService.createDevice(
+      user!.organizationId,
+      body,
+      { userId: user!.userId, email: user!.email ?? '' },
     );
-    res.status(201).json({ data: device });
-  } catch (err) {
-    next(err);
+    return { data: device };
   }
-}
 
-export async function getDevice(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const device = await DevicesService.getDevice(req.user!.organizationId, req.params.id);
-    res.json({ data: device });
-  } catch (err) {
-    next(err);
+  @ApiOperation({ summary: 'Get device detail + live status' })
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  async getDevice(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+    const device = await this.devicesService.getDevice(user!.organizationId, id);
+    return { data: device };
   }
-}
 
-export async function updateDevice(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const device = await DevicesService.updateDevice(
-      req.user!.organizationId,
-      req.params.id,
-      req.body,
-      { userId: req.user!.userId, email: req.user!.email ?? '' },
+  @ApiOperation({ summary: 'Update device name / serial / firmware' })
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  async updateDevice(
+    @Param('id') id: string,
+    @Body() body: { name?: string; customName?: string; serialNo?: string; firmwareVersion?: string },
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const device = await this.devicesService.updateDevice(
+      user!.organizationId,
+      id,
+      body,
+      { userId: user!.userId, email: user!.email ?? '' },
     );
-    res.json({ data: device });
-  } catch (err) {
-    next(err);
+    return { data: device };
   }
-}
 
-export async function deleteDevice(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    await DevicesService.deleteDevice(
-      req.user!.organizationId,
-      req.params.id,
-      { userId: req.user!.userId, email: req.user!.email ?? '' },
+  @ApiOperation({ summary: 'Soft-delete a device (admin only)' })
+  @Delete(':id')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async deleteDevice(@Param('id') id: string, @CurrentUser() user?: JWTPayload): Promise<void> {
+    await this.devicesService.deleteDevice(
+      user!.organizationId,
+      id,
+      { userId: user!.userId, email: user!.email ?? '' },
     );
-    res.status(204).send();
-  } catch (err) {
-    next(err);
   }
-}
 
-export async function getDeviceStats(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try {
-    const stats = await DevicesService.getDeviceStats(req.user!.organizationId, req.params.id);
-    res.json({ data: stats });
-  } catch (err) {
-    next(err);
+  @ApiOperation({ summary: 'Aggregated stats for a device' })
+  @Get(':id/stats')
+  @UseGuards(JwtAuthGuard)
+  async getDeviceStats(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+    const stats = await this.devicesService.getDeviceStats(user!.organizationId, id);
+    return { data: stats };
   }
 }

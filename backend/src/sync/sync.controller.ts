@@ -1,53 +1,53 @@
-import { Request, Response } from 'express';
-import * as svc from './sync.service';
+import { Controller, Get, Post, HttpCode, UseGuards, Query, Body } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JWTPayload } from '../utils/jwt';
+import { SyncService, SyncUploadPayload } from './sync.service';
 
-export async function getSyncStatus(req: Request, res: Response): Promise<void> {
-  try {
-    const { deviceId } = req.query as { deviceId?: string };
-    const result = await svc.getSyncStatus(req.user!.organizationId, deviceId);
-    res.json({ data: result });
-  } catch (err) {
-    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: (err as Error).message } });
+@ApiTags('Sync')
+@ApiBearerAuth()
+@Controller('sync')
+export class SyncController {
+  constructor(private readonly syncService: SyncService) {}
+
+  @ApiOperation({ summary: 'Get sync status for the organisation' })
+  @Get('status')
+  @UseGuards(JwtOrApiKeyGuard)
+  async getSyncStatus(
+    @Query('deviceId') deviceId?: string,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const result = await this.syncService.getSyncStatus(user!.organizationId, deviceId);
+    return { data: result };
   }
-}
 
-export async function syncUpload(req: Request, res: Response): Promise<void> {
-  try {
-    const result = await svc.syncUpload(req.user!.organizationId, req.body);
-    res.status(201).json({ data: result });
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'VALIDATION_ERROR') {
-      res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: (err as Error).message } });
-      return;
-    }
-    if (code === 'NOT_FOUND') {
-      res.status(404).json({ error: { code: 'NOT_FOUND', message: (err as Error).message } });
-      return;
-    }
-    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: (err as Error).message } });
+  @ApiOperation({ summary: 'Upload (upsert) a session or record from mobile' })
+  @Post('upload')
+  @HttpCode(201)
+  @UseGuards(JwtOrApiKeyGuard)
+  async syncUpload(
+    @Body() body: SyncUploadPayload,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const result = await this.syncService.syncUpload(user!.organizationId, body);
+    return { data: result };
   }
-}
 
-export async function syncDownload(req: Request, res: Response): Promise<void> {
-  try {
-    const { deviceId, since } = req.query as { deviceId?: string; since?: string };
-    if (!deviceId) {
-      res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'deviceId query param is required' } });
-      return;
-    }
-    const result = await svc.syncDownload(
-      req.user!.organizationId,
+  @ApiOperation({ summary: 'Download sessions/records for a device' })
+  @Get('download')
+  @UseGuards(JwtOrApiKeyGuard)
+  async syncDownload(
+    @Query('deviceId') deviceId: string,
+    @Query('since') since?: string,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const result = await this.syncService.syncDownload(
+      user!.organizationId,
       deviceId,
       since ? Number(since) : undefined,
     );
-    res.json({ data: result });
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'NOT_FOUND') {
-      res.status(404).json({ error: { code: 'NOT_FOUND', message: (err as Error).message } });
-      return;
-    }
-    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: (err as Error).message } });
+    return { data: result };
   }
 }
+

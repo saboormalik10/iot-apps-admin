@@ -2,7 +2,7 @@
   "name": "observator-backend",
   "version": "1.0.0",
   "description": "Observator Instruments — Cloud API Backend",
-  "main": "dist/app.js",
+  "main": "dist/main.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "build": "nest build",
