@@ -88,5 +88,7 @@ metMeasureSchema.index({ recordId: 1, timestampMs: 1 });
 metMeasureSchema.index({ organizationId: 1, timestampMs: -1 });
 metMeasureSchema.index({ organizationId: 1, tempC: 1 });
 metMeasureSchema.index({ recordId: 1, rowType: 1 });
+// Dashboard query: latest data row per record, windrose lookback
+metMeasureSchema.index({ recordId: 1, rowType: 1, timestampMs: -1 });
 
 export const MetMeasure = model<IMetMeasure>('MetMeasure', metMeasureSchema);

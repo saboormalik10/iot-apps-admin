@@ -8,6 +8,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { RecordsModule } from './records/records.module';
 import { FilesModule } from './files/files.module';
 import { SyncModule } from './sync/sync.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { SystemModule } from './system/system.module';
 
 @Module({
@@ -34,6 +35,7 @@ import { SystemModule } from './system/system.module';
     RecordsModule,
     FilesModule,
     SyncModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}
