@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { NepSession, INepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
+import { DomainEvent } from '../realtime/realtime.events';
 
 function deriveProbeRange(turbidity: number): 'R1' | 'R2' | 'R3' {
   if (turbidity < 10) return 'R1';
@@ -95,6 +97,8 @@ const ONE_MINUTE_MS = 60 * 1000;
 
 @Injectable()
 export class SessionsService {
+  constructor(private readonly eventEmitter: EventEmitter2) {}
+
   async listSessions(opts: ListSessionsOptions) {
     const { organizationId, deviceId, from, to, probeRange, page = 1, limit = 20 } = opts;
     const query: Record<string, unknown> = { organizationId: new Types.ObjectId(organizationId), deletedAt: null };
@@ -129,6 +133,13 @@ export class SessionsService {
       const docs = input.samples.map((s) => ({ sessionId: session.id, organizationId: new Types.ObjectId(organizationId), ...s }));
       await NepSample.insertMany(docs, { ordered: false });
     }
+    this.eventEmitter.emit(DomainEvent.NEP_SESSION_CREATED, {
+      organizationId,
+      deviceId: input.deviceId,
+      sessionId: session.id,
+      startTimestamp: session.startTimestamp,
+      probeRange: session.probeRange ?? null,
+    });
     return session;
   }
 
@@ -174,6 +185,19 @@ export class SessionsService {
     const allSamples = await NepSample.find({ sessionId: session.id }).select('turbidityValue temperatureValue locationLat locationLng').lean();
     const stats = computeStats(allSamples);
     await NepSession.updateOne({ id: session.id }, { $set: stats });
+
+    const last = samples[samples.length - 1];
+    this.eventEmitter.emit(DomainEvent.NEP_SAMPLE, {
+      organizationId,
+      deviceId: (session.deviceId as Types.ObjectId).toString(),
+      sessionId: session.id,
+      sample: {
+        timestamp: last.timestamp,
+        turbidityValue: last.turbidityValue ?? null,
+        temperatureValue: last.temperatureValue ?? null,
+        probeRange: last.probeRange ?? stats.probeRange ?? null,
+      },
+    });
     return { inserted: result.length };
   }
 

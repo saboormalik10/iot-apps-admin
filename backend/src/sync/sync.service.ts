@@ -1,11 +1,24 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
+import { FirmwareHistory } from '../models/FirmwareHistory';
 import { parseMeasureSentence, isHeaderSentence, parseTimestampMs } from '../utils/measure-parser.util';
+import { DomainEvent } from '../realtime/realtime.events';
+
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+
+export interface DeviceStatusInput {
+  batteryPct?: number;
+  batteryVoltage?: number;
+  batteryCharging?: boolean;
+  firmwareVersion?: string;
+  appType?: string;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +62,62 @@ export interface SyncUploadPayload {
 
 @Injectable()
 export class SyncService {
+  constructor(private readonly eventEmitter: EventEmitter2) {}
+
+  // ── PATCH /sync/device-status — heartbeat (mobile) ────────────────────────
+  async updateDeviceStatus(organizationId: string, deviceId: string, body: DeviceStatusInput) {
+    if (!deviceId) {
+      throw Object.assign(new Error('deviceId is required'), { code: 'VALIDATION_ERROR', statusCode: 400 });
+    }
+    const orgId = new Types.ObjectId(organizationId);
+    const device = await Device.findOne({ _id: new Types.ObjectId(deviceId), organizationId: orgId, deletedAt: null });
+    if (!device) {
+      throw Object.assign(new Error('Device not found'), { code: 'NOT_FOUND', statusCode: 404 });
+    }
+
+    const wasOffline = !(device.lastSeenAt && Date.now() - new Date(device.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS);
+
+    // Firmware change detection → append history then update device
+    if (body.firmwareVersion && body.firmwareVersion !== device.firmwareVersion) {
+      await FirmwareHistory.create({
+        deviceId: device._id,
+        organizationId: orgId,
+        appType: device.type,
+        previousVersion: device.firmwareVersion,
+        newVersion: body.firmwareVersion,
+        detectedAt: new Date(),
+        detectedByAppType: body.appType ?? device.type,
+      });
+      device.firmwareVersion = body.firmwareVersion;
+    }
+
+    const now = new Date();
+    device.lastSeenAt = now;
+    device.isOnline = true;
+    if (body.batteryPct !== undefined) device.lastBatteryPct = body.batteryPct;
+    if (body.batteryVoltage !== undefined) device.lastBatteryVoltage = body.batteryVoltage;
+    if (body.batteryCharging !== undefined) device.lastBatteryCharging = body.batteryCharging;
+    await device.save();
+
+    this.eventEmitter.emit(DomainEvent.DEVICE_STATUS, {
+      organizationId,
+      deviceId,
+      deviceName: device.customName ?? device.name,
+      isOnline: true,
+      lastSeenAt: now,
+      batteryPct: device.lastBatteryPct,
+      justConnected: wasOffline,
+    });
+
+    return {
+      deviceId,
+      lastSeenAt: now,
+      isOnline: true,
+      firmwareVersion: device.firmwareVersion,
+      batteryPct: device.lastBatteryPct,
+    };
+  }
+
   async getSyncStatus(organizationId: string, deviceId?: string) {
     const orgId = new Types.ObjectId(organizationId);
     const baseMatch: Record<string, unknown> = { organizationId: orgId };
@@ -178,6 +247,8 @@ export class SyncService {
       syncedAt: now,
     };
 
+    const existed = await NepSession.exists({ id: payload.sessionId });
+
     const session = await NepSession.findOneAndUpdate(
       { id: payload.sessionId, organizationId: orgId },
       { $set: sessionData, $setOnInsert: { id: payload.sessionId, createdAt: now } },
@@ -200,6 +271,31 @@ export class SyncService {
         demoModeEnabled: s.demoModeEnabled ?? null,
       }));
       await NepSample.insertMany(sampleDocs, { ordered: false });
+    }
+
+    const deviceIdStr = (payload.deviceId as string);
+    if (!existed) {
+      this.eventEmitter.emit(DomainEvent.NEP_SESSION_CREATED, {
+        organizationId,
+        deviceId: deviceIdStr,
+        sessionId: payload.sessionId,
+        startTimestamp: payload.startTimestamp,
+        probeRange,
+      });
+    }
+    if (samples.length > 0) {
+      const last = samples[samples.length - 1];
+      this.eventEmitter.emit(DomainEvent.NEP_SAMPLE, {
+        organizationId,
+        deviceId: deviceIdStr,
+        sessionId: payload.sessionId,
+        sample: {
+          timestamp: last.timestamp,
+          turbidityValue: last.turbidityValue ?? null,
+          temperatureValue: last.temperatureValue ?? null,
+          probeRange: last.probeRange ?? probeRange,
+        },
+      });
     }
 
     return { type: 'nep_session', session, samplesInserted: samples.length };
@@ -302,6 +398,26 @@ export class SyncService {
       const dataCount = docs.filter((d) => d.rowType === 'data').length;
       await MetRecord.updateOne({ _id: record._id }, { $inc: { measureCount: dataCount } });
       insertedCount = docs.length;
+
+      const dataRows = docs.filter((d) => d.rowType === 'data');
+      if (dataRows.length) {
+        const last = dataRows.reduce((a, b) => (b.timestampMs > a.timestampMs ? b : a));
+        this.eventEmitter.emit(DomainEvent.MET_MEASURES, {
+          organizationId,
+          deviceId: payload.deviceId,
+          recordId: (record._id as Types.ObjectId).toString(),
+          latest: {
+            measuredAtMs: last.timestampMs,
+            windSpeedMs: last.windSpeedMs,
+            windSpeedKmh: last.windSpeedKmh,
+            windDirTrueDeg: last.windDirTrueDeg,
+            tempC: last.tempC,
+            humidityPct: last.humidityPct,
+            pressureHpa: last.pressureHpa,
+            dewPointC: last.dewPointC,
+          },
+        });
+      }
     }
 
     return { type: 'met_record', record, measuresInserted: insertedCount };

@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { MetRecord, IMetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { parseMeasureSentence, isHeaderSentence, parseTimestampMs } from '../utils/measure-parser.util';
+import { DomainEvent } from '../realtime/realtime.events';
 
 export interface ListRecordsOptions {
   organizationId: string;
@@ -40,6 +42,8 @@ export interface ListMeasuresOptions {
 
 @Injectable()
 export class RecordsService {
+  constructor(private readonly eventEmitter: EventEmitter2) {}
+
   async listRecords(opts: ListRecordsOptions) {
     const { organizationId, deviceId, from, to, page = 1, limit = 20 } = opts;
     const query: Record<string, unknown> = { organizationId: new Types.ObjectId(organizationId), deletedAt: null };
@@ -173,6 +177,27 @@ export class RecordsService {
     await MetMeasure.insertMany(docs, { ordered: false });
     const dataCount = docs.filter((d) => d.rowType === 'data').length;
     await MetRecord.updateOne({ _id: new Types.ObjectId(recordId) }, { $inc: { measureCount: dataCount } });
+
+    const dataRows = docs.filter((d) => d.rowType === 'data');
+    if (dataRows.length) {
+      const last = dataRows.reduce((a, b) => (b.timestampMs > a.timestampMs ? b : a));
+      this.eventEmitter.emit(DomainEvent.MET_MEASURES, {
+        organizationId,
+        deviceId: (record.deviceId as Types.ObjectId).toString(),
+        recordId,
+        latest: {
+          measuredAtMs: last.timestampMs,
+          windSpeedMs: last.windSpeedMs,
+          windSpeedKmh: last.windSpeedKmh,
+          windDirTrueDeg: last.windDirTrueDeg,
+          tempC: last.tempC,
+          humidityPct: last.humidityPct,
+          pressureHpa: last.pressureHpa,
+          dewPointC: last.dewPointC,
+        },
+      });
+    }
+
     return { inserted: docs.length, dataRows: dataCount, headerRows: docs.length - dataCount };
   }
 

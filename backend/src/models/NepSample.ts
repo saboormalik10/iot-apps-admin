@@ -38,5 +38,8 @@ nepSampleSchema.index({ sessionId: 1, timestamp: 1 });
 nepSampleSchema.index({ organizationId: 1, timestamp: -1 });
 nepSampleSchema.index({ sessionId: 1, turbidityValue: 1 });
 nepSampleSchema.index({ organizationId: 1, demoModeEnabled: 1 }, { sparse: true });
+// Month 3 analytics: gps-density spatial queries + turbidity↔temperature correlation
+nepSampleSchema.index({ sessionId: 1, locationLat: 1, locationLng: 1 }, { sparse: true });
+nepSampleSchema.index({ sessionId: 1, temperatureValue: 1 }, { sparse: true });
 
 export const NepSample = model<INepSample>('NepSample', nepSampleSchema);

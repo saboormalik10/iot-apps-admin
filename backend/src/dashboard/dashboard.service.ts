@@ -482,4 +482,205 @@ export class DashboardService {
     const result = { sessionId, points: downsample(mapped, 300) };
     return toCache(cacheKey, result);
   }
+
+  // ── GET /dashboard/met/stats ──────────────────────────────────────────────
+
+  async getMetStats(organizationId: string, deviceId: string) {
+    const cacheKey = `met:stats:${organizationId}:${deviceId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    const records = await MetRecord.find({ organizationId: orgId, deviceId: devId, deletedAt: null })
+      .select('_id dateStartMs measureCount')
+      .lean();
+
+    if (!records.length) {
+      return toCache(cacheKey, { deviceId, totalRecords: 0, totalMeasures: 0, totalLoggingHours: 0 }, 3_600_000);
+    }
+
+    const recordIds = records.map((r) => r._id);
+    const totalMeasures = records.reduce((a, r) => a + (r.measureCount ?? 0), 0);
+
+    const agg = await MetMeasure.aggregate([
+      { $match: { recordId: { $in: recordIds }, rowType: 'data' } },
+      {
+        $group: {
+          _id: null,
+          maxWindSpeedMs: { $max: '$windSpeedMs' },
+          maxWindSpeedKmh: { $max: '$windSpeedKmh' },
+          minTempC: { $min: '$tempC' },
+          maxTempC: { $max: '$tempC' },
+          minPressureHpa: { $min: '$pressureHpa' },
+          maxPressureHpa: { $max: '$pressureHpa' },
+        },
+      },
+    ]);
+    const a = agg[0] ?? {};
+    const dateStarts = records.map((r) => r.dateStartMs).filter((v) => v != null);
+
+    const result = {
+      deviceId,
+      totalRecords: records.length,
+      totalMeasures,
+      totalLoggingHours: Math.round((totalMeasures / 3600) * 100) / 100,
+      firstRecordAt: dateStarts.length ? Math.min(...dateStarts) : null,
+      lastRecordAt: dateStarts.length ? Math.max(...dateStarts) : null,
+      maxWindSpeedMs: a.maxWindSpeedMs ?? null,
+      maxWindSpeedKmh: a.maxWindSpeedKmh ?? null,
+      minTempC: a.minTempC ?? null,
+      maxTempC: a.maxTempC ?? null,
+      minPressureHpa: a.minPressureHpa ?? null,
+      maxPressureHpa: a.maxPressureHpa ?? null,
+    };
+    // 1-hour cache for lifetime stats
+    return toCache(cacheKey, result, 3_600_000);
+  }
+
+  // ── GET /dashboard/nep/analytics ──────────────────────────────────────────
+
+  async getNepAnalytics(organizationId: string, deviceId: string, fromMs?: number, toMs?: number) {
+    const to = toMs ?? Date.now();
+    const from = fromMs ?? to - 30 * 86_400_000;
+    const cacheKey = `nep:analytics:${organizationId}:${deviceId}:${from}:${to}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    const sessions = await NepSession.find({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+      startTimestamp: { $gte: from, $lte: to },
+    })
+      .select('id startTimestamp')
+      .lean();
+
+    if (!sessions.length) return toCache(cacheKey, { deviceId, data: [] });
+
+    const sessionIds = sessions.map((s) => s.id);
+    const samples = await NepSample.find({ sessionId: { $in: sessionIds }, turbidityValue: { $ne: null } })
+      .select('timestamp turbidityValue')
+      .lean();
+
+    const byDay = new Map<string, { sum: number; min: number; max: number; n: number; sessions: Set<string> }>();
+    const sessionDay = new Map<string, string>();
+    for (const s of sessions) sessionDay.set(s.id, new Date(s.startTimestamp).toISOString().slice(0, 10));
+
+    for (const sp of samples) {
+      const date = new Date(sp.timestamp as number).toISOString().slice(0, 10);
+      let d = byDay.get(date);
+      if (!d) {
+        d = { sum: 0, min: Infinity, max: -Infinity, n: 0, sessions: new Set() };
+        byDay.set(date, d);
+      }
+      const v = sp.turbidityValue as number;
+      d.sum += v;
+      d.n++;
+      if (v < d.min) d.min = v;
+      if (v > d.max) d.max = v;
+    }
+    // session count per day
+    for (const [id, date] of sessionDay) {
+      const d = byDay.get(date);
+      if (d) d.sessions.add(id);
+    }
+
+    const data = Array.from(byDay.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, d]) => ({
+        date,
+        avgTurbidity: d.n ? Math.round((d.sum / d.n) * 100) / 100 : null,
+        maxTurbidity: d.n ? Math.round(d.max * 100) / 100 : null,
+        minTurbidity: d.n ? Math.round(d.min * 100) / 100 : null,
+        sessionCount: d.sessions.size,
+        totalSamples: d.n,
+      }));
+    return toCache(cacheKey, { deviceId, from, to, data });
+  }
+
+  // ── GET /dashboard/org/device-map ─────────────────────────────────────────
+
+  async getOrgDeviceMap(organizationId: string) {
+    const cacheKey = `org:device-map:${organizationId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const ONLINE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+
+    const devices = await Device.find({ organizationId: orgId, deletedAt: null }).lean();
+
+    const out = await Promise.all(
+      devices.map(async (d) => {
+        let lastGpsLat: number | null = null;
+        let lastGpsLng: number | null = null;
+        let lastGpsAltM: number | null = null;
+        let lastWindSpeedKmh: number | null = null;
+        let lastTurbidityNtu: number | null = null;
+
+        if (d.type === 'MET-LINK') {
+          const m = await MetMeasure.findOne({
+            organizationId: orgId,
+            gpsLat: { $ne: null },
+            gpsLng: { $ne: null },
+            recordId: { $in: await this._deviceRecordIds(orgId, d._id as Types.ObjectId) },
+          })
+            .sort({ timestampMs: -1 })
+            .select('gpsLat gpsLng gpsAltM windSpeedKmh')
+            .lean();
+          if (m) {
+            lastGpsLat = m.gpsLat;
+            lastGpsLng = m.gpsLng;
+            lastGpsAltM = m.gpsAltM;
+            lastWindSpeedKmh = m.windSpeedKmh;
+          }
+        } else {
+          const sessions = await NepSession.find({ organizationId: orgId, deviceId: d._id as Types.ObjectId, deletedAt: null })
+            .select('id')
+            .lean();
+          const s = await NepSample.findOne({
+            sessionId: { $in: sessions.map((x) => x.id) },
+            locationLat: { $ne: null },
+            locationLng: { $ne: null },
+          })
+            .sort({ timestamp: -1 })
+            .select('locationLat locationLng turbidityValue')
+            .lean();
+          if (s) {
+            lastGpsLat = s.locationLat;
+            lastGpsLng = s.locationLng;
+            lastTurbidityNtu = s.turbidityValue;
+          }
+        }
+
+        if (lastGpsLat == null || lastGpsLng == null) return null; // omit devices with no GPS
+
+        return {
+          deviceId: (d._id as Types.ObjectId).toString(),
+          deviceName: d.customName ?? d.name,
+          type: d.type,
+          isOnline: d.lastSeenAt ? now - new Date(d.lastSeenAt).getTime() < ONLINE_MS : false,
+          lastSeenAt: d.lastSeenAt,
+          lastGpsLat,
+          lastGpsLng,
+          lastGpsAltM,
+          lastWindSpeedKmh,
+          lastTurbidityNtu,
+          batteryPct: d.lastBatteryPct,
+        };
+      }),
+    );
+    return toCache(cacheKey, out.filter((x) => x !== null), 5 * 60_000);
+  }
+
+  private async _deviceRecordIds(orgId: Types.ObjectId, deviceId: Types.ObjectId): Promise<Types.ObjectId[]> {
+    const recs = await MetRecord.find({ organizationId: orgId, deviceId, deletedAt: null }).select('_id').lean();
+    return recs.map((r) => r._id as Types.ObjectId);
+  }
 }

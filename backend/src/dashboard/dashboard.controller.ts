@@ -151,4 +151,42 @@ export class DashboardController {
   ) {
     return this.dashboardService.getNepMap(user.organizationId, sessionId);
   }
+
+  @ApiOperation({ summary: 'MET-LINK lifetime aggregate stats for a device' })
+  @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
+  @ApiOkResponse({ description: 'Lifetime totals + min/max sensor extremes' })
+  @Get('met/stats')
+  @UseGuards(JwtAuthGuard)
+  async getMetStats(@Query('deviceId') deviceId: string, @CurrentUser() user: JWTPayload) {
+    return this.dashboardService.getMetStats(user.organizationId, deviceId);
+  }
+
+  @ApiOperation({ summary: 'NEP-LINK cross-session daily turbidity trend' })
+  @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
+  @ApiQuery({ name: 'from', required: false, description: 'Start time (Unix ms, default 30d ago)' })
+  @ApiQuery({ name: 'to', required: false, description: 'End time (Unix ms, default now)' })
+  @ApiOkResponse({ description: '[{ date, avgTurbidity, maxTurbidity, minTurbidity, sessionCount, totalSamples }]' })
+  @Get('nep/analytics')
+  @UseGuards(JwtAuthGuard)
+  async getNepAnalytics(
+    @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    return this.dashboardService.getNepAnalytics(
+      user.organizationId,
+      deviceId,
+      from ? parseInt(from, 10) : undefined,
+      to ? parseInt(to, 10) : undefined,
+    );
+  }
+
+  @ApiOperation({ summary: 'Org fleet map — last-known GPS for every device' })
+  @ApiOkResponse({ description: 'Devices with last GPS position, battery and online flag' })
+  @Get('org/device-map')
+  @UseGuards(JwtAuthGuard)
+  async getOrgDeviceMap(@CurrentUser() user: JWTPayload) {
+    return this.dashboardService.getOrgDeviceMap(user.organizationId);
+  }
 }

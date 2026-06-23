@@ -103,4 +103,45 @@ export class DevicesController {
     const stats = await this.devicesService.getDeviceStats(user!.organizationId, id);
     return { data: stats };
   }
+
+  @ApiOperation({ summary: 'Device health summary' })
+  @Get(':id/health')
+  @UseGuards(JwtAuthGuard)
+  async getDeviceHealth(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+    const health = await this.devicesService.getDeviceHealth(user!.organizationId, id);
+    return { data: health };
+  }
+
+  @ApiOperation({ summary: 'Firmware version history timeline for a device' })
+  @Get(':id/firmware-history')
+  @UseGuards(JwtAuthGuard)
+  async getFirmwareHistory(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+    const result = await this.devicesService.getFirmwareHistory(user!.organizationId, id);
+    return { data: result };
+  }
+
+  @ApiOperation({ summary: 'Get per-device configuration (settings)' })
+  @Get(':id/settings')
+  @UseGuards(JwtAuthGuard)
+  async getDeviceSettings(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+    const settings = await this.devicesService.getDeviceSettings(user!.organizationId, id);
+    return { data: settings };
+  }
+
+  @ApiOperation({ summary: 'Update per-device configuration (partial; mobile + admin)' })
+  @Patch(':id/settings')
+  @UseGuards(JwtOrApiKeyGuard)
+  async updateDeviceSettings(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const settings = await this.devicesService.updateDeviceSettings(
+      user!.organizationId,
+      id,
+      body,
+      { userId: user!.userId, email: user!.email ?? '' },
+    );
+    return { data: settings };
+  }
 }

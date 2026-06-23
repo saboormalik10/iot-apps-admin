@@ -3,8 +3,18 @@ import { Types } from 'mongoose';
 import { Device, IDevice } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { NepSession } from '../models/NepSession';
+import { DeviceSettings } from '../models/DeviceSettings';
+import { FirmwareHistory } from '../models/FirmwareHistory';
 
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+
+// Fields a client is allowed to patch on DeviceSettings (whitelist).
+const SETTINGS_FIELDS = [
+  'qqEnabled', 'qqGpsHeight', 'qfeHeightM', 'qnhHeightM', 'dewPointEnabled',
+  'windRoseUnit', 'windRosePeriod', 'windRoseOrient', 'graphicalType', 'graphItem',
+  'colorScheme', 'pageLayout', 'unitWindSpeed', 'unitPressure', 'unitTemperature',
+  'unitAltitude', 'sensorShowPrefs', 'sensorLogPrefs',
+] as const;
 
 function computeIsOnline(lastSeenAt: Date | null): boolean {
   if (!lastSeenAt) return false;
@@ -178,5 +188,91 @@ export class DevicesService {
       sessionCount,
       lastActivityAt: lastSession ? new Date(lastSession.startTimestamp) : null,
     };
+  }
+
+  // ── GET /devices/:id/health ───────────────────────────────────────────────
+
+  async getDeviceHealth(organizationId: string, deviceId: string) {
+    const device = await this.getDevice(organizationId, deviceId);
+    const now = Date.now();
+
+    const latestFw = await FirmwareHistory.findOne({ deviceId: device._id })
+      .sort({ detectedAt: -1 })
+      .select('detectedAt')
+      .lean();
+
+    const lastSeenMs = device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : null;
+
+    return {
+      deviceId,
+      isOnline: lastSeenMs ? now - lastSeenMs < ONLINE_THRESHOLD_MS : false,
+      lastSeenAt: device.lastSeenAt,
+      batteryPct: device.lastBatteryPct,
+      batteryVoltage: device.lastBatteryVoltage,
+      batteryCharging: device.lastBatteryCharging,
+      firmwareVersion: device.firmwareVersion,
+      firmwareAgeDays: latestFw ? Math.round(((now - new Date(latestFw.detectedAt).getTime()) / 86_400_000) * 10) / 10 : null,
+      lastSyncAt: device.lastSeenAt,
+      lastSyncLagSeconds: lastSeenMs ? Math.round((now - lastSeenMs) / 1000) : null,
+      alertCount24h: 0, // populated once alert evaluation ships (Month 6)
+    };
+  }
+
+  // ── GET /devices/:id/firmware-history ─────────────────────────────────────
+
+  async getFirmwareHistory(organizationId: string, deviceId: string) {
+    const device = await this.getDevice(organizationId, deviceId);
+    const history = await FirmwareHistory.find({ deviceId: device._id })
+      .sort({ detectedAt: -1 })
+      .lean();
+    return { deviceId, history };
+  }
+
+  // ── GET /devices/:id/settings ─────────────────────────────────────────────
+
+  async getDeviceSettings(organizationId: string, deviceId: string) {
+    const device = await this.getDevice(organizationId, deviceId);
+    let settings = await DeviceSettings.findOne({ deviceId: device._id });
+    if (!settings) {
+      settings = await DeviceSettings.create({
+        deviceId: device._id,
+        organizationId: device.organizationId,
+      });
+    }
+    return settings;
+  }
+
+  // ── PATCH /devices/:id/settings ───────────────────────────────────────────
+
+  async updateDeviceSettings(
+    organizationId: string,
+    deviceId: string,
+    body: Record<string, unknown>,
+    actor: { userId: string; email: string },
+  ) {
+    const device = await this.getDevice(organizationId, deviceId);
+    const update: Record<string, unknown> = {};
+    for (const f of SETTINGS_FIELDS) {
+      if (body[f] !== undefined) update[f] = body[f];
+    }
+
+    const settings = await DeviceSettings.findOneAndUpdate(
+      { deviceId: device._id },
+      { $set: update, $setOnInsert: { deviceId: device._id, organizationId: device.organizationId } },
+      { upsert: true, new: true },
+    );
+
+    AuditLog.create({
+      organizationId: device.organizationId,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'settings',
+      resourceId: (device._id as unknown as string).toString(),
+      resourceName: device.name + ' settings',
+      changes: { after: update },
+    }).catch(() => void 0);
+
+    return settings;
   }
 }

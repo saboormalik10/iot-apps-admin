@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { AuthModule } from './auth/auth.module';
 import { DevicesModule } from './devices/devices.module';
@@ -9,6 +10,9 @@ import { RecordsModule } from './records/records.module';
 import { FilesModule } from './files/files.module';
 import { SyncModule } from './sync/sync.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DashboardLayoutsModule } from './dashboard-layouts/dashboard-layouts.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { SystemModule } from './system/system.module';
 
 @Module({
@@ -28,6 +32,8 @@ import { SystemModule } from './system/system.module';
       },
     }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
+    EventEmitterModule.forRoot(),
+    RealtimeModule,
     SystemModule,
     AuthModule,
     DevicesModule,
@@ -36,6 +42,8 @@ import { SystemModule } from './system/system.module';
     FilesModule,
     SyncModule,
     DashboardModule,
+    DashboardLayoutsModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

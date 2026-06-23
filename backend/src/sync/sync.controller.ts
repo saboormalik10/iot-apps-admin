@@ -1,9 +1,9 @@
-import { Controller, Get, Post, HttpCode, UseGuards, Query, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, HttpCode, UseGuards, Query, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { SyncService, SyncUploadPayload } from './sync.service';
+import { SyncService, SyncUploadPayload, DeviceStatusInput } from './sync.service';
 
 @ApiTags('Sync')
 @ApiBearerAuth()
@@ -47,6 +47,18 @@ export class SyncController {
       deviceId,
       since ? Number(since) : undefined,
     );
+    return { data: result };
+  }
+
+  @ApiOperation({ summary: 'Device heartbeat — update lastSeenAt + battery + firmware (mobile)' })
+  @Patch('device-status')
+  @UseGuards(JwtOrApiKeyGuard)
+  async deviceStatus(
+    @Body() body: DeviceStatusInput & { deviceId: string },
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const { deviceId, ...rest } = body;
+    const result = await this.syncService.updateDeviceStatus(user!.organizationId, deviceId, rest);
     return { data: result };
   }
 }
