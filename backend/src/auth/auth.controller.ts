@@ -16,6 +16,14 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService, RegisterInput, LoginInput, AuthResult } from './auth.service';
+import {
+  RegisterDto,
+  LoginDto,
+  RefreshDto,
+  LogoutDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto';
 
 const REFRESH_COOKIE = 'refreshToken';
 const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -40,6 +48,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Register a new organization and admin user' })
+  @ApiBody({ type: RegisterDto })
   @Post('register')
   @HttpCode(201)
   async register(
@@ -65,6 +74,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Login and get access + refresh tokens' })
+  @ApiBody({ type: LoginDto })
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login')
   @HttpCode(200)
@@ -92,6 +102,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiBody({ type: RefreshDto })
   @Post('refresh')
   @HttpCode(200)
   async refresh(
@@ -113,6 +124,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Logout and revoke refresh token' })
+  @ApiBody({ type: LogoutDto })
   @ApiBearerAuth()
   @Post('logout')
   @HttpCode(204)
@@ -131,6 +143,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Request a password reset email' })
+  @ApiBody({ type: ForgotPasswordDto })
   @Post('forgot-password')
   @HttpCode(204)
   async forgotPassword(
@@ -162,6 +175,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: 'Reset password using a valid token' })
+  @ApiBody({ type: ResetPasswordDto })
   @Post('reset-password')
   @HttpCode(204)
   async resetPassword(

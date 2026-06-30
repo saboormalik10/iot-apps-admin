@@ -11,13 +11,14 @@ import {
   UseGuards,
   Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { SessionsService, CreateSessionInput, BulkSampleInput } from './sessions.service';
+import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 
 @ApiTags('NEP Sessions')
 @ApiBearerAuth()
@@ -49,6 +50,7 @@ export class SessionsController {
   }
 
   @ApiOperation({ summary: 'Upload a NEP-LINK session from the mobile app' })
+  @ApiBody({ type: CreateSessionDto })
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -66,6 +68,7 @@ export class SessionsController {
   }
 
   @ApiOperation({ summary: 'Update session comment' })
+  @ApiBody({ type: UpdateSessionDto })
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateSession(
@@ -90,6 +93,7 @@ export class SessionsController {
   }
 
   @ApiOperation({ summary: 'Bulk insert samples for a session' })
+  @ApiBody({ type: BulkSamplesDto })
   @Post(':id/samples')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)

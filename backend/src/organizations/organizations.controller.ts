@@ -8,19 +8,14 @@ import {
   HttpCode,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
-import {
-  OrganizationsService,
-  UpdateOrgInput,
-  InviteUserInput,
-  UpdateUserInput,
-  AcceptInviteInput,
-} from './organizations.service';
+import { OrganizationsService } from './organizations.service';
+import { UpdateOrgDto, InviteUserDto, UpdateUserDto, AcceptInviteDto } from './dto';
 
 @ApiTags('Organizations')
 @ApiBearerAuth()
@@ -29,9 +24,10 @@ export class OrganizationsController {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
   @ApiOperation({ summary: 'Accept an invitation and set password (public, returns tokens)' })
+  @ApiBody({ type: AcceptInviteDto })
   @Post('accept-invite')
   @HttpCode(200)
-  async acceptInvite(@Body() body: AcceptInviteInput) {
+  async acceptInvite(@Body() body: AcceptInviteDto) {
     const result = await this.organizationsService.acceptInvite(body);
     return { data: result };
   }
@@ -45,10 +41,11 @@ export class OrganizationsController {
   }
 
   @ApiOperation({ summary: 'Update organization settings (admin only)' })
+  @ApiBody({ type: UpdateOrgDto })
   @Patch('me')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async updateMyOrg(@Body() body: UpdateOrgInput, @CurrentUser() user?: JWTPayload) {
+  async updateMyOrg(@Body() body: UpdateOrgDto, @CurrentUser() user?: JWTPayload) {
     const org = await this.organizationsService.updateOrganization(user!.organizationId, body, {
       userId: user!.userId,
       email: user!.email ?? '',
@@ -66,11 +63,12 @@ export class OrganizationsController {
   }
 
   @ApiOperation({ summary: 'Invite a user by email (admin only)' })
+  @ApiBody({ type: InviteUserDto })
   @Post('me/users/invite')
   @HttpCode(201)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  async inviteUser(@Body() body: InviteUserInput, @CurrentUser() user?: JWTPayload) {
+  async inviteUser(@Body() body: InviteUserDto, @CurrentUser() user?: JWTPayload) {
     const result = await this.organizationsService.inviteUser(user!.organizationId, body, {
       userId: user!.userId,
       email: user!.email ?? '',
@@ -79,12 +77,13 @@ export class OrganizationsController {
   }
 
   @ApiOperation({ summary: "Update a user's role or active status (admin only)" })
+  @ApiBody({ type: UpdateUserDto })
   @Patch('me/users/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   async updateUser(
     @Param('id') id: string,
-    @Body() body: UpdateUserInput,
+    @Body() body: UpdateUserDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const updated = await this.organizationsService.updateUser(user!.organizationId, id, body, {

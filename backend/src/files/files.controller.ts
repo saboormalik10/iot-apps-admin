@@ -13,7 +13,7 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
@@ -47,6 +47,17 @@ export class FilesController {
 
   @ApiOperation({ summary: 'Upload a file to a NEP session (photo, map screenshot, thumbnail)' })
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        fileType: { type: 'string', enum: ['map', 'photo', 'thumbnail'], default: 'photo' },
+        capturedAt: { type: 'string', description: 'ISO timestamp the file was captured' },
+      },
+    },
+  })
   @Post('sessions/:id/files')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -99,6 +110,16 @@ export class FilesController {
 
   @ApiOperation({ summary: 'Upload a picture to a MET record' })
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        takenAt: { type: 'string', description: 'ISO timestamp the picture was taken' },
+      },
+    },
+  })
   @Post('records/:id/pictures')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)

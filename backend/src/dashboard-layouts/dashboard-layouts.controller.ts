@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { DashboardLayoutsService, CreateLayoutInput } from './dashboard-layouts.service';
 import { IDashboardTile } from '../models/DashboardLayout';
+import { CreateLayoutDto, UpdateLayoutDto } from './dto';
 
 @ApiTags('Dashboard Layouts')
 @ApiBearerAuth()
@@ -22,6 +23,7 @@ export class DashboardLayoutsController {
   }
 
   @ApiOperation({ summary: 'Save a new dashboard layout' })
+  @ApiBody({ type: CreateLayoutDto })
   @Post()
   @HttpCode(201)
   async create(@Body() body: CreateLayoutInput, @CurrentUser() user: JWTPayload) {
@@ -30,6 +32,7 @@ export class DashboardLayoutsController {
   }
 
   @ApiOperation({ summary: 'Update layout name or tiles' })
+  @ApiBody({ type: UpdateLayoutDto })
   @Patch(':id')
   async update(
     @Param('id') id: string,

@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -15,6 +15,13 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @ApiOperation({ summary: 'List organization audit-log entries (admin only)' })
+  @ApiQuery({ name: 'action', required: false, enum: ['create', 'update', 'delete', 'invite', 'revoke', 'export', 'login', 'logout'] })
+  @ApiQuery({ name: 'resourceType', required: false, enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'] })
+  @ApiQuery({ name: 'userId', required: false, description: 'Filter by acting user id' })
+  @ApiQuery({ name: 'from', required: false, description: 'ISO date — inclusive lower bound' })
+  @ApiQuery({ name: 'to', required: false, description: 'ISO date — inclusive upper bound' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 50, description: 'Max 100' })
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

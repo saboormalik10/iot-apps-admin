@@ -10,7 +10,7 @@ import {
   HttpCode,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -18,6 +18,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { DevicesService } from './devices.service';
+import { CreateDeviceDto, UpdateDeviceDto, UpdateDeviceSettingsDto } from './dto';
 
 @ApiTags('Devices')
 @ApiBearerAuth()
@@ -43,6 +44,7 @@ export class DevicesController {
   }
 
   @ApiOperation({ summary: 'Register a new device' })
+  @ApiBody({ type: CreateDeviceDto })
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -67,6 +69,7 @@ export class DevicesController {
   }
 
   @ApiOperation({ summary: 'Update device name / serial / firmware' })
+  @ApiBody({ type: UpdateDeviceDto })
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateDevice(
@@ -129,6 +132,7 @@ export class DevicesController {
   }
 
   @ApiOperation({ summary: 'Update per-device configuration (partial; mobile + admin)' })
+  @ApiBody({ type: UpdateDeviceSettingsDto })
   @Patch(':id/settings')
   @UseGuards(JwtOrApiKeyGuard)
   async updateDeviceSettings(

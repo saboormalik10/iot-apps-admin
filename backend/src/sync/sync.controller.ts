@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Patch, HttpCode, UseGuards, Query, Body } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { SyncService, SyncUploadPayload, DeviceStatusInput } from './sync.service';
+import { SyncUploadDto, DeviceStatusDto } from './dto';
 
 @ApiTags('Sync')
 @ApiBearerAuth()
@@ -23,6 +24,7 @@ export class SyncController {
   }
 
   @ApiOperation({ summary: 'Upload (upsert) a session or record from mobile' })
+  @ApiBody({ type: SyncUploadDto })
   @Post('upload')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -51,6 +53,7 @@ export class SyncController {
   }
 
   @ApiOperation({ summary: 'Device heartbeat — update lastSeenAt + battery + firmware (mobile)' })
+  @ApiBody({ type: DeviceStatusDto })
   @Patch('device-status')
   @UseGuards(JwtOrApiKeyGuard)
   async deviceStatus(

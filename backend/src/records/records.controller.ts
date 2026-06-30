@@ -11,13 +11,14 @@ import {
   UseGuards,
   Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { RecordsService, CreateRecordInput, MeasureInput } from './records.service';
+import { CreateRecordDto, UpdateRecordDto, BulkMeasuresDto } from './dto';
 
 @ApiTags('MET Records')
 @ApiBearerAuth()
@@ -47,6 +48,7 @@ export class RecordsController {
   }
 
   @ApiOperation({ summary: 'Upload a MET-LINK logging record from the mobile app' })
+  @ApiBody({ type: CreateRecordDto })
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -68,6 +70,7 @@ export class RecordsController {
   }
 
   @ApiOperation({ summary: 'Update record comment' })
+  @ApiBody({ type: UpdateRecordDto })
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateRecord(
@@ -92,6 +95,7 @@ export class RecordsController {
   }
 
   @ApiOperation({ summary: 'Bulk upload measures for a record' })
+  @ApiBody({ type: BulkMeasuresDto })
   @Post(':id/measures')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
