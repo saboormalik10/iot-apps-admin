@@ -10,8 +10,10 @@ import * as path from 'path';
 
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { configureCloudinary } from './config/cloudinary';
 
 async function bootstrap(): Promise<void> {
+  configureCloudinary();
   const app = await NestFactory.create(AppModule);
 
   // ── Security Middleware ────────────────────────────────────────────────────

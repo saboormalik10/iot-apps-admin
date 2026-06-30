@@ -14,6 +14,9 @@ import { DashboardLayoutsModule } from './dashboard-layouts/dashboard-layouts.mo
 import { AnalyticsModule } from './analytics/analytics.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { SystemModule } from './system/system.module';
+import { UsersModule } from './users/users.module';
+import { OrganizationsModule } from './organizations/organizations.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -44,6 +47,9 @@ import { SystemModule } from './system/system.module';
     DashboardModule,
     DashboardLayoutsModule,
     AnalyticsModule,
+    UsersModule,
+    OrganizationsModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

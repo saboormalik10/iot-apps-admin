@@ -4,6 +4,8 @@ export interface IMetPicture extends Document {
   recordId: Types.ObjectId;
   organizationId: Types.ObjectId;
   storageKey: string;
+  url: string | null;
+  resourceType: string | null;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -16,6 +18,8 @@ const metPictureSchema = new Schema<IMetPicture>(
     recordId: { type: Schema.Types.ObjectId, ref: 'MetRecord', required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     storageKey: { type: String, required: true },
+    url: { type: String, default: null },
+    resourceType: { type: String, default: null },
     filename: { type: String, required: true },
     mimeType: { type: String, required: true },
     sizeBytes: { type: Number, required: true },

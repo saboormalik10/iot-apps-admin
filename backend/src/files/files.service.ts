@@ -4,7 +4,7 @@ import { NepFile } from '../models/NepFile';
 import { MetPicture } from '../models/MetPicture';
 import { NepSession } from '../models/NepSession';
 import { MetRecord } from '../models/MetRecord';
-import { saveFileToDisk, deleteFileFromDisk, getFileUrl, SavedFile } from '../utils/storage.util';
+import { uploadFile, deleteFile, getFileUrl, UploadedFile } from '../utils/storage.util';
 
 // ─── NEP Session Files ────────────────────────────────────────────────────────
 
@@ -27,20 +27,22 @@ export class FilesService {
     }
 
     const subDir = `nep-files/${organizationId}/${sessionId}/${fileType}`;
-    const saved: SavedFile = saveFileToDisk(subDir, file.originalname, file.buffer, file.mimetype);
+    const saved: UploadedFile = await uploadFile(subDir, file.originalname, file.buffer, file.mimetype);
 
     const doc = await NepFile.create({
       sessionId,
       organizationId: new Types.ObjectId(organizationId),
       fileType,
       storageKey: saved.storageKey,
+      url: saved.url,
+      resourceType: saved.resourceType,
       filename: saved.filename,
       mimeType: saved.mimeType,
       sizeBytes: saved.sizeBytes,
       capturedAt: capturedAt ? new Date(capturedAt) : null,
     });
 
-    return { ...doc.toObject(), url: getFileUrl(saved.storageKey) };
+    return { ...doc.toObject(), url: saved.url };
   }
 
   async listSessionFiles(organizationId: string, sessionId: string): Promise<Array<Record<string, unknown>>> {
@@ -58,7 +60,7 @@ export class FilesService {
       organizationId: new Types.ObjectId(organizationId),
     }).lean();
 
-    return files.map((f) => ({ ...f, url: getFileUrl(f.storageKey) }));
+    return files.map((f) => ({ ...f, url: f.url ?? getFileUrl(f.storageKey) }));
   }
 
   async deleteSessionFile(organizationId: string, sessionId: string, fileId: string): Promise<void> {
@@ -71,7 +73,7 @@ export class FilesService {
       throw Object.assign(new Error('File not found'), { code: 'NOT_FOUND', statusCode: 404 });
     }
 
-    deleteFileFromDisk(file.storageKey);
+    await deleteFile(file.storageKey, file.resourceType ?? undefined);
     await NepFile.deleteOne({ _id: new Types.ObjectId(fileId) });
   }
 
@@ -93,19 +95,21 @@ export class FilesService {
     }
 
     const subDir = `met-pictures/${organizationId}/${recordId}`;
-    const saved: SavedFile = saveFileToDisk(subDir, file.originalname, file.buffer, file.mimetype);
+    const saved: UploadedFile = await uploadFile(subDir, file.originalname, file.buffer, file.mimetype);
 
     const doc = await MetPicture.create({
       recordId: new Types.ObjectId(recordId),
       organizationId: new Types.ObjectId(organizationId),
       storageKey: saved.storageKey,
+      url: saved.url,
+      resourceType: saved.resourceType,
       filename: saved.filename,
       mimeType: saved.mimeType,
       sizeBytes: saved.sizeBytes,
       takenAt: takenAt ? new Date(takenAt) : null,
     });
 
-    return { ...doc.toObject(), url: getFileUrl(saved.storageKey) };
+    return { ...doc.toObject(), url: saved.url };
   }
 
   async listRecordPictures(organizationId: string, recordId: string): Promise<Array<Record<string, unknown>>> {
@@ -123,7 +127,7 @@ export class FilesService {
       organizationId: new Types.ObjectId(organizationId),
     }).lean();
 
-    return pictures.map((p) => ({ ...p, url: getFileUrl(p.storageKey) }));
+    return pictures.map((p) => ({ ...p, url: p.url ?? getFileUrl(p.storageKey) }));
   }
 
   async deleteRecordPicture(organizationId: string, recordId: string, pictureId: string): Promise<void> {
@@ -136,7 +140,7 @@ export class FilesService {
       throw Object.assign(new Error('Picture not found'), { code: 'NOT_FOUND', statusCode: 404 });
     }
 
-    deleteFileFromDisk(picture.storageKey);
+    await deleteFile(picture.storageKey, picture.resourceType ?? undefined);
     await MetPicture.deleteOne({ _id: new Types.ObjectId(pictureId) });
   }
 }

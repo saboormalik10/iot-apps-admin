@@ -1,19 +1,19 @@
 /**
  * storage.util.ts
  *
- * Local disk storage for file uploads.
- * Files are saved to: backend/uploads/{orgId}/{type}/{filename}
- * Served as static files via Express at: GET /uploads/{orgId}/{type}/{filename}
+ * Media storage backed by Cloudinary (free tier). Replaces the previous
+ * local-disk implementation — Render's filesystem is ephemeral, so disk
+ * uploads did not survive restarts/redeploys.
  *
- * SWAP POINT: To migrate to Cloudflare R2 or AWS S3 in the future,
- * replace `uploadFile` and `getFileUrl` with S3 SDK calls.
- * The DB storageKey format ("nep-files/{orgId}/{sessionId}/{filename}") already
- * matches the R2 object key convention — no schema changes needed.
+ * The DB `storageKey` is the Cloudinary `public_id`; the canonical delivery URL
+ * (`secure_url`) is stored alongside it. Legacy records that still hold a disk
+ * relative path resolve through `getFileUrl` (served at /uploads).
  */
 
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import { Readable } from 'stream';
+import { cloudinary } from '../config/cloudinary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -28,9 +28,7 @@ export const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
 ]);
 
-const UPLOADS_ROOT = path.join(process.cwd(), 'uploads');
-
-// ─── Multer — memory storage (we handle disk write ourselves for full path control) ──
+// ─── Multer — memory storage (buffer is streamed straight to Cloudinary) ──────
 
 export const upload = multer({
   storage: multer.memoryStorage(),
@@ -49,68 +47,81 @@ export const upload = multer({
   },
 });
 
-// ─── Save file to disk ────────────────────────────────────────────────────────
+// ─── Upload result ────────────────────────────────────────────────────────────
 
-export interface SavedFile {
-  storageKey: string;   // relative path used as DB key — matches R2 key convention
+export interface UploadedFile {
+  storageKey: string;   // Cloudinary public_id
+  url: string;          // Cloudinary secure_url (canonical delivery URL)
+  resourceType: string; // 'image' | 'raw' | 'video' (needed for deletion)
   filename: string;     // original sanitised filename
   mimeType: string;
   sizeBytes: number;
 }
 
 /**
- * Save an uploaded file buffer to disk.
- * @param subDir  e.g. "nep-files/{orgId}/{sessionId}" or "met-pictures/{orgId}/{recordId}"
- * @param originalName  original filename from multer
- * @param buffer  file buffer from multer memoryStorage
- * @param mimeType  validated MIME type
+ * Upload an in-memory file buffer to Cloudinary.
+ * @param subDir e.g. "nep-files/{orgId}/{sessionId}/photo" — used as the Cloudinary folder
+ * @param originalName original filename from multer
+ * @param buffer file buffer from multer memoryStorage
+ * @param mimeType validated MIME type
  */
-export function saveFileToDisk(
+export function uploadFile(
   subDir: string,
   originalName: string,
   buffer: Buffer,
   mimeType: string,
-): SavedFile {
-  // Sanitise filename — strip directory traversal attempts
+): Promise<UploadedFile> {
   const safeName = path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const timestamp = Date.now();
-  const filename = `${timestamp}_${safeName}`;
-  const storageKey = `${subDir}/${filename}`;
-  const absDir = path.join(UPLOADS_ROOT, subDir);
-  const absPath = path.join(UPLOADS_ROOT, storageKey);
+  const publicId = `${Date.now()}_${safeName}`;
 
-  // Validate the resolved path is still inside UPLOADS_ROOT (path traversal guard)
-  if (!absPath.startsWith(UPLOADS_ROOT + path.sep) && absPath !== UPLOADS_ROOT) {
-    throw Object.assign(new Error('Invalid file path'), { code: 'INVALID_PATH' });
-  }
-
-  fs.mkdirSync(absDir, { recursive: true });
-  fs.writeFileSync(absPath, buffer);
-
-  return { storageKey, filename, mimeType, sizeBytes: buffer.length };
+  return new Promise<UploadedFile>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: subDir,
+        public_id: publicId,
+        resource_type: 'auto', // handles images + raw (csv/pdf)
+        use_filename: false,
+        unique_filename: false,
+        overwrite: false,
+      },
+      (error, result) => {
+        if (error || !result) {
+          reject(error ?? new Error('Cloudinary upload failed'));
+          return;
+        }
+        resolve({
+          storageKey: result.public_id,
+          url: result.secure_url,
+          resourceType: result.resource_type,
+          filename: safeName,
+          mimeType,
+          sizeBytes: buffer.length,
+        });
+      },
+    );
+    Readable.from(buffer).pipe(stream);
+  });
 }
 
 /**
- * Delete a file from disk by its storageKey.
- * Silent if the file does not exist.
+ * Delete a file from Cloudinary by its storageKey (public_id).
+ * Best-effort — failures are swallowed (matches the previous disk behaviour).
  */
-export function deleteFileFromDisk(storageKey: string): void {
+export async function deleteFile(storageKey: string, resourceType?: string): Promise<void> {
   try {
-    const absPath = path.join(UPLOADS_ROOT, storageKey);
-    // Path traversal guard
-    if (!absPath.startsWith(UPLOADS_ROOT + path.sep)) return;
-    if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+    await cloudinary.uploader.destroy(storageKey, {
+      resource_type: resourceType || 'image',
+      invalidate: true,
+    });
   } catch {
-    // Non-fatal — log but continue
+    // Non-fatal — log-free best effort, same as the legacy disk delete.
   }
 }
 
 /**
- * Generate a URL to access the file.
- * In local dev: http://localhost:3000/uploads/{storageKey}
- * In production: https://{API_BASE_URL}/uploads/{storageKey}
- *
- * SWAP POINT: Replace with S3 presigned URL generation when migrating to R2.
+ * Legacy fallback URL for records stored on local disk before the Cloudinary
+ * migration (their storageKey is a relative path served at /uploads).
+ * New records store the Cloudinary `secure_url` directly and never hit this.
  */
 export function getFileUrl(storageKey: string): string {
   const base = (process.env.API_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');

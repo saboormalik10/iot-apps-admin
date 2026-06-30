@@ -59,3 +59,51 @@ export async function sendPasswordResetEmail(
 </html>`,
   });
 }
+
+export async function sendInviteEmail(
+  to: string,
+  orgName: string,
+  inviterName: string,
+  role: string,
+  inviteUrl: string,
+): Promise<void> {
+  const from = process.env.EMAIL_FROM ?? process.env.EMAIL_MAILER;
+  const transporter = createTransporter();
+
+  await transporter.sendMail({
+    from,
+    to,
+    subject: `You've been invited to ${orgName} on Observator`,
+    text: [
+      `Hi,`,
+      '',
+      `${inviterName} has invited you to join ${orgName} on the Observator dashboard as a ${role}.`,
+      '',
+      `Accept the invite and set your password (link expires in 7 days): ${inviteUrl}`,
+      '',
+      'If you were not expecting this invitation, you can safely ignore this email.',
+      '',
+      '— Observator Team',
+    ].join('\n'),
+    html: `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#333">
+  <h2 style="color:#1a1a2e">You've been invited to ${orgName}</h2>
+  <p><strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> on the
+     Observator dashboard as a <strong>${role}</strong>.</p>
+  <p style="margin:32px 0">
+    <a href="${inviteUrl}"
+       style="background:#4f46e5;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold">
+      Accept Invitation
+    </a>
+  </p>
+  <p style="color:#666;font-size:13px">
+    This link expires in <strong>7 days</strong>. If you weren't expecting this, ignore this email.
+  </p>
+  <hr style="border:none;border-top:1px solid #eee;margin:32px 0"/>
+  <p style="color:#999;font-size:12px">Observator Instruments</p>
+</body>
+</html>`,
+  });
+}

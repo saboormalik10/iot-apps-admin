@@ -16,10 +16,17 @@ import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
+import { AuditLog } from '../models/AuditLog';
 
 const ADMIN_EMAIL = 'admin@observator.com';
 const ADMIN_PASSWORD = 'Admin@1234';
 const BCRYPT_COST = 12;
+
+// Extra org members so the admin Users page + audit log have realistic data on staging.
+const EXTRA_USERS: Array<{ email: string; password: string; firstName: string; lastName: string; role: 'operator' | 'viewer' }> = [
+  { email: 'operator@observator.com', password: 'Operator@1234', firstName: 'Olivia', lastName: 'Park', role: 'operator' },
+  { email: 'viewer@observator.com', password: 'Viewer@1234', firstName: 'Victor', lastName: 'Reed', role: 'viewer' },
+];
 
 // Brisbane-ish base coordinates for the demo GPS tracks
 const BASE_LAT = -27.4698;
@@ -69,6 +76,28 @@ async function seed(): Promise<void> {
     console.log(`   → Login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
   } else {
     console.log(`⏭️  Admin user already exists: ${adminUser.email}`);
+  }
+
+  // ── Extra org members (operator + viewer) ─────────────────────────────────
+  for (const u of EXTRA_USERS) {
+    const existing = await User.findOne({ email: u.email });
+    if (!existing) {
+      const passwordHash = await bcrypt.hash(u.password, BCRYPT_COST);
+      const created = await User.create({
+        organizationId: org._id,
+        email: u.email,
+        passwordHash,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        role: u.role,
+        isActive: true,
+        invitedAt: new Date(),
+        invitedBy: adminUser._id,
+      });
+      console.log(`✅ ${u.role} user created: ${created.email} / ${u.password}`);
+    } else {
+      console.log(`⏭️  ${u.role} user already exists: ${u.email}`);
+    }
   }
 
   // ── MET-LINK Device ───────────────────────────────────────────────────────
@@ -132,12 +161,40 @@ async function seed(): Promise<void> {
     console.log('⏭️  NEP-LINK demo sessions already exist — skipping');
   }
 
+  // ── Demo audit-log entries ────────────────────────────────────────────────
+  // Idempotent: only seed if this org has no audit history yet.
+  const existingAudit = await AuditLog.countDocuments({ organizationId: org._id });
+  if (existingAudit === 0) {
+    await AuditLog.insertMany([
+      {
+        organizationId: org._id, userId: adminUser._id, userEmail: adminUser.email,
+        action: 'login', resourceType: 'user',
+        resourceId: (adminUser._id as mongoose.Types.ObjectId).toString(), resourceName: adminUser.email,
+        ipAddress: '203.0.113.10', userAgent: 'seed-script',
+      },
+      {
+        organizationId: org._id, userId: adminUser._id, userEmail: adminUser.email,
+        action: 'create', resourceType: 'device',
+        resourceId: (metDevice._id as mongoose.Types.ObjectId).toString(), resourceName: metDevice.name,
+        changes: { type: 'MET-LINK' },
+      },
+      {
+        organizationId: org._id, userId: adminUser._id, userEmail: adminUser.email,
+        action: 'invite', resourceType: 'user',
+        resourceId: null, resourceName: 'operator@observator.com', changes: { role: 'operator' },
+      },
+    ]);
+    console.log('✅ Demo audit-log entries created');
+  } else {
+    console.log('⏭️  Audit-log entries already exist — skipping');
+  }
+
   console.log('\n📋 Seed Summary');
   console.log('─────────────────────────────────────────────');
   console.log(`Organization: ${org.name}`);
   console.log(`Organization ID: ${org._id}`);
-  console.log(`Admin Email:  ${ADMIN_EMAIL}`);
-  console.log(`Admin Password: ${ADMIN_PASSWORD}`);
+  console.log(`Admin:    ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
+  EXTRA_USERS.forEach((u) => console.log(`${u.role.padEnd(9)} ${u.email} / ${u.password}`));
   console.log(`MET-LINK Device ID: ${metDevice._id}`);
   console.log(`NEP-LINK Device ID: ${nepDevice._id}`);
   console.log('─────────────────────────────────────────────');

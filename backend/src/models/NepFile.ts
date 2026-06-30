@@ -7,6 +7,8 @@ export interface INepFile extends Document {
   organizationId: Types.ObjectId;
   fileType: NepFileType;
   storageKey: string;
+  url: string | null;
+  resourceType: string | null;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -20,6 +22,8 @@ const nepFileSchema = new Schema<INepFile>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     fileType: { type: String, enum: ['map', 'photo', 'csv', 'thumbnail'], required: true },
     storageKey: { type: String, required: true },
+    url: { type: String, default: null },
+    resourceType: { type: String, default: null },
     filename: { type: String, required: true },
     mimeType: { type: String, required: true },
     sizeBytes: { type: Number, required: true },
