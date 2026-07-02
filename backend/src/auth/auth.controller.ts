@@ -12,9 +12,13 @@ import {
   ApiOperation,
   ApiBody,
   ApiBearerAuth,
+  ApiOkResponse,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { AuthService, RegisterInput, LoginInput, AuthResult } from './auth.service';
 import {
   RegisterDto,
@@ -27,6 +31,14 @@ import {
 
 const REFRESH_COOKIE = 'refreshToken';
 const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const AUTH_RESULT_EXAMPLE = {
+  data: {
+    user: { id: '664a1f2e3c4d5e6f7a8b9c0d', email: 'admin@observator.com', firstName: 'Dana', lastName: 'Galbraith', role: 'admin', organizationId: '664a1f2e3c4d5e6f7a8b9c0e' },
+    accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…',
+    refreshToken: 'a1b2c3d4e5f6…(64-char hex)',
+  },
+};
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -47,8 +59,13 @@ export class AuthController {
     res.clearCookie(REFRESH_COOKIE, { path: '/v1/auth' });
   }
 
-  @ApiOperation({ summary: 'Register a new organization and admin user' })
+  @ApiOperation({
+    summary: 'Register a new organization and admin user',
+    description: 'Admin-panel only. Also sets an httpOnly `refreshToken` cookie (`Set-Cookie`, path `/v1/auth`, 30-day).',
+  })
   @ApiBody({ type: RegisterDto })
+  @ApiCreatedResponse({ description: 'Org + admin created (auto-login)', schema: { example: AUTH_RESULT_EXAMPLE } })
+  @ApiErrors('badRequest')
   @Post('register')
   @HttpCode(201)
   async register(
@@ -73,8 +90,13 @@ export class AuthController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'Login and get access + refresh tokens' })
+  @ApiOperation({
+    summary: 'Login and get access + refresh tokens',
+    description: 'Admin-panel only. Rate-limited to 10 requests/min. Also sets an httpOnly `refreshToken` cookie (`Set-Cookie`, path `/v1/auth`, 30-day).',
+  })
   @ApiBody({ type: LoginDto })
+  @ApiOkResponse({ description: 'Authenticated', schema: { example: AUTH_RESULT_EXAMPLE } })
+  @ApiErrors('badRequest', 'unauthorized', 'tooManyRequests')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login')
   @HttpCode(200)
@@ -101,8 +123,13 @@ export class AuthController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiOperation({
+    summary: 'Refresh access token using refresh token',
+    description: 'Admin-panel only. Reads the raw token from the body, or falls back to the httpOnly `refreshToken` cookie.',
+  })
   @ApiBody({ type: RefreshDto })
+  @ApiOkResponse({ description: 'New access token', schema: { example: { data: { accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…' } } } })
+  @ApiErrors('badRequest', 'unauthorized')
   @Post('refresh')
   @HttpCode(200)
   async refresh(
@@ -123,9 +150,11 @@ export class AuthController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'Logout and revoke refresh token' })
+  @ApiOperation({ summary: 'Logout and revoke refresh token', description: 'Admin-panel only. Clears the httpOnly `refreshToken` cookie.' })
   @ApiBody({ type: LogoutDto })
   @ApiBearerAuth()
+  @ApiNoContentResponse({ description: 'Logged out; refresh token revoked' })
+  @ApiErrors('unauthorized')
   @Post('logout')
   @HttpCode(204)
   async logout(
@@ -142,8 +171,10 @@ export class AuthController {
     this.clearRefreshCookie(res);
   }
 
-  @ApiOperation({ summary: 'Request a password reset email' })
+  @ApiOperation({ summary: 'Request a password reset email', description: 'Admin-panel only. Always 204 (in dev returns 200 with a devToken).' })
   @ApiBody({ type: ForgotPasswordDto })
+  @ApiNoContentResponse({ description: 'If the email exists, a reset link was sent' })
+  @ApiErrors('badRequest')
   @Post('forgot-password')
   @HttpCode(204)
   async forgotPassword(
@@ -174,8 +205,10 @@ export class AuthController {
     }
   }
 
-  @ApiOperation({ summary: 'Reset password using a valid token' })
+  @ApiOperation({ summary: 'Reset password using a valid token', description: 'Admin-panel only.' })
   @ApiBody({ type: ResetPasswordDto })
+  @ApiNoContentResponse({ description: 'Password reset' })
+  @ApiErrors('badRequest')
   @Post('reset-password')
   @HttpCode(204)
   async resetPassword(

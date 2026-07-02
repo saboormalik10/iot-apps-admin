@@ -13,6 +13,7 @@
 import multer from 'multer';
 import path from 'path';
 import { Readable } from 'stream';
+import { fromBuffer } from 'file-type';
 import { cloudinary } from '../config/cloudinary';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -27,6 +28,34 @@ export const ALLOWED_MIME_TYPES = new Set([
   'text/csv',
   'application/pdf',
 ]);
+
+// Plain-text formats have no binary signature, so `file-type` returns undefined
+// for them — they are allowed only when the *declared* type is one of these.
+const TEXT_MIME_TYPES = new Set(['text/csv', 'text/plain', 'application/csv']);
+
+/**
+ * Month 5 hardening: validate the file by its **magic bytes**, not the
+ * client-declared mimetype (which is trivially spoofable). Throws a 415 with the
+ * `INVALID_MIME` code (surfaced by AllExceptionsFilter) when the real content is
+ * not in {@link ALLOWED_MIME_TYPES}.
+ */
+export async function assertAllowedFileType(buffer: Buffer, declaredMime: string): Promise<void> {
+  const reject = (message: string): never => {
+    throw Object.assign(new Error(message), { code: 'INVALID_MIME', statusCode: 415 });
+  };
+  const detected = await fromBuffer(buffer);
+  if (detected) {
+    if (!ALLOWED_MIME_TYPES.has(detected.mime)) {
+      reject(`Unsupported file type: ${detected.mime}`);
+    }
+    return;
+  }
+  // No signature detected (e.g. CSV / plain text) — only accept if the caller
+  // declared a text type that we allow. Anything else is treated as spoofed.
+  if (!TEXT_MIME_TYPES.has(declaredMime)) {
+    reject('Unrecognised or disallowed file content (magic-byte check failed)');
+  }
+}
 
 // ─── Multer — memory storage (buffer is streamed straight to Cloudinary) ──────
 
@@ -65,12 +94,14 @@ export interface UploadedFile {
  * @param buffer file buffer from multer memoryStorage
  * @param mimeType validated MIME type
  */
-export function uploadFile(
+export async function uploadFile(
   subDir: string,
   originalName: string,
   buffer: Buffer,
   mimeType: string,
 ): Promise<UploadedFile> {
+  await assertAllowedFileType(buffer, mimeType);
+
   const safeName = path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, '_');
   const publicId = `${Date.now()}_${safeName}`;
 

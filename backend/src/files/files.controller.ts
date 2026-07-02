@@ -13,11 +13,22 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+  ApiOkResponse,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+} from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Consumers } from '../common/decorators/consumers.decorator';
+import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { FilesService } from './files.service';
 import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_BYTES } from '../utils/storage.util';
@@ -45,7 +56,11 @@ export class FilesController {
 
   // ─── NEP Session Files ──────────────────────────────────────────────────────
 
-  @ApiOperation({ summary: 'Upload a file to a NEP session (photo, map screenshot, thumbnail)' })
+  @ApiOperation({
+    summary: 'Upload a file to a NEP session (photo, map screenshot, thumbnail)',
+    description: 'Used by the NEP-LINK app. `:id` is the session UUID. File is validated by magic bytes; allowed: jpeg/png/webp/gif/csv/pdf, ≤10 MB. Returns a Cloudinary CDN `url`.',
+  })
+  @Consumers('nep-link')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -58,6 +73,18 @@ export class FilesController {
       },
     },
   })
+  @ApiCreatedResponse({
+    description: 'Uploaded file',
+    schema: {
+      example: {
+        data: {
+          file: { _id: '664a1f2e3c4d5e6f7a8b9c30', fileType: 'photo', mimeType: 'image/jpeg', sizeBytes: 245678, url: 'https://res.cloudinary.com/observator/image/upload/v1/nep-files/…jpg' },
+          url: 'https://res.cloudinary.com/observator/image/upload/v1/nep-files/…jpg',
+        },
+      },
+    },
+  })
+  @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
   @Post('sessions/:id/files')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -86,7 +113,9 @@ export class FilesController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'List all files for a NEP session' })
+  @ApiOperation({ summary: 'List all files for a NEP session (admin dashboard)' })
+  @ApiOkResponse({ description: 'Files for the session' })
+  @ApiErrors('unauthorized', 'notFound')
   @Get('sessions/:id/files')
   @UseGuards(JwtAuthGuard)
   async listSessionFiles(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
@@ -94,7 +123,9 @@ export class FilesController {
     return { data: files };
   }
 
-  @ApiOperation({ summary: 'Delete a file from a NEP session' })
+  @ApiOperation({ summary: 'Delete a file from a NEP session (admin dashboard)' })
+  @ApiNoContentResponse({ description: 'File deleted' })
+  @ApiErrors('unauthorized', 'notFound')
   @Delete('sessions/:id/files/:fileId')
   @HttpCode(204)
   @UseGuards(JwtAuthGuard)
@@ -108,7 +139,11 @@ export class FilesController {
 
   // ─── MET Record Pictures ────────────────────────────────────────────────────
 
-  @ApiOperation({ summary: 'Upload a picture to a MET record' })
+  @ApiOperation({
+    summary: 'Upload a picture to a MET record',
+    description: 'Used by the MET-LINK app. `:id` is the record `_id`. File is validated by magic bytes; allowed: jpeg/png/webp/gif/csv/pdf, ≤10 MB. Returns a Cloudinary CDN `url`.',
+  })
+  @Consumers('met-link')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -120,6 +155,18 @@ export class FilesController {
       },
     },
   })
+  @ApiCreatedResponse({
+    description: 'Uploaded picture',
+    schema: {
+      example: {
+        data: {
+          picture: { _id: '664a1f2e3c4d5e6f7a8b9c31', mimeType: 'image/jpeg', sizeBytes: 245678, url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg' },
+          url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg',
+        },
+      },
+    },
+  })
+  @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
   @Post('records/:id/pictures')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -142,7 +189,9 @@ export class FilesController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'List all pictures for a MET record' })
+  @ApiOperation({ summary: 'List all pictures for a MET record (admin dashboard)' })
+  @ApiOkResponse({ description: 'Pictures for the record' })
+  @ApiErrors('unauthorized', 'notFound')
   @Get('records/:id/pictures')
   @UseGuards(JwtAuthGuard)
   async listRecordPictures(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
@@ -150,7 +199,9 @@ export class FilesController {
     return { data: pictures };
   }
 
-  @ApiOperation({ summary: 'Delete a picture from a MET record' })
+  @ApiOperation({ summary: 'Delete a picture from a MET record (admin dashboard)' })
+  @ApiNoContentResponse({ description: 'Picture deleted' })
+  @ApiErrors('unauthorized', 'notFound')
   @Delete('records/:id/pictures/:pictureId')
   @HttpCode(204)
   @UseGuards(JwtAuthGuard)

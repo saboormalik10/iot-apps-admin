@@ -1,22 +1,81 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule, OpenAPIObject } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import * as express from 'express';
 import * as path from 'path';
+import * as Sentry from '@sentry/node';
 
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { configureCloudinary } from './config/cloudinary';
 
+// ── Audience-filtered OpenAPI specs ────────────────────────────────────────────
+type Audience = 'nep-link' | 'met-link' | 'admin';
+const HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace'];
+
+/**
+ * Produce a copy of the full spec containing only the operations whose
+ * `x-consumers` extension includes `audience`. Operations without the extension
+ * default to `admin`. Emptied paths are dropped.
+ */
+function filterByConsumer(full: OpenAPIObject, audience: Audience): OpenAPIObject {
+  const clone = JSON.parse(JSON.stringify(full)) as OpenAPIObject;
+  const paths = clone.paths ?? {};
+  for (const p of Object.keys(paths)) {
+    const item = paths[p] as Record<string, unknown>;
+    for (const m of Object.keys(item)) {
+      if (!HTTP_METHODS.includes(m)) continue;
+      const op = item[m] as Record<string, unknown>;
+      const consumers = (op['x-consumers'] as string[] | undefined) ?? ['admin'];
+      if (!consumers.includes(audience)) delete item[m];
+    }
+    const remaining = Object.keys(item).filter((k) => HTTP_METHODS.includes(k));
+    if (remaining.length === 0) delete paths[p];
+  }
+  return clone;
+}
+
+const MOBILE_GUIDE = `
+### Mobile Apps (NEP-LINK & MET-LINK)
+Both mobile apps authenticate with a **static API key** (no login/refresh):
+\`\`\`
+Authorization: Bearer obs_mob_<your-key>
+Content-Type: application/json
+\`\`\`
+Configured server-side via \`MOBILE_API_KEY\` + \`MOBILE_ORG_ID\`. Use the audience
+dropdown (top-right) to see only one app's endpoints.
+
+**📱 NEP-LINK flow:** \`POST /v1/devices\` (type NEP-LINK) → \`POST /v1/sessions\` →
+\`POST /v1/sessions/{id}/samples\` (or the one-shot \`POST /v1/sync/upload\`).
+
+**📱 MET-LINK flow:** \`POST /v1/devices\` (type MET-LINK) → \`POST /v1/records\` →
+\`POST /v1/records/{id}/measures\` (or the one-shot \`POST /v1/sync/upload\`).
+
+Live updates over WebSocket \`/v1/ws\` are **admin/JWT-only** — mobile polls
+\`GET /v1/sync/download\` instead.
+`;
+
 async function bootstrap(): Promise<void> {
+  // Month 5: crash reporting. No-op unless SENTRY_DSN is configured.
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV ?? 'development',
+      tracesSampleRate: 0.1,
+    });
+  }
+
   configureCloudinary();
   const app = await NestFactory.create(AppModule);
 
   // ── Security Middleware ────────────────────────────────────────────────────
+  // CSP keeps 'self' + 'unsafe-inline' so the Swagger UI (and its /api/json/*
+  // spec-dropdown XHRs, via connect-src → default-src 'self') keep working.
+  // HSTS + X-Frame-Options come from helmet defaults; set HSTS explicitly.
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -27,9 +86,22 @@ async function bootstrap(): Promise<void> {
           imgSrc: ["'self'", 'data:', 'https:'],
         },
       },
+      hsts: { maxAge: 15552000, includeSubDomains: true },
     }),
   );
-  app.enableCors({ origin: '*', credentials: false });
+
+  // CORS: lock down to the configured dashboard origin(s) in production; fall
+  // back to wildcard in dev. Mobile apps use the API key over Authorization
+  // (not cookies), so they are unaffected by this.
+  const corsOrigins = (process.env.CORS_ORIGIN ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors(
+    corsOrigins.length
+      ? { origin: corsOrigins, credentials: true }
+      : { origin: '*', credentials: false },
+  );
 
   // ── Request Middleware ─────────────────────────────────────────────────────
   app.use(express.json({ limit: '10mb' }));
@@ -51,32 +123,99 @@ async function bootstrap(): Promise<void> {
   // ── Global Exception Filter ────────────────────────────────────────────────
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // ── Swagger ────────────────────────────────────────────────────────────────
+  // ── Swagger docs — password gate + audience dropdown ───────────────────────
+  // Basic-Auth gate on the whole docs surface (every environment; fail-closed).
+  // `/api` also covers the `/api/json/*` spec routes, keeping them in one
+  // protection space so the browser re-sends creds to the dropdown's XHR fetches.
+  const docsGuard: express.RequestHandler = (req, res, next) => {
+    const user = process.env.SWAGGER_USER;
+    const pass = process.env.SWAGGER_PASSWORD;
+    if (!user || !pass) {
+      res.status(503).send('Docs auth not configured');
+      return;
+    }
+    const header = req.headers.authorization ?? '';
+    const [scheme, b64] = header.split(' ');
+    if (scheme === 'Basic' && b64) {
+      const decoded = Buffer.from(b64, 'base64').toString();
+      const sep = decoded.indexOf(':'); // split on first ':' so passwords may contain ':'
+      const u = decoded.slice(0, sep);
+      const p = decoded.slice(sep + 1);
+      if (u === user && p === pass) {
+        next();
+        return;
+      }
+    }
+    res
+      .set('WWW-Authenticate', 'Basic realm="Observator API Docs"')
+      .status(401)
+      .send('Authentication required');
+  };
+  app.use(['/api', '/api.json'], docsGuard);
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Observator Instruments — Cloud API')
     .setVersion('1.0.0')
     .setDescription(
       `## Observator Instruments Cloud Platform API\n\n` +
         `**Stack:** NestJS + TypeScript + Mongoose (MongoDB)\n\n` +
-        `### Authentication\nAll protected endpoints require a **Bearer JWT** in the \`Authorization\` header.\n` +
-        `Access tokens expire in **15 minutes**. Use \`POST /v1/auth/refresh\` to renew.`,
+        `Use the **definition dropdown (top-right)** to view endpoints for a single ` +
+        `audience: All / 📱 NEP-LINK App / 📱 MET-LINK App / 🖥️ Admin Panel.\n\n` +
+        `### Authentication\nProtected endpoints require a **Bearer** token in the ` +
+        `\`Authorization\` header. The single **Authorize** field accepts *either* a ` +
+        `JWT access token (admin — 15-min expiry, renew via \`POST /v1/auth/refresh\`) ` +
+        `*or* the static mobile API key \`obs_mob_…\`.\n\n` +
+        `### Response Envelope\nSuccess: \`{ "data": … }\` (lists add \`"meta"\`). ` +
+        `Error: \`{ "error": { "code", "message" } }\`.\n` +
+        `\n### CORS / security\nBrowser access is restricted to the configured ` +
+        `dashboard origin; the mobile API-key clients are unaffected.\n` +
+        MOBILE_GUIDE,
     )
-    .addBearerAuth()
-    .addServer('/v1', 'API base (v1)')
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'Paste a JWT access token (admin) OR the static mobile key obs_mob_…',
+    })
+    // NB: no .addServer('/v1') — the global prefix is already baked into the paths
+    // (e.g. /v1/devices), and /health,/version are correctly left at the root, so
+    // "Try it out" targets the docs origin directly (avoids a /v1/v1 double-prefix).
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const fullDoc = SwaggerModule.createDocument(app, swaggerConfig);
 
-  SwaggerModule.setup('api', app, document, {
-    customSiteTitle: 'Observator API Docs',
-    swaggerOptions: { persistAuthorization: true },
-  });
+  const specs: Record<string, OpenAPIObject> = {
+    all: fullDoc,
+    'nep-link': filterByConsumer(fullDoc, 'nep-link'),
+    'met-link': filterByConsumer(fullDoc, 'met-link'),
+    admin: filterByConsumer(fullDoc, 'admin'),
+  };
 
-  // Raw OpenAPI JSON for tooling (Postman import etc.)
   const httpAdapter = app.getHttpAdapter();
+  for (const [key, doc] of Object.entries(specs)) {
+    httpAdapter.get(`/api/json/${key}`, (_req: express.Request, res: express.Response) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.send(doc);
+    });
+  }
+  // Full spec for Postman import (also behind the gate).
   httpAdapter.get('/api.json', (_req: express.Request, res: express.Response) => {
     res.setHeader('Content-Type', 'application/json');
-    res.send(document);
+    res.send(fullDoc);
+  });
+
+  SwaggerModule.setup('api', app, fullDoc, {
+    explorer: true,
+    customSiteTitle: 'Observator API Docs',
+    swaggerOptions: {
+      persistAuthorization: true,
+      urls: [
+        { url: '/api/json/all', name: 'All Endpoints' },
+        { url: '/api/json/nep-link', name: '📱 NEP-LINK App' },
+        { url: '/api/json/met-link', name: '📱 MET-LINK App' },
+        { url: '/api/json/admin', name: '🖥️ Admin Panel' },
+      ],
+    },
   });
 
   // ── Start Server ───────────────────────────────────────────────────────────

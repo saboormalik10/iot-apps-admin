@@ -1,8 +1,9 @@
 import { Controller, Get, Query, UseGuards, Res } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { AnalyticsService } from './analytics.service';
 
@@ -18,6 +19,8 @@ function includeDemo(v: string | undefined): boolean {
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
+@ApiOkResponse({ description: 'Analytics result (shape varies per endpoint; wrapped in `{ data }` unless a CSV/JSON export)' })
+@ApiErrors('badRequest', 'unauthorized', 'notFound')
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
 export class AnalyticsController {

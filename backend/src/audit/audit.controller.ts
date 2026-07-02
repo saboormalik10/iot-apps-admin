@@ -1,9 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { AuditService } from './audit.service';
 import { AuditAction, AuditResourceType } from '../models/AuditLog';
@@ -22,6 +23,16 @@ export class AuditController {
   @ApiQuery({ name: 'to', required: false, description: 'ISO date — inclusive upper bound' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
   @ApiQuery({ name: 'limit', required: false, example: 50, description: 'Max 100' })
+  @ApiOkResponse({
+    description: 'Paginated audit log',
+    schema: {
+      example: {
+        data: [{ _id: '664a1f2e3c4d5e6f7a8b9c40', action: 'login', resourceType: 'user', userEmail: 'admin@observator.com', createdAt: '2026-06-23T09:00:00.000Z' }],
+        pagination: { page: 1, limit: 50, total: 1, totalPages: 1 },
+      },
+    },
+  })
+  @ApiErrors('unauthorized', 'forbidden')
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

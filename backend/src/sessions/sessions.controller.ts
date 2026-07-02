@@ -11,14 +11,37 @@ import {
   UseGuards,
   Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiBody,
+  ApiQuery,
+  ApiOkResponse,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiProduces,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Consumers } from '../common/decorators/consumers.decorator';
+import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { SessionsService, CreateSessionInput, BulkSampleInput } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
+
+const SESSION_EXAMPLE = {
+  id: '550e8400-e29b-41d4-a716-446655440000',
+  deviceId: '664a1f2e3c4d5e6f7a8b9c0f',
+  deviceName: 'NEP-LINK-001',
+  startTimestamp: 1746057600000,
+  endTimestamp: 1746061200000,
+  probeRange: 'R2',
+  sampleCount: 1,
+  syncedAt: '2026-06-23T10:00:00.000Z',
+};
 
 @ApiTags('NEP Sessions')
 @ApiBearerAuth()
@@ -26,7 +49,15 @@ import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 export class SessionsController {
   constructor(private readonly sessionsService: SessionsService) {}
 
-  @ApiOperation({ summary: 'List sessions' })
+  @ApiOperation({ summary: 'List sessions (admin dashboard)' })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
+  @ApiQuery({ name: 'from', required: false, description: 'Unix ms — start of range' })
+  @ApiQuery({ name: 'to', required: false, description: 'Unix ms — end of range' })
+  @ApiQuery({ name: 'probeRange', required: false, enum: ['R1', 'R2', 'R3'] })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
+  @ApiOkResponse({ description: 'Paginated sessions', schema: { example: { data: [SESSION_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
+  @ApiErrors('unauthorized')
   @Get()
   @UseGuards(JwtAuthGuard)
   async listSessions(
@@ -49,8 +80,33 @@ export class SessionsController {
     });
   }
 
-  @ApiOperation({ summary: 'Upload a NEP-LINK session from the mobile app' })
-  @ApiBody({ type: CreateSessionDto })
+  @ApiOperation({
+    summary: 'Upload a NEP-LINK session from the mobile app',
+    description: 'Used by the NEP-LINK app. `id` is a client-generated UUID v4 (idempotency key — reuse it on retry).',
+  })
+  @Consumers('nep-link')
+  @ApiBody({
+    type: CreateSessionDto,
+    examples: {
+      nepLink: {
+        summary: '📱 NEP-LINK session',
+        value: {
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          deviceId: '664a1f2e3c4d5e6f7a8b9c0f',
+          deviceName: 'NEP-LINK-001',
+          startTimestamp: 1746057600000,
+          endTimestamp: 1746061200000,
+          timezoneName: 'Australia/Melbourne',
+          timezoneOffset: 10,
+          turbidityEnabled: true,
+          temperatureEnabled: true,
+          comment: 'River sampling at intake',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({ description: 'Created session', schema: { example: { data: SESSION_EXAMPLE } } })
+  @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -59,7 +115,9 @@ export class SessionsController {
     return { data: session };
   }
 
-  @ApiOperation({ summary: 'Get session detail + aggregated stats' })
+  @ApiOperation({ summary: 'Get session detail + aggregated stats (admin dashboard)' })
+  @ApiOkResponse({ description: 'Session detail', schema: { example: { data: SESSION_EXAMPLE } } })
+  @ApiErrors('unauthorized', 'notFound')
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async getSession(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
@@ -67,8 +125,10 @@ export class SessionsController {
     return { data: session };
   }
 
-  @ApiOperation({ summary: 'Update session comment' })
+  @ApiOperation({ summary: 'Update session comment (admin dashboard)' })
   @ApiBody({ type: UpdateSessionDto })
+  @ApiOkResponse({ description: 'Updated session', schema: { example: { data: SESSION_EXAMPLE } } })
+  @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateSession(
@@ -80,7 +140,9 @@ export class SessionsController {
     return { data: session };
   }
 
-  @ApiOperation({ summary: 'Delete session and cascade-delete all samples' })
+  @ApiOperation({ summary: 'Delete session and cascade-delete all samples (admin dashboard)' })
+  @ApiNoContentResponse({ description: 'Session deleted' })
+  @ApiErrors('unauthorized', 'notFound')
   @Delete(':id')
   @HttpCode(204)
   @UseGuards(JwtAuthGuard)
@@ -92,8 +154,26 @@ export class SessionsController {
     );
   }
 
-  @ApiOperation({ summary: 'Bulk insert samples for a session' })
-  @ApiBody({ type: BulkSamplesDto })
+  @ApiOperation({
+    summary: 'Bulk insert samples for a session',
+    description: 'Used by the NEP-LINK app immediately after the session upload. `:id` is the session UUID. Max 7200 samples per call.',
+  })
+  @Consumers('nep-link')
+  @ApiBody({
+    type: BulkSamplesDto,
+    examples: {
+      nepLink: {
+        summary: '📱 NEP-LINK samples',
+        value: {
+          samples: [
+            { timestamp: 1746057601000, turbidityValue: 245.5, temperatureValue: 18.4, probeRange: 'R2', batteryLevel: 85 },
+          ],
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({ description: 'Samples inserted', schema: { example: { data: { inserted: 1 } } } })
+  @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post(':id/samples')
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -110,7 +190,12 @@ export class SessionsController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'Get paginated samples for a session' })
+  @ApiOperation({ summary: 'Get paginated samples for a session (admin dashboard)' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 500, max 1000)' })
+  @ApiQuery({ name: 'downsample', required: false, description: 'Set "true" to downsample to ≤500 points for charts' })
+  @ApiOkResponse({ description: 'Paginated samples' })
+  @ApiErrors('unauthorized', 'notFound')
   @Get(':id/samples')
   @UseGuards(JwtAuthGuard)
   async getSamples(
@@ -129,7 +214,10 @@ export class SessionsController {
     });
   }
 
-  @ApiOperation({ summary: 'Export session as CSV' })
+  @ApiOperation({ summary: 'Export session as CSV (admin dashboard)' })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({ description: 'CSV file download', content: { 'text/csv': { schema: { type: 'string', format: 'binary' } } } })
+  @ApiErrors('unauthorized', 'notFound')
   @Get(':id/export.csv')
   @UseGuards(JwtAuthGuard)
   async exportCsv(

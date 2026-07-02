@@ -33,6 +33,20 @@ services:
       - key: API_BASE_URL
         sync: false           # e.g. https://observator-backend.onrender.com
 
+      # Swagger docs password gate (HTTP Basic Auth) — /api returns 503 without these
+      - key: SWAGGER_USER
+        sync: false
+      - key: SWAGGER_PASSWORD
+        sync: false
+
+      # CORS allow-list (Month 5) — comma-separated dashboard origin(s)
+      - key: CORS_ORIGIN
+        sync: false           # e.g. https://dashboard.observator.com
+
+      # Sentry crash reporting (Month 5) — optional
+      - key: SENTRY_DSN
+        sync: false
+
       # Nodemailer — Gmail SMTP
       - key: EMAIL_MAILER
         sync: false           # saboordev8@gmail.com
