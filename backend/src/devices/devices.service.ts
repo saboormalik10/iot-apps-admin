@@ -5,6 +5,10 @@ import { AuditLog } from '../models/AuditLog';
 import { NepSession } from '../models/NepSession';
 import { DeviceSettings } from '../models/DeviceSettings';
 import { FirmwareHistory } from '../models/FirmwareHistory';
+import { FirmwareTarget } from '../models/FirmwareTarget';
+import { compareVersions, isOutdated } from '../utils/semver.util';
+
+type DeviceType = 'MET-LINK' | 'NEP-LINK';
 
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
 
@@ -216,6 +220,78 @@ export class DevicesService {
       lastSyncLagSeconds: lastSeenMs ? Math.round((now - lastSeenMs) / 1000) : null,
       alertCount24h: 0, // populated once alert evaluation ships (Month 6)
     };
+  }
+
+  // ── Firmware version tracking (Month 6) ───────────────────────────────────
+
+  async setFirmwareTarget(
+    organizationId: string,
+    body: { deviceType: DeviceType; version: string },
+    actor: { userId: string; email: string },
+  ) {
+    const target = await FirmwareTarget.findOneAndUpdate(
+      { organizationId: new Types.ObjectId(organizationId), deviceType: body.deviceType },
+      { $set: { version: body.version, updatedBy: new Types.ObjectId(actor.userId) } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    AuditLog.create({
+      organizationId: new Types.ObjectId(organizationId),
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'settings',
+      resourceId: (target._id as unknown as string).toString(),
+      resourceName: `firmware target ${body.deviceType}`,
+      changes: { after: { deviceType: body.deviceType, version: body.version } },
+    }).catch(() => void 0);
+
+    return target;
+  }
+
+  async listFirmwareTargets(organizationId: string) {
+    return FirmwareTarget.find({ organizationId: new Types.ObjectId(organizationId) })
+      .select('deviceType version updatedAt')
+      .lean();
+  }
+
+  /** Per-device firmware status: configured target (else max-seen) + `outdated` flag. */
+  async getFirmwareStatus(organizationId: string, type?: DeviceType) {
+    const orgId = new Types.ObjectId(organizationId);
+    const deviceFilter: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
+    if (type) deviceFilter.type = type;
+
+    const [devices, targets] = await Promise.all([
+      Device.find(deviceFilter).select('name customName type firmwareVersion lastSeenAt').lean(),
+      FirmwareTarget.find({ organizationId: orgId }).lean(),
+    ]);
+
+    const targetByType = new Map<string, string>();
+    for (const t of targets) targetByType.set(t.deviceType, t.version);
+
+    // Fallback per type: max firmware seen across the org's devices of that type.
+    const maxByType = new Map<string, string>();
+    for (const d of devices) {
+      const v = d.firmwareVersion;
+      if (!v) continue;
+      const cur = maxByType.get(d.type);
+      if (!cur || compareVersions(v, cur) > 0) maxByType.set(d.type, v);
+    }
+
+    const items = devices.map((d) => {
+      const target = targetByType.get(d.type) ?? maxByType.get(d.type) ?? null;
+      return {
+        deviceId: (d._id as unknown as string).toString(),
+        name: d.customName ?? d.name,
+        type: d.type,
+        firmwareVersion: d.firmwareVersion ?? null,
+        target,
+        targetSource: targetByType.has(d.type) ? 'configured' : 'max-seen',
+        outdated: isOutdated(d.firmwareVersion, target),
+      };
+    });
+
+    return { data: items, meta: { total: items.length, outdated: items.filter((i) => i.outdated).length } };
   }
 
   // ── GET /devices/:id/firmware-history ─────────────────────────────────────

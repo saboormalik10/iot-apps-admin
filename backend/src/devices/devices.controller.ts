@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -29,7 +30,7 @@ import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { DevicesService } from './devices.service';
-import { CreateDeviceDto, UpdateDeviceDto, UpdateDeviceSettingsDto } from './dto';
+import { CreateDeviceDto, UpdateDeviceDto, UpdateDeviceSettingsDto, FirmwareTargetDto } from './dto';
 
 const DEVICE_EXAMPLE = {
   _id: '664a1f2e3c4d5e6f7a8b9c0f',
@@ -106,6 +107,46 @@ export class DevicesController {
       { userId: user!.userId, email: user!.email ?? '' },
     );
     return { data: device };
+  }
+
+  // ── Firmware version tracking (Month 6) — literal routes before :id ────────
+
+  @ApiOperation({ summary: 'Set the org firmware target for a device type (admin)' })
+  @ApiBody({ type: FirmwareTargetDto })
+  @ApiOkResponse({ description: 'Updated firmware target', schema: { example: { data: { deviceType: 'NEP-LINK', version: '2.2.0' } } } })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden')
+  @Put('firmware-target')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async setFirmwareTarget(@Body() body: FirmwareTargetDto, @CurrentUser() user: JWTPayload) {
+    const data = await this.devicesService.setFirmwareTarget(user.organizationId, body, {
+      userId: user.userId,
+      email: user.email ?? '',
+    });
+    return { data };
+  }
+
+  @ApiOperation({ summary: 'List org firmware targets' })
+  @ApiOkResponse({ description: 'Configured firmware targets', schema: { example: { data: [{ deviceType: 'NEP-LINK', version: '2.2.0' }] } } })
+  @ApiErrors('unauthorized')
+  @Get('firmware-target')
+  @UseGuards(JwtAuthGuard)
+  async listFirmwareTargets(@CurrentUser() user: JWTPayload) {
+    const data = await this.devicesService.listFirmwareTargets(user.organizationId);
+    return { data };
+  }
+
+  @ApiOperation({ summary: 'Firmware status per device (flags devices on outdated firmware)' })
+  @ApiQuery({ name: 'type', required: false, enum: ['MET-LINK', 'NEP-LINK'] })
+  @ApiOkResponse({
+    description: 'Per-device firmware status',
+    schema: { example: { data: [{ deviceId: '664a1f2e3c4d5e6f7a8b9c0f', name: 'River Intake Probe', type: 'NEP-LINK', firmwareVersion: '2.1.0', target: '2.2.0', targetSource: 'configured', outdated: true }], meta: { total: 1, outdated: 1 } } },
+  })
+  @ApiErrors('unauthorized')
+  @Get('firmware-status')
+  @UseGuards(JwtAuthGuard)
+  async getFirmwareStatus(@Query('type') type: 'MET-LINK' | 'NEP-LINK', @CurrentUser() user: JWTPayload) {
+    return this.devicesService.getFirmwareStatus(user.organizationId, type);
   }
 
   @ApiOperation({ summary: 'Get device detail + live status' })

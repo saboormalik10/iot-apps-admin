@@ -47,6 +47,16 @@ services:
       - key: SENTRY_DSN
         sync: false
 
+      # Public share links (Month 6) — base URL for /public/:token links
+      - key: PUBLIC_SHARE_BASE_URL
+        sync: false           # e.g. https://dashboard.observator.com
+
+      # Push notifications (Month 6) — optional; WebSocket delivery works without these
+      - key: PUSH_ONESIGNAL_APP_ID
+        sync: false
+      - key: PUSH_ONESIGNAL_API_KEY
+        sync: false
+
       # Nodemailer — Gmail SMTP
       - key: EMAIL_MAILER
         sync: false           # saboordev8@gmail.com

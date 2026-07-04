@@ -345,14 +345,27 @@ export class DashboardService {
     deviceId?: string,
     page = 1,
     limit = 20,
+    filters: { from?: number; to?: number; probeRange?: string; search?: string } = {},
   ) {
-    const cacheKey = `nep:sessions:${organizationId}:${deviceId ?? 'all'}:${page}:${limit}`;
+    const { from, to, probeRange, search } = filters;
+    const cacheKey = `nep:sessions:${organizationId}:${deviceId ?? 'all'}:${page}:${limit}:${from ?? ''}:${to ?? ''}:${probeRange ?? ''}:${search ?? ''}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
     const orgId = new Types.ObjectId(organizationId);
     const query: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
+    if (probeRange) query.probeRange = probeRange;
+    if (from != null || to != null) {
+      const range: Record<string, number> = {};
+      if (from != null) range.$gte = from;
+      if (to != null) range.$lte = to;
+      query.startTimestamp = range;
+    }
+    if (search) {
+      const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      query.$or = [{ deviceName: rx }, { comment: rx }];
+    }
 
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(100, Math.max(1, limit));

@@ -17,6 +17,11 @@ import { SystemModule } from './system/system.module';
 import { UsersModule } from './users/users.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { AuditModule } from './audit/audit.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ShareModule } from './share/share.module';
+import { AlertRulesModule } from './alert-rules/alert-rules.module';
+import { ExportModule } from './export/export.module';
+import { ImportModule } from './import/import.module';
 
 @Module({
   imports: [
@@ -50,6 +55,11 @@ import { AuditModule } from './audit/audit.module';
     UsersModule,
     OrganizationsModule,
     AuditModule,
+    NotificationsModule,
+    ShareModule,
+    AlertRulesModule,
+    ExportModule,
+    ImportModule,
   ],
 })
 export class AppModule {}

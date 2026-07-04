@@ -17,6 +17,9 @@ import { MetMeasure } from '../models/MetMeasure';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { AuditLog } from '../models/AuditLog';
+import { AlertRule } from '../models/AlertRule';
+import { FirmwareTarget } from '../models/FirmwareTarget';
+import { ShareToken } from '../models/ShareToken';
 
 const ADMIN_EMAIL = 'admin@observator.com';
 const ADMIN_PASSWORD = 'Admin@1234';
@@ -187,6 +190,54 @@ async function seed(): Promise<void> {
     console.log('✅ Demo audit-log entries created');
   } else {
     console.log('⏭️  Audit-log entries already exist — skipping');
+  }
+
+  // ── Month 6 demo data: alert rule + firmware targets + share link ──────────
+  if ((await AlertRule.countDocuments({ organizationId: org._id })) === 0) {
+    await AlertRule.create({
+      organizationId: org._id,
+      deviceId: nepDevice._id,
+      createdBy: adminUser._id,
+      name: 'High turbidity (R3)',
+      appType: 'NEP',
+      sensor: 'turbidity',
+      condition: 'gt',
+      threshold: 1000,
+      unit: 'NTU',
+      isActive: true,
+      notifyUserIds: [adminUser._id],
+      cooldownMinutes: 60,
+    });
+    console.log('✅ Demo alert rule created');
+  } else {
+    console.log('⏭️  Alert rules already exist — skipping');
+  }
+
+  if ((await FirmwareTarget.countDocuments({ organizationId: org._id })) === 0) {
+    await FirmwareTarget.insertMany([
+      { organizationId: org._id, deviceType: 'NEP-LINK', version: '1.4.0', updatedBy: adminUser._id },
+      { organizationId: org._id, deviceType: 'MET-LINK', version: '2.2.0', updatedBy: adminUser._id },
+    ]);
+    console.log('✅ Demo firmware targets created (seed devices report older → flagged outdated)');
+  } else {
+    console.log('⏭️  Firmware targets already exist — skipping');
+  }
+
+  if ((await ShareToken.countDocuments({ organizationId: org._id })) === 0) {
+    const firstSession = await NepSession.findOne({ deviceId: nepDevice._id }).select('id').lean();
+    if (firstSession) {
+      await ShareToken.create({
+        organizationId: org._id,
+        createdBy: adminUser._id,
+        resourceType: 'nepSession',
+        resourceId: firstSession.id,
+        token: 'shr_demo_' + (org._id as mongoose.Types.ObjectId).toString().slice(-8),
+        expiresAt: new Date(Date.now() + 30 * 86_400_000),
+      });
+      console.log('✅ Demo share link created');
+    }
+  } else {
+    console.log('⏭️  Share links already exist — skipping');
   }
 
   console.log('\n📋 Seed Summary');

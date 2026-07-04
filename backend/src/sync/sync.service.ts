@@ -109,6 +109,17 @@ export class SyncService {
       justConnected: wasOffline,
     });
 
+    // Month 6: let the notifications listener compare against the org firmware target.
+    if (body.firmwareVersion) {
+      this.eventEmitter.emit(DomainEvent.DEVICE_FIRMWARE_REPORTED, {
+        organizationId,
+        deviceId,
+        deviceName: device.customName ?? device.name,
+        deviceType: device.type,
+        firmwareVersion: device.firmwareVersion,
+      });
+    }
+
     return {
       deviceId,
       lastSeenAt: now,
@@ -247,7 +258,8 @@ export class SyncService {
       syncedAt: now,
     };
 
-    const existed = await NepSession.exists({ id: payload.sessionId });
+    const prev = await NepSession.findOne({ id: payload.sessionId }).select('endTimestamp').lean();
+    const existed = !!prev;
 
     const session = await NepSession.findOneAndUpdate(
       { id: payload.sessionId, organizationId: orgId },
@@ -295,6 +307,18 @@ export class SyncService {
           temperatureValue: last.temperatureValue ?? null,
           probeRange: last.probeRange ?? probeRange,
         },
+      });
+    }
+
+    // Month 6: session-complete notification when endTimestamp first becomes non-null.
+    const newlyComplete = payload.endTimestamp != null && (!prev || prev.endTimestamp == null);
+    if (newlyComplete) {
+      this.eventEmitter.emit(DomainEvent.NEP_SESSION_COMPLETED, {
+        organizationId,
+        deviceId: deviceIdStr,
+        deviceName: session.deviceName,
+        sessionId: payload.sessionId,
+        sampleCount: session.sampleCount,
       });
     }
 

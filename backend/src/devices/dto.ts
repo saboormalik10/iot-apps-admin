@@ -3,6 +3,7 @@
  * controllers keep their existing typed bodies, behaviour unchanged).
  */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateDeviceDto {
   @ApiProperty({ example: 'MET-00:11:22:33:44:55', description: 'BLE MAC / identifier' })
@@ -58,4 +59,16 @@ export class UpdateDeviceSettingsDto {
   @ApiPropertyOptional({ example: 'm' }) unitAltitude?: string;
   @ApiPropertyOptional({ type: [Object], description: 'EnShow array' }) sensorShowPrefs?: unknown[];
   @ApiPropertyOptional({ type: [Object], description: 'EnLog array' }) sensorLogPrefs?: unknown[];
+}
+
+/** Set the org's expected latest firmware for a device type (Month 6). */
+export class FirmwareTargetDto {
+  @ApiProperty({ enum: ['MET-LINK', 'NEP-LINK'], example: 'NEP-LINK' })
+  @IsIn(['MET-LINK', 'NEP-LINK'])
+  deviceType!: 'MET-LINK' | 'NEP-LINK';
+
+  @ApiProperty({ example: '2.2.0', description: 'Latest firmware version for this device type' })
+  @IsString()
+  @IsNotEmpty()
+  version!: string;
 }

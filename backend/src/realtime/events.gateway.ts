@@ -14,10 +14,12 @@ import {
   ClientEvent,
   roomForOrg,
   roomForDevice,
+  roomForUser,
   MetMeasuresEvent,
   NepSampleEvent,
   NepSessionCreatedEvent,
   DeviceStatusEvent,
+  NotificationEvent,
 } from './realtime.events';
 
 /**
@@ -47,6 +49,8 @@ export class EventsGateway implements OnGatewayConnection {
       const payload = verifyAccessToken(token);
       client.data.user = payload;
       client.join(roomForOrg(payload.organizationId));
+      // Per-user room so targeted notifications (AlertRule.notifyUserIds) reach the right people.
+      if (payload.userId) client.join(roomForUser(payload.userId));
     } catch {
       client.emit('unauthorized', { code: 4001, message: 'Invalid or expired access token' });
       client.disconnect(true);
@@ -102,6 +106,22 @@ export class EventsGateway implements OnGatewayConnection {
     this.server.to(roomForOrg(e.organizationId)).emit(ClientEvent.DEVICE_STATUS, payload);
     if (e.justConnected) {
       this.server.to(roomForOrg(e.organizationId)).emit(ClientEvent.DEVICE_CONNECTED, { deviceId: e.deviceId, deviceName: e.deviceName });
+    }
+  }
+
+  // ── Month 6: notification feed push (alerts / session-complete / firmware) ──
+
+  @OnEvent(DomainEvent.NOTIFICATION)
+  onNotification(e: NotificationEvent): void {
+    const rooms = e.userIds.length
+      ? e.userIds.map((uid) => roomForUser(uid))
+      : [roomForOrg(e.organizationId)];
+    for (const room of rooms) {
+      this.server.to(room).emit(ClientEvent.NOTIFICATION, e.notification);
+      // Alerts also get the dedicated legacy channel for existing dashboard listeners.
+      if (e.notification.type === 'alert') {
+        this.server.to(room).emit(ClientEvent.ALERT_TRIGGERED, e.notification.data);
+      }
     }
   }
 }

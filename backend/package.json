@@ -24,6 +24,7 @@
     "@nestjs/throttler": "^5.2.0",
     "@nestjs/websockets": "^10.4.22",
     "@sentry/node": "^10.63.0",
+    "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
@@ -48,6 +49,7 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.22",
+    "@types/archiver": "^6.0.4",
     "@types/bcryptjs": "^3.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",

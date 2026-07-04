@@ -1,7 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface INotificationToken extends Document {
-  userId: Types.ObjectId;
+  userId: Types.ObjectId | null;
   organizationId: Types.ObjectId;
   platform: 'ios' | 'android';
   token: string;
@@ -14,7 +14,9 @@ export interface INotificationToken extends Document {
 
 const notificationTokenSchema = new Schema<INotificationToken>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    // Optional: mobile clients authenticate with the shared API key and have no
+    // per-user identity, so device push tokens are org/device-scoped (userId null).
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     platform: { type: String, enum: ['ios', 'android'], required: true },
     token: { type: String, required: true, unique: true },

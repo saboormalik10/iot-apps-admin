@@ -91,8 +91,12 @@ export class DashboardController {
     );
   }
 
-  @ApiOperation({ summary: 'NEP-LINK sessions list' })
+  @ApiOperation({ summary: 'NEP-LINK sessions list (filter/search by date, device, probe range)' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
+  @ApiQuery({ name: 'from', required: false, description: 'startTimestamp lower bound (Unix ms)' })
+  @ApiQuery({ name: 'to', required: false, description: 'startTimestamp upper bound (Unix ms)' })
+  @ApiQuery({ name: 'probeRange', required: false, description: 'R1 | R2 | R3' })
+  @ApiQuery({ name: 'search', required: false, description: 'Match deviceName or comment' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
   @ApiOkResponse({ description: 'Paginated NEP-LINK session list' })
@@ -100,6 +104,10 @@ export class DashboardController {
   @UseGuards(JwtAuthGuard)
   async getNepSessions(
     @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('probeRange') probeRange: string,
+    @Query('search') search: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
     @CurrentUser() user: JWTPayload,
@@ -109,6 +117,12 @@ export class DashboardController {
       deviceId,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      {
+        from: from ? parseInt(from, 10) : undefined,
+        to: to ? parseInt(to, 10) : undefined,
+        probeRange: probeRange || undefined,
+        search: search || undefined,
+      },
     );
   }
 
