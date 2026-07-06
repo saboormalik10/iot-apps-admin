@@ -111,7 +111,7 @@ the web origin. No credentialed cross-origin calls from the browser.
 ### 3.1 Data layer
 - **TanStack Query** for all reads: typed hooks per endpoint (`useSummary`, `useWindRose`, …),
   sensible `staleTime`, background refetch, and **query-key invalidation on realtime events**
-  (a `nep:session_created` event invalidates the sessions list rather than hand-patching it).
+  (a `nep:session:created` event invalidates the sessions list rather than hand-patching it).
 - A single **typed API client** generated/derived from the backend Swagger (`/api`) so request/response
   types stay in lockstep with the API. Zod schemas validate responses at the boundary.
 - **BFF route handlers** (`app/api/**`) attach the access token server-side and refresh transparently
@@ -121,17 +121,34 @@ the web origin. No credentialed cross-origin calls from the browser.
 - One shared **socket.io client** (`/v1/ws`, JWT auth) with reconnect/backoff and a visible
   connection-status indicator.
 - Hooks: `useDeviceSubscription(deviceId)` (`subscribe:device`/`unsubscribe:device`), `useOrgEvents()`.
-- Event → UI map:
+- Event → UI map (**exact socket.io event names — verified against `realtime.events.ts`**):
 
-  | Event | Consumer in the UI |
+  | Server event (exact name) | Consumer in the UI |
   |---|---|
-  | `met:latest` | Live MET sensor tiles (temp/wind/pressure/humidity) |
-  | `met:windrose` (`refresh`) | Invalidate + redraw the wind rose |
+  | `met:latest` | Live MET sensor tiles (all sensors) |
+  | `met:windrose` (`{recordId, refresh:true}`) | Invalidate + redraw the wind rose — ⚠ fires alongside **every** `met:latest` batch, so **debounce** the redraw |
   | `nep:sample` | Live NEP turbidity/temp stream on the session view |
-  | `nep:session_created` | Toast + invalidate sessions list |
+  | `nep:session:created` | Toast + invalidate sessions list |
   | `device:status` / `device:connected` | Online/offline dots, fleet-map markers |
-  | `notification` | Notification bell + feed |
-  | `alert:triggered` | Alert toast (status-colored) + feed + alert-rule trigger history |
+  | `notification:new` | Notification bell + feed **and** query invalidation by type (see note) |
+  | `alert:triggered` | Alert toast (status-colored) + feed + refetch that rule's `triggerHistory`; payload = the alert notification's `data` (`{ruleId, deviceId, sensor, sensorValue, threshold}`) |
+
+> **The exact strings matter (this bit the first draft).** The gateway emits **`nep:session:created`** and
+> **`notification:new`** — *not* `nep:session_created` / `notification`. Subscribing to the wrong string
+> silently receives nothing, and there is no error. The frontend imports these from **one shared
+> `ClientEvent` constants file** mirrored from the backend, never hand-typed at call sites.
+>
+> **Effect-bearing notifications must refetch, not just badge (the "refetch is truth" rule).** Two of the
+> three notification types carry a real state change but have **no dedicated socket event** — they arrive
+> only as `notification:new`, so the bell handler must also invalidate queries:
+> - **`session_complete`** (`data:{sessionId, deviceId, sampleCount}`) → invalidate the **sessions list**
+>   and that **session's detail** (its avg/min/max are only now final).
+> - **`firmware`** (`data:{deviceId, current, target}`) → invalidate **firmware-status**, **fleet-health**,
+>   and the **device detail** (the outdated flag may have just flipped).
+>
+> **Targeting:** notifications with `notifyUserIds` reach only those users' rooms (empty → org-wide), so the
+> bell/feed shows notifications **targeted at the current user** (plus org-wide untargeted ones), not every
+> org notification.
 
 - **Correctness rule:** realtime *augments* server state; it never becomes the source of truth.
   On reconnect or a missed event, **refetch** — never trust a partial live stream for totals.
@@ -215,7 +232,10 @@ validate → marks → interaction → a11y). Non-negotiables, applied everywher
 - **Sequential = one hue, light→dark** (turbidity heatmaps, GPS density). **Diverging = two hues +
   neutral gray midpoint** (anomaly/deviation). Never a rainbow.
 - **Status colors are reserved** (good/warning/serious/critical for WHO/EPA water bands, online/offline,
-  firmware status, alert severity) and always ship with **icon + label**, never color alone.
+  firmware status, alert severity) and always ship with **icon + label**, never color alone. The backend's
+  classification scales are **richer than a 4-step status ramp** — WHO/EPA turbidity is **7 classes** and
+  pressure tendency is **5 states**; the frontend maps those backend classes onto validated status/sequential
+  tokens (**§10.9**) and never renders the backend's raw `NTU_CLASSES` hex.
 - **Validate the palette with the script — don't eyeball it.**
   `node scripts/validate_palette.js "<hex,…>" --mode light` then `--mode dark`. CVD ΔE ≥ 12 target.
 - **Every chart is interactive by default:** crosshair + tooltip on lines/areas, per-mark hover on
@@ -270,7 +290,7 @@ Section 4 method). This table is the contract between backend and frontend.
 ### Dashboard (live overview) — `/dashboard/*`
 | Endpoint | Screen | Visual form |
 |---|---|---|
-| `GET /dashboard/summary` | Home | **KPI stat-tile row** (devices, online, sessions, records, active alerts) + sparklines — *headline numbers, not charts* |
+| `GET /dashboard/summary` (+ **§10.8** enrichment) | Home | **KPI stat-tile row** (devices, online, sessions, records, **active alert rules**) + **per-tile sparklines** — *headline numbers, not charts*. ⚠ The base endpoint returns **scalar counts only** (no alert count, no time series); the active-alert count and the sparkline series are supplied by the small **§10.8** summary enrichment. |
 | `GET /dashboard/devices` | Home | **Status table**: online/offline dot (status color + icon), battery meter |
 | `GET /dashboard/met/latest` | Home | **Live sensor tiles** — all available sensors (wind true/rel, temp, humidity, pressure, solar, precip, dew point, power), push via `met:latest` |
 | `GET /dashboard/met/windrose` | Home | **Wind rose** — polar stacked bar, 16 sectors × 5 speed bands (visx); 10-min & 2-min |
@@ -289,19 +309,21 @@ Section 4 method). This table is the contract between backend and frontend.
 | `GET /analytics/met/wind-rose` | Polar stacked bar (the signature chart) | sequential ordinal by speed band |
 | `GET /analytics/met/multi-sensor` | Overlay ≤5 sensors — **small multiples or normalized index** (never dual-axis) | categorical per sensor |
 | `GET /analytics/met/statistics` | **Distribution/box** + summary tiles + **Beaufort scale** | sequential + status |
-| `GET /analytics/met/wind-gust-history` | **Line** (max per bucket), peaks direct-labeled | single series |
-| `GET /analytics/met/comfort-indices` | Heat-index + wind-chill (both °C → one axis OK), threshold band | categorical 2 |
+| `GET /analytics/met/wind-gust-history` | **Line** (max per bucket), peaks direct-labeled; peak markers annotated with **gust direction** (`dirDeg` — a compass tick/arrow, not a 2nd axis) | single series |
+| `GET /analytics/met/comfort-indices` | Heat-index + wind-chill (both °C → one axis OK), threshold band, **+ `comfortLabel` status badge** (comfortable→dangerous) per current point | categorical 2 + status |
 | `GET /analytics/met/fog-risk` | **Area** — dew-point spread with risk-threshold band | sequential + status |
-| `GET /analytics/met/pressure-tendency` | **Tendency widget** — rising/steady/falling arrow + sparkline | status |
-| `GET /analytics/nep/turbidity-distribution` | **Histogram** with WHO/EPA reference bands | status bands |
+| `GET /analytics/met/pressure-tendency` | **Tendency widget** — **5-state** arrow (rising-rapidly → falling-rapidly, §10.9) + backend label + sparkline | status |
+| `GET /analytics/nep/turbidity-distribution` | **Histogram** with the **7 WHO/EPA classes** (§10.9) as reference bands | status bands (7) |
 | `GET /analytics/nep/session-comparison` | Multi-session **overlay** on offset-from-start axis | categorical per session |
-| `GET /analytics/nep/water-quality-summary` | **Status badge tile** (WHO/EPA good→critical) | status |
+| `GET /analytics/nep/water-quality-summary` | **Status badge tile** — the **7-tier** WHO/EPA scale (§10.9), drinking-compliant → extreme/flood | status (7) |
 | `GET /analytics/nep/probe-range-breakdown` | **Stacked bar** daily by R1/R2/R3 | categorical 3 (fixed) |
 | `GET /analytics/nep/turbidity-temperature-correlation` | **Scatter** + trend line + Pearson r annotation | single + status for r |
 | `GET /analytics/nep/session-events` | **Annotated event timeline** on the turbidity line (spikes) | status markers |
 | `GET /analytics/nep/gps-density` | **MapLibre heatmap** — grid-cell turbidity averages | sequential single hue |
 | `GET /analytics/org/device-comparison` | Multi-device **overlay** for one sensor | categorical per device |
 | `GET /analytics/org/fleet-health` | **Fleet-health table** (online/battery/usage/storage) with meters + status | status |
+| `GET /analytics/met/daily-summary` (**§10.7**) | **Data-completeness calendar heatmap** + **prevailing-wind compass** (dir + calm %) + **Beaufort-distribution stacked bar** (daily) + per-sensor **min–max range band + mean line** (temp/pressure/humidity, small multiples) + **solar kWh/day** & **precip mm/day** bars | sequential (completeness/solar) · categorical (Beaufort bands, fixed) · status |
+| `GET /analytics/nep/daily-summary` (**§10.7**) | Daily **turbidity min–max range band + mean line** + **completeness calendar heatmap** | sequential + status |
 | `GET /analytics/unit-convert` | *(utility — powers the units toggle, no screen)* | — |
 | `GET /analytics/{met,nep}/export-bulk` | Export menu (CSV/JSON), 90/30-day guard | — |
 
@@ -313,7 +335,8 @@ them thereafter — view / edit / soft-delete, plus an optional manual **Add dev
 `GET :id/stats` (stat tiles) · `GET :id/health` (health summary) · `GET :id/firmware-history`
 (**version timeline**) · `GET/PATCH :id/settings` (**full instrument-config editor** — QFE/QNH heights,
 wind-rose unit/period/orientation, graphical type, color scheme, page layout, device display units, and
-the per-sensor **NMEA show/log prefs grid**; ⚠ writes reach the live device → confirm-guard + audit) ·
+the per-sensor **NMEA show/log prefs grid**; ⚠ writes reach the live device → confirm-guard + audit, and the
+settings DTO is **unvalidated server-side** so **client Zod is the only guard** (§10.6)) ·
 `PUT/GET /devices/firmware-target`
 (admin) · `GET /devices/firmware-status` (**table flagging outdated firmware**, status-colored).
 
@@ -325,8 +348,8 @@ Tables + detail — each **mirrors (and betters) the corresponding mobile detail
   sub-panel (satellites / HDOP / quality / geoid), a **power** sub-panel (voltage / battery-voltage /
   current), a **GPS track map** (hardware + phone GPS), and a **raw NMEA (`dataSentence`) inspector**.
 - **NEP session detail** (mobile `LoggingSessionView`): turbidity/temperature **line chart with a series
-  toggle** (turbidity blue / temperature orange), **average cards** (avg turbidity NTU / avg temperature
-  °C), **battery-over-session**, and the GPS trail.
+  toggle** (turbidity blue / temperature orange), **min/avg/max cards** (the session carries
+  `turbidity{Avg,Min,Max}` and `temperature{Avg,Min,Max}`, not just the average), **battery-over-session**, and the GPS trail.
 - Both: `GET :id/measures` / `:id/samples` (paginated → **virtualized table**), `GET :id/export.csv`,
   and photo/file **galleries** (`records/:id/pictures`, `sessions/:id/files`) with upload/delete.
 
@@ -344,12 +367,28 @@ Tables + detail — each **mirrors (and betters) the corresponding mobile detail
 - **Share:** `POST/GET/DELETE /share` — shareable resources are **only** a `nepSession` or a `metRecord`
   (not dashboards/devices/analytics); expiry is **optional** (`expiresAt` nullable = no-expiry), with
   `viewCount` + revoke. Public `GET /public/:token` renders that one resource read-only, honoring expiry/revocation.
-- **Import/Export:** `POST /import/{nep,met}` wizard (validate + dry-run); `GET /export/sessions.zip`.
+- **Import/Export:** `POST /import/{nep,met}` is **`multipart/form-data`** (`file` + `deviceId`), **not JSON**
+  — the BFF route must stream multipart through. Fixed CSV headers (verified): **NEP** =
+  `SessionId,Timestamp,Turbidity_NTU,Temperature_C,ProbeRange,Lat,Lng,Battery_%` (required **SessionId +
+  Timestamp**; idempotent per `SessionId`, groups rows → sessions); **MET** = `Timestamp,Temp_C,Humidity_%,
+  Pressure_hPa,WindSpeed_ms,WindSpeed_kmh,WindDir_deg,DewPoint_C,Precip_mm,Solar_Wm2,Voltage_V,Lat,Lng`
+  (required **Timestamp**; one MetRecord per file). Both return **`{ inserted, upserted, skipped, errors[] }`**
+  (errors capped ~50, `Row N: …`) → the wizard's result report. ⚠ **There is no server dry-run** — an import
+  always commits (idempotent upsert). So the wizard's "dry-run" is **client-side**: parse + validate the CSV
+  in the browser and preview row/error counts against the headers above, then submit. These import headers
+  are exactly the **export** headers, so export→import **round-trips**. Export side: `GET /export/sessions.zip`
+  (batch) + per-record/session `export.csv` + `analytics/{met,nep}/export-bulk` (CSV/JSON).
 - **Org/RBAC/Audit:** `GET/PATCH /organizations/me`, users invite/role, `GET /audit`, `GET/PATCH
   /users/me`, `POST /organizations/accept-invite`, auth flows. The **audit log is comprehensive** — the
   backend already writes `AuditLog` entries on device CRUD/settings/firmware, alert-rule, share, user,
   org, auth, export, and record/session mutations — so the audit view is a real activity feed, and the
   device-settings "affects live device" action (decision #13) is audited server-side out of the box.
+  **`GET /audit` supports server-side filters** (verified): `action` (create/update/delete/invite/revoke/
+  export/login/logout), `resourceType` (device/user/session/record/alertRule/shareToken/org/settings),
+  `userId`, `from`/`to`, `page`/`limit` → the audit screen ships a **filter bar** over those, not a flat
+  list. Each entry carries a **`changes` before/after diff** plus **`ipAddress` / `userAgent`**, so rows
+  expand into a **change-diff detail drawer** (what field went from X→Y, by whom, from where) — the
+  "affects live device" settings edits (#13) are the highlight case.
 
 ### 6.1 Mobile-app → admin parity (the two apps are the source of truth for *what* to visualize)
 
@@ -403,7 +442,7 @@ in Month 7 so live features can appear from Month 8 onward.
   notification-bell shell.
 - **Realtime foundation:** socket.io client (JWT via the WS-ticket route — needs the **§11.1** backend
   endpoint; reconnect/backoff, status indicator); subscribe hooks; **bell wired live** to
-  `notification`/`alert:triggered` — the feed's **`unreadCount`** drives the badge (first live feature).
+  `notification:new`/`alert:triggered` — the feed's **`unreadCount`** drives the badge (first live feature).
 - **Simulator & demo data:** a device/WebSocket **simulator** emitting `met:latest` / `nep:sample` /
   `device:status` / `alert:triggered`, plus a seeded demo org + devices — so realtime and every stat
   view can be built, tested (CI), and demoed **without hardware**.
@@ -424,8 +463,8 @@ in Month 7 so live features can appear from Month 8 onward.
 
 - **Global Scope Bar (§3.6):** the app-wide filter row — defaults to **All devices / whole org**, drills
   to device / device-type / date range / units, URL-synced. Shipped here and inherited by every later page.
-- **Dashboard home:** KPI stat-tile row (`/dashboard/summary`) with sparklines; device online table;
-  active-alerts panel.
+- **Dashboard home:** KPI stat-tile row (`/dashboard/summary` **+ §10.8 enrichment** → per-tile
+  sparklines + **active alert-rules** tile); device online table; active-alerts panel.
 - **Live tiles:** MET latest (**all sensors** — wind true/rel, temp, humidity, pressure, solar, precip,
   dew point, power/voltage) + NEP latest streaming via `met:latest` / `nep:sample` / `device:status`.
 - **Signature wind rose** (`/dashboard/met/windrose`, 10-min & 2-min) as a reusable **visx polar**
@@ -445,7 +484,7 @@ in Month 7 so live features can appear from Month 8 onward.
 | Deliverable | Status |
 |---|:--:|
 | Global Scope Bar (All-default + drill-down, URL-synced) | ⬜ |
-| Dashboard home + KPI tiles + sparklines | ⬜ |
+| Dashboard home + KPI tiles + sparklines + active-alert tile (§10.8 enrichment) | ⬜ |
 | Live MET/NEP tiles over WebSocket | ⬜ |
 | Wind rose (visx) reusable primitive | ⬜ |
 | MET history multi-line chart | ⬜ |
@@ -459,8 +498,11 @@ in Month 7 so live features can appear from Month 8 onward.
 - **Analytics shell** built on the global **Scope Bar** (§3.6) — same *All*-default + drill-down
   (device / device-type / date range / sensor / units).
 - Charts: **wind rose (rich)**, **multi-sensor** (small-multiples / normalized — *no dual axis*),
-  **statistics** (distribution + Beaufort), **wind-gust-history**, **comfort-indices**,
-  **fog-risk**, **pressure-tendency** widget.
+  **statistics** (distribution + Beaufort), **wind-gust-history** (peak markers + gust direction),
+  **comfort-indices** (+ comfort-label badge), **fog-risk**, **pressure-tendency** widget.
+- **MET daily-summary suite** (`/analytics/met/daily-summary` — **§10.7** backend prereq): **data-completeness
+  calendar heatmap**, **prevailing-wind compass** + calm-% meter, **Beaufort-distribution stacked bar**,
+  per-sensor **min–max range bands + mean** (small multiples), **solar-kWh/day** & **precip-mm/day** bars.
 - **Records (MET) module:** table + **detail = multi-series column-picker chart** over the full measure
   set (incl. **Current, QFE/QNH, GPS height, true/relative wind, dew point**) + **GPS-quality** & **power**
   sub-panels + **GPS track map** + **raw-NMEA inspector**; paginated measures (virtualized); CSV export; **photo gallery**.
@@ -471,6 +513,7 @@ in Month 7 so live features can appear from Month 8 onward.
 |---|:--:|
 | Analytics shell + filter bar + units integration | ⬜ |
 | 7 MET analytics charts (per Section 6) | ⬜ |
+| MET daily-summary suite (completeness calendar, prevailing-wind, Beaufort dist., min–max bands, solar/precip) — §10.7 prereq | ⬜ |
 | Aggregate sensor picker 12→15 (+QNH/QFE/GPS-alt via §10.5 backend prereq) | ⬜ |
 | Records module (table/detail/measures/CSV/photos) | ⬜ |
 | Shared chart interaction + export + table-view | ⬜ |
@@ -481,6 +524,8 @@ in Month 7 so live features can appear from Month 8 onward.
 - **NEP analytics:** turbidity-distribution histogram (WHO/EPA bands), session-comparison overlay,
   **water-quality badge**, probe-range-breakdown stacked bar, **turbidity↔temp correlation scatter**
   (+Pearson r), session-events timeline; cross-session daily trend.
+- **NEP daily-summary** (`/analytics/nep/daily-summary` — **§10.7** backend prereq): daily **turbidity
+  min–max range bands + mean line** + **data-completeness calendar heatmap**.
 - **Maps:** **GPS density heatmap** (MapLibre sequential) + per-session GPS trail colored by turbidity.
 - **Sessions (NEP) module:** filterable table (date/device/probe/search); **detail = turbidity/temperature
   line chart w/ series toggle** + **average cards** (avg NTU / avg °C) + **battery-over-session** + GPS
@@ -490,6 +535,7 @@ in Month 7 so live features can appear from Month 8 onward.
 | Deliverable | Status |
 |---|:--:|
 | 6 NEP analytics charts (per Section 6) | ⬜ |
+| NEP daily-summary (turbidity min–max bands + completeness calendar) — §10.7 prereq | ⬜ |
 | GPS density heatmap + turbidity-colored trails | ⬜ |
 | Sessions module (table/detail/samples/CSV/files) | ⬜ |
 | Org device-comparison + fleet-health dashboard | ⬜ |
@@ -519,8 +565,10 @@ in Month 7 so live features can appear from Month 8 onward.
 ### Month 12 — Import/Export, Hardening, A11y & Launch
 **Theme:** finish the data lifecycle, make it bulletproof, ship it.
 
-- **Import wizard:** CSV import (`import/nep`, `import/met`) with client validation + **dry-run** +
-  progress + result report. **Batch ZIP export** (`export/sessions.zip`) + consolidated CSV export UX.
+- **Import wizard:** **multipart** CSV upload (`import/nep`, `import/met`; `file` + `deviceId`) with
+  **client-side** validation + a **client-side dry-run preview** (no server dry-run exists) against the fixed
+  NEP/MET headers (§6), progress, and a `{inserted,upserted,skipped,errors[]}` result report. **Batch ZIP
+  export** (`export/sessions.zip`) + consolidated CSV export UX.
 - **Accessibility:** axe-clean, keyboard/focus, reduced-motion, **chart texture channel** for
   CVD/print/forced-colors; finalize i18n extraction; empty/loading/error states everywhere.
 - **Performance:** code-split, virtualization, query prefetch/caching, chart perf, Lighthouse budget.
@@ -653,20 +701,121 @@ scalars, so mean / percentile / stdDev logic is unaffected (Beaufort stays wind-
 **Effort:** ~1 hour incl. tests · **Owner:** backend · **Blocks:** the Month 9 aggregate sensor picker
 listing these three (frontend just adds them to the allow-list once shipped).
 
-### 10.6 Form validation & error handling (client Zod + server fallback — no backend change)
+### 10.6 Form validation & error handling (client Zod is the PRIMARY guard — verified against the DTOs)
 
-The backend's `ValidationPipe` returns validation failures as an **array of human-readable strings** in
-`message` (no per-field mapping). Rather than change the backend, every form pairs:
-- a **client-side Zod schema** mirroring the DTO rules (email format, required fields, ranges like
-  `cooldownMinutes ≥ 0`, threshold numeric, comparator enum) → **instant inline field errors** on
-  blur/submit, before any request; and
-- a **server-error fallback** — if the API still 400s, its `error.message` (string **or** array) renders
-  as a **form-level list** above the fields, and the submit is re-enabled.
+**The backend DTOs are mostly Swagger-documentation shells, not validators** (verified by reading every
+`dto.ts`). So client validation is not a nicety that mirrors the server — it is frequently the **sole** line
+of defense, and must be treated as the contract:
+- **`UpdateDeviceSettingsDto` has *zero* validation decorators** — and it is the highest-risk form in the app:
+  its writes reach the **live field device** (decision #13). The server accepts `qfeHeightM`, `colorScheme`,
+  `unitWindSpeed`, `windRoseOrient`, and the `sensorShowPrefs`/`sensorLogPrefs` arrays **unchecked**. The
+  client Zod is therefore **authoritative and strict** here: enum the unit strings (§10.9), bound the QFE/QNH
+  heights, constrain the enumerated selects, and validate the NMEA-prefs grid shape — the backend will not.
+- **Auth DTOs (`auth/dto.ts`) carry no class-validator at all** — login / forgot / reset are **not**
+  server-validated; email format and password length are **client-enforced** (server `MinLength(8)` exists
+  only on accept-invite and change-password).
+- **Alert-rules *do* validate enums** (`appType`; `condition` ∈ gt/lt/gte/lte; `deviceId` / `notifyUserIds`
+  as Mongo ids) — but **`sensor` is a free string** (not enum'd) and **`threshold` / `cooldownMinutes` have
+  no range** (no `@Min(0)`). The rule builder's Zod must add `sensor` ∈ the known-sensor enum (§10.9),
+  `cooldownMinutes ≥ 0`, and sane threshold bounds — none guaranteed by the API.
+- **Endpoints that *do* validate** (org-invite `email`/`role`, share `resourceType`/`expiresAt`,
+  firmware-target `deviceType`/`version`) still get the server fallback below.
 
-Zod schemas live beside the api client next to the response schemas (§3.1), so request and response
-validation share one place. This gives field-precise UX with **no backend change** (accepting minor
-rule duplication). *(If authoritative per-field server errors are ever wanted, a small backend
-`exceptionFactory` returning `{ field, message }[]` would be the upgrade — not planned.)*
+Every form pairs a **strict client Zod schema** (instant inline field errors on blur/submit) with a
+**server-error fallback** — when the `ValidationPipe` *does* fire, it returns an **array of human-readable
+strings** in `message` (no per-field map), so the API's `error.message` (string **or** array) renders as a
+**form-level list** and the submit re-enables. Zod schemas live beside the api client next to the response
+schemas (§3.1). **No backend change** — treat client Zod as the source of truth, not a duplicate of it.
+*(If authoritative per-field server errors are ever wanted, a backend `exceptionFactory` returning
+`{ field, message }[]` would be the upgrade — not planned.)*
+
+### 10.7 Backend prerequisite — expose the daily-summary rollups (populator + read endpoints)
+
+**Decision (resolves §17 Q20): yes — wire the daily-summary layer** (the *largest* of the four backend
+prerequisites; the others are near-trivial). The models **`MetDailySummary`** and **`NepDailySummary`**
+are already fully designed but are currently **dead code** — verified: no service, controller, endpoint,
+writer, or seed touches them (`grep -rln DailySummary src` returns only the two model files). They hold
+premium daily analytics that **nothing else in the API computes**, so exposing them is the single biggest
+"best-analytics" win available:
+- **MET:** `windDirPrevailing`, `windCalmPct`, `beaufortDistribution[]`, per-sensor daily
+  **min/max/avg** (temp, humidity, pressure), `pressureTendency` (+ hPa/hr), `precipTotalMm`,
+  `precipRate{Max,Avg}MmHr`, `solar{Max,Avg}Wm2`, **`solarDailyKwhM2`**, `dewPointAvgC`,
+  `dewPointSpreadAvg`, and **`completenessPercent`** (`sampleCount`/`expectedSamples`).
+- **NEP:** daily `turbidity{Avg,Min,Max}`, `temperature{Avg,Min,Max}`, sample counts / completeness.
+
+**Two pieces of backend work (this is why it's the heaviest prereq — it needs a *populator*, not just a map edit):**
+1. **A populator.** An idempotent per-`(deviceId, date)` **upsert** that computes a day's summary from
+   `MetMeasure` / `NepSample`. Run it **incrementally on session/record close** (or a nightly cron for
+   the prior day), plus a **one-off backfill script** for existing history. `expectedSamples` derives
+   from the device's logging cadence; `completenessPercent = sampleCount / expectedSamples`.
+2. **Two read endpoints** (org-scoped, JWT, follow the existing `{ data }` / analytics conventions):
+   - `GET /analytics/met/daily-summary?deviceId=&from=&to=` → `MetDailySummary[]`
+   - `GET /analytics/nep/daily-summary?deviceId=&from=&to=` → `NepDailySummary[]`
+   Both **require `deviceId`** like the other analytics endpoints (§3.6 rules apply: device-scoped
+   panels auto-select a default device); a future org-wide aggregate is out of scope (§17 Q12).
+
+**UI (Month 9 MET / Month 10 NEP):** a **data-completeness calendar heatmap** (the headline data-quality
+view — sequential single hue), a **prevailing-wind compass** (+ calm-% meter), a **Beaufort-distribution
+stacked bar** per day (categorical ordinal, fixed), per-sensor **min–max range bands with a mean line**
+(small multiples — *no dual axis*), and **solar-kWh/day** & **precip-mm/day** bars. Add the two endpoints
+to the Swagger doc + e2e fixtures.
+
+**Effort:** ~0.5–1 day (populator + backfill + 2 endpoints + tests) · **Owner:** backend · **Blocks:** the
+Month 9/10 daily-analytics screens (record/session detail and per-device charts work without it).
+
+### 10.8 Backend prerequisite — enrich `/dashboard/summary` (active-alert count + sparklines)
+
+**Decision (resolves §17 Q21): yes, a tiny additive change.** The Home KPI row (§6, Month 8) promises an
+**active-alerts** tile and **per-tile sparklines**, but `dashboardSummary()` today returns **scalar counts
+only** (`totalDevices, onlineDevices, offlineDevices, metLinkDevices, nepLinkDevices, totalMetRecords,
+totalNepSessions, serverTime`) — verified in `dashboard.service.ts`. There is **no "currently-firing
+alerts" concept anywhere** in `dashboard`/`analytics`, and no time series to back a sparkline. Rather than
+fake it client-side, extend the one endpoint:
+- **`activeAlertRules`** — `countDocuments({ organizationId, isActive: true })` on `AlertRule` (the tile
+  reads "N armed alert rules"; deep-links to `/alerts`). *(Distinct from "firing now," which the system
+  doesn't track; recent alert **activity** is still available via the notifications feed / `alert:triggered`.)*
+- **`sparklines`** — a small `{ records: number[], sessions: number[], … }` of the last ~14 daily counts
+  (cheap `$group`-by-day), so each KPI tile shows a trend, not just a number.
+
+Additive, no migration, cache-friendly (the summary is already cached). **Effort:** ~1 h · **Owner:**
+backend · **Blocks:** the Month 8 KPI-tile sparklines + active-alert tile (the rest of the dashboard is
+unaffected).
+
+### 10.9 Reference scales, bands & status semantics (mirror `analytics.util.ts` — never reinvent)
+
+The backend owns a set of **authoritative classification scales** in `analytics/analytics.util.ts`. Every
+label, threshold, band boundary, and legend in the UI **reproduces these verbatim** — a chart that invents
+its own Beaufort ranges or turbidity bands would silently disagree with the numbers the API returns. They
+live in **one frontend `scales.ts`**, mirrored from the backend and **drift-checked in CI** like the Swagger types:
+
+- **Wind-speed bands — 5, "Smithtek-aligned"** (the wind-rose stack + legend): `Calm` 0–0.5 · `Light`
+  0.5–3.3 · `Gentle` 3.3–7.9 · `Moderate` 7.9–13.8 · `Strong` ≥13.8 m/s. (§6's "16 sectors × 5 bands" = these five.)
+- **Beaufort — 13 forces (0–12)**, each with `label` + `description` + m/s range. The `BeaufortScale`
+  primitive and the statistics Beaufort badge use the backend strings verbatim; the descriptions
+  ("Whole trees in motion") become the badge tooltips.
+- **Comfort — 8 labels** off effective temperature: Very Hot ≥40 · Hot ≥32 · Warm ≥27 · Comfortable ≥16 ·
+  Cool ≥5 · Cold ≥−10 · Very Cold ≥−28 · Dangerously Cold. (Drives the comfort-index badge added in §6.)
+- **Fog risk — 3 levels** off dew-point spread (°C): `HIGH` <2 · `MODERATE` ≤4 · `LOW` >4.
+- **Pressure tendency — 5 states** (normalised to hPa/3h), **not 3**: `rising_rapidly` >6 · `rising` >1.6 ·
+  `steady` ≥−1.6 · `falling` ≥−6 · `falling_rapidly` <−6 — each with a backend label string. The
+  `TendencyWidget` therefore needs **five** arrows/labels (rapid-rise and rapid-fall included), not up/steady/down.
+- **Turbidity / water-quality — 7 WHO/EPA classes** (`NTU_CLASSES`), **not 4**: `0–1` WHO-drinking-compliant ·
+  `1–10` EPA-recreational-safe · `10–50` slightly turbid · `50–100` moderately · `100–500` turbid ·
+  `500–1000` highly · `>1000` extreme/flood. These are the histogram reference bands (§6 turbidity-distribution)
+  and the water-quality-badge tiers.
+- **Probe range** derives at NTU thresholds `R1` <10 · `R2` ≤1000 · `R3` >1000.
+- **Interval enum** for every time-bucketed endpoint (history, gust, comfort, fog, multi-sensor): exactly
+  `1min | 5min | 1h | 4h | 1d` — the date-range/interval picker offers **these five keys only**.
+- **Units** (`/analytics/unit-convert`): wind `m/s` · `km/h` · `kt`≡`knots` · `mph` · **`bft`** (Beaufort as a
+  unit) — confirms the §3.4 toggle set includes Beaufort; `kt` and `knots` are both accepted spellings.
+
+> **Colour-source rule (resolves a conflict).** `NTU_CLASSES` ships a raw `color` hex per class
+> (`#ffeb3b`, `#f44336`, …), and this is the **one place the backend dictates colour**. Treat those hexes as
+> **advisory only** — they are *not* validated against the §4 dark-mode surfaces or the CVD ΔE target. The
+> frontend maps the NTU **class (by index/label)** onto its **own validated 7-step sequential+status ramp**
+> (§4), and likewise maps the 5 tendency / 3 fog / 8 comfort states onto the reserved status tokens — the
+> backend `color` is **never rendered directly**. This keeps the palette-validator authoritative and
+> dark-mode/CVD-safe while the *class boundaries* stay backend-owned. (Frontend-only; no backend change.)
 
 ---
 
@@ -757,13 +906,21 @@ server" ideal. Use this if the backend add can't be scheduled before Month 7.
 The viz + UI primitives every feature composes (built in Month 7–8, extended thereafter):
 
 - **Charts:** `StatTile`, `Sparkline`, `TimeSeriesChart`, `WindRose` (visx polar), `Histogram`,
-  `ScatterChart` (+ trend/annotation), `StackedBar`, `TendencyWidget`, `StatusBadge`, `Meter`,
-  `BeaufortScale`. All share crosshair/tooltip, table-view toggle, PNG/CSV export, null-gap handling.
+  `ScatterChart` (+ trend/annotation), `StackedBar`, `RangeBandChart` (min–max + mean), `CalendarHeatmap`
+  (data-completeness / daily magnitude), `Compass` (prevailing wind), `TendencyWidget`, `StatusBadge`,
+  `Meter`, `BeaufortScale`. All share crosshair/tooltip, table-view toggle, PNG/CSV export, null-gap handling.
 - **Maps:** `MapCanvas` with `FleetLayer` (status markers), `TrailLayer` (turbidity-colored), `HeatmapLayer` (GPS density).
 - **Data/UI:** `DataTable` (virtualized, server-paginated), `FilterBar`, `DateRangePicker`, `DeviceSelect`,
   `UnitToggle`, `ScopeBar` (global *All*→drill-down, URL-synced), `ExportMenu`, `LiveIndicator`,
   `Toast`, `EmptyState`/`ErrorState`, `Skeletons`,
-  `RuleBuilder` (alerts), `FileGallery` (Cloudinary), `Pagination`, `ConfirmDialog`.
+  `RuleBuilder` (alerts), `FileGallery` (Cloudinary), `Pagination`, `ConfirmDialog`,
+  `AuditLogView` (filter bar + row-expand `DiffViewer` over `changes`), `DiffViewer` (before/after field diff).
+- **Realtime constants:** a shared **`ClientEvent`** map (mirrored from the backend `realtime.events.ts`)
+  is the *only* place socket event-name strings live — no hand-typed `'notification'` / `'nep:session_created'` at call sites.
+- **Scale constants:** a shared **`scales.ts`** (mirrored from `analytics.util.ts`, drift-checked in CI) is the
+  single source for the 5 wind-speed bands, 13 Beaufort forces, 8 comfort labels, 5 tendency states, 3 fog
+  levels, 7 WHO/EPA turbidity classes, and the interval enum (**§10.9**) — `BeaufortScale`, `StatusBadge`,
+  `TendencyWidget`, and `Histogram` bands all read from it, so labels/thresholds can't drift from the API.
 - **Hooks:** typed query hooks per endpoint (`useSummary`, `useWindRose`, …), `usePaginatedQuery`,
   `useSocket` / `useDeviceSubscription` / `useOrgEvents`, `useUnits`, `useTimezone`, `useRbac`, `useExport`.
 
@@ -778,12 +935,17 @@ The viz + UI primitives every feature composes (built in Month 7–8, extended t
 - **Critical path / dependencies:** Month 7 (shell + auth + design system + socket + component base) unblocks
   everything. Charts primitives (M8) precede the analytics suites (M9–M10). Realtime plumbing (M7) precedes
   live tiles (M8) and alert toasts (M11). Import/layouts (M11–M12) are last so they can flex under pressure.
-- **Backend prerequisites (the *only* two — both small, additive, backend-owned):**
+- **Backend prerequisites (four — all additive, backend-owned; three near-trivial, one ~half-day):**
   1. **§11.1 WS-auth ticket** (`POST /v1/auth/ws-ticket`, ~1 h) — **blocks Month 7 realtime**; without it
      the socket can't authenticate under BFF (Option B is a zero-backend fallback).
   2. **§10.5 analytics-map expansion** (3 keys, ~1 h) — **blocks the Month 9** aggregate sensor picker
      covering QNH/QFE/GPS-altitude. Not on the critical path; record-detail charting works without it.
-  Everything else is frontend-only against the API as-shipped. Both should be scheduled before their gated month.
+  3. **§10.8 summary enrichment** (active-alert count + sparklines, ~1 h) — **blocks the Month 8** KPI-tile
+     sparklines + active-alert tile. Additive to `/dashboard/summary`; the rest of the dashboard is unaffected.
+  4. **§10.7 daily-summary rollups** (populator + backfill + 2 read endpoints, ~0.5–1 day — the *only*
+     non-trivial one) — **blocks the Month 9/10** daily-analytics screens (calendar heatmap, prevailing-wind,
+     Beaufort distribution, min–max bands). Record/session detail works without it; wires up two otherwise-dead models.
+  Everything else is frontend-only against the API as-shipped. Each should be scheduled before its gated month.
 - **Branch/PR flow:** feature branches → PR → CI (typecheck/lint/unit/component/e2e/axe/Lighthouse) → Vercel
   preview → review → merge. **Feature flags** gate half-built surfaces; staged enable in prod.
 - **Per-month acceptance = a demo script**, e.g. M8: "log in → dashboard shows live KPIs → a simulated
@@ -795,8 +957,9 @@ The viz + UI primitives every feature composes (built in Month 7–8, extended t
 ## 16. Non-goals (explicitly out of scope)
 
 Native mobile apps (they exist); offline/PWA; billing/subscriptions; multi-organization switching
-(single-org assumed); changing the backend API (**except** two small additive backend prerequisites the
-admin panel needs: the analytics-map expansion §10.5 and the WS-auth ticket endpoint §11.1); real FCM/APNs push (backend seam exists — delivery is
+(single-org assumed); changing the backend API (**except** four additive backend prerequisites the
+admin panel needs: the analytics-map expansion §10.5, the WS-auth ticket endpoint §11.1, the
+`/dashboard/summary` enrichment §10.8, and the daily-summary rollups §10.7); real FCM/APNs push (backend seam exists — delivery is
 WebSocket for now); white-labeling beyond the theme tokens; a public marketing site; a **freeform
 per-user tile-builder dashboard** (a fixed curated dashboard ships instead — layout endpoints deferred);
 **per-operator (human-user) analytics attribution** (the Scope Bar operates on device — adding a `userId`
@@ -808,8 +971,8 @@ tracking only — no file upload/distribution).
 
 ## 17. Resolved decisions (was: open questions)
 
-All twelve are now **decided** (three rounds of Q&A). This section is the record; the rest of the plan
-reflects them.
+All are now **decided** (multiple rounds of Q&A, plus a final backend-gap audit that added #20–#21).
+This section is the record; the rest of the plan reflects them.
 
 | # | Question | Decision |
 |---|---|---|
@@ -832,6 +995,8 @@ reflects them.
 | 17 | Device onboarding — manual provisioning or auto-register? | **Auto-register on first pairing** (app calls `POST /devices`); panel = view/edit/soft-delete **+ optional manual Add** |
 | 18 | Firmware — file hosting or version tracking? | **Version tracking only** (target version + outdated-status + history); no binary hosting; updates are out-of-band |
 | 19 | Form validation UX (backend returns unstructured `message[]`)? | **Client Zod + server fallback** (§10.6) — inline field errors client-side, server messages as a form-level fallback; no backend change |
+| 20 | Expose the unwired daily-summary rollups (prevailing wind, calm %, Beaufort dist., completeness %, solar kWh/day)? | **Yes — the heaviest backend prereq** (§10.7): populator + backfill + 2 read endpoints; wires up two otherwise-dead models into a daily-analytics suite |
+| 21 | `/dashboard/summary` lacks the active-alert count + sparkline series its KPI tiles promise? | **Tiny backend addition** (§10.8) — add `activeAlertRules` count + last-14-day sparkline counts; not faked client-side |
 
 ---
 
@@ -840,11 +1005,12 @@ reflects them.
 **Auth:** register*, login, refresh, logout, forgot-password, reset-password ·
 **Org:** accept-invite, me (GET/PATCH), me/users (list/invite/PATCH) ·
 **Users:** me (GET/PATCH) · **Audit:** list ·
-**Dashboard:** summary, devices, met/latest, met/windrose, met/history, met/stats, nep/sessions,
+**Dashboard:** summary (**+ §10.8** enrichment: activeAlertRules + sparklines), devices, met/latest,
+met/windrose, met/history, met/stats, nep/sessions,
 nep/latest, nep/trend, nep/map, nep/analytics, org/device-map ·
 **Analytics:** met/{wind-rose,multi-sensor,statistics,wind-gust-history,comfort-indices,fog-risk,
-pressure-tendency,export-bulk}, nep/{turbidity-distribution,session-comparison,water-quality-summary,
-probe-range-breakdown,turbidity-temperature-correlation,session-events,gps-density,export-bulk},
+pressure-tendency,**daily-summary** (§10.7),export-bulk}, nep/{turbidity-distribution,session-comparison,water-quality-summary,
+probe-range-breakdown,turbidity-temperature-correlation,session-events,gps-density,**daily-summary** (§10.7),export-bulk},
 org/{device-comparison,fleet-health}, unit-convert ·
 **Devices:** list, create, :id (GET/PATCH/DELETE), :id/{stats,health,firmware-history,settings},
 firmware-target (GET/PUT), firmware-status ·
@@ -855,8 +1021,10 @@ firmware-target (GET/PUT), firmware-status ·
 **Share:** create, list, :id delete · **Public:** :token · **Export:** sessions.zip ·
 **Import:** nep, met · **Sync:** status *(read-only health widget)* · **System:** health, version ·
 **Dashboard-layouts:** list, create, :id (PATCH/DELETE), :id/set-default ·
-**Realtime `/v1/ws`:** subscribe/unsubscribe:device; server events met:latest, met:windrose, nep:sample,
-nep:session_created, device:status, device:connected, notification, alert:triggered.
+**Realtime `/v1/ws`:** subscribe/unsubscribe:device (+ `ping`); server events **`met:latest`**,
+**`met:windrose`**, **`nep:sample`**, **`nep:session:created`**, **`device:status`**, **`device:connected`**,
+**`notification:new`**, **`alert:triggered`** *(exact names — see §3.2; `nep:session:created` and
+`notification:new` are colon-cased, not the underscored forms)*.
 
 \* `register` is typically admin/seed-time; the panel primarily uses invite → accept-invite.
 
