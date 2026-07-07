@@ -1,0 +1,159 @@
+/*
+ * Design tokens (plan §4). Colour roles as HSL channel triplets so Tailwind's
+ * `hsl(var(--role) / <alpha>)` works. Everything is referenced BY ROLE — no raw
+ * hex at call sites. Theme = `:root[data-theme]` (explicit toggle, via next-themes)
+ * layered over `prefers-color-scheme` (system default before hydration / no-JS).
+ *
+ * Chart palette is seeded from the §4 table and re-validated by
+ * scripts/validate_palette.js (CVD ΔE ≥ 12) in CI.
+ */
+
+:root {
+  /* Base UI roles — light */
+  --background: 60 14% 99%;
+  --foreground: 60 2% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 60 2% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 60 2% 12%;
+  --primary: 213 68% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 60 5% 96%;
+  --secondary-foreground: 60 2% 20%;
+  --muted: 60 5% 96%;
+  --muted-foreground: 60 2% 42%;
+  --accent: 213 90% 96%;
+  --accent-foreground: 213 68% 30%;
+  --destructive: 0 61% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 60 6% 88%;
+  --input: 60 6% 88%;
+  --ring: 213 68% 50%;
+  --radius: 0.6rem;
+
+  /* Type — self-hosted system stack (no external font fetch; CSP-clean). */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* Categorical 1–8 (fixed order, never cycled) — light */
+  --chart-1: 213 68% 48%;
+  --chart-2: 159 73% 33%;
+  --chart-3: 38 92% 40%;
+  --chart-4: 120 55% 30%;
+  --chart-5: 249 48% 48%;
+  --chart-6: 0 72% 52%;
+  --chart-7: 322 55% 50%;
+  --chart-8: 22 82% 45%;
+
+  /* Sequential blue ramp (turbidity/GPS density/magnitude) — light */
+  --seq-0: 213 85% 89%;
+  --seq-1: 213 80% 79%;
+  --seq-2: 214 74% 63%;
+  --seq-3: 213 68% 50%;
+  --seq-4: 215 73% 38%;
+  --seq-5: 214 78% 24%;
+
+  /* Diverging neutral midpoint */
+  --diverging-mid: 45 12% 93%;
+
+  /* Status (always ship with icon + label, never colour alone) */
+  --status-ok: 120 86% 34%;
+  --status-warn: 41 96% 54%;
+  --status-error: 0 61% 52%;
+  --status-info: 213 68% 50%;
+  --status-offline: 60 2% 53%;
+
+  /* Chart surface — what the palette validator checks contrast against */
+  --chart-surface: 60 14% 99%;
+}
+
+/* Dark values, shared by explicit toggle and system preference. */
+:root[data-theme='dark'] {
+  --background: 60 2% 10%;
+  --foreground: 60 6% 92%;
+  --card: 60 2% 13%;
+  --card-foreground: 60 6% 92%;
+  --popover: 60 2% 13%;
+  --popover-foreground: 60 6% 92%;
+  --primary: 213 74% 62%;
+  --primary-foreground: 60 2% 10%;
+  --secondary: 60 2% 18%;
+  --secondary-foreground: 60 6% 90%;
+  --muted: 60 2% 18%;
+  --muted-foreground: 60 5% 62%;
+  --accent: 213 40% 24%;
+  --accent-foreground: 213 74% 82%;
+  --destructive: 0 61% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 60 3% 22%;
+  --input: 60 3% 22%;
+  --ring: 213 74% 62%;
+
+  --chart-1: 213 74% 62%;
+  --chart-2: 159 66% 52%;
+  --chart-3: 41 88% 60%;
+  --chart-4: 104 56% 50%;
+  --chart-5: 249 66% 72%;
+  --chart-6: 0 78% 68%;
+  --chart-7: 322 66% 70%;
+  --chart-8: 22 86% 60%;
+
+  --seq-0: 214 30% 20%;
+  --seq-1: 214 45% 30%;
+  --seq-2: 214 58% 42%;
+  --seq-3: 213 68% 55%;
+  --seq-4: 213 74% 68%;
+  --seq-5: 213 82% 80%;
+
+  --diverging-mid: 60 3% 21%;
+
+  --status-ok: 120 60% 55%;
+  --status-warn: 41 90% 60%;
+  --status-error: 0 70% 64%;
+  --status-info: 213 74% 62%;
+  --status-offline: 60 2% 53%;
+
+  --chart-surface: 60 2% 10%;
+}
+
+/* System preference before hydration / no-JS — unless an explicit light toggle wins. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: 60 2% 10%;
+    --foreground: 60 6% 92%;
+    --card: 60 2% 13%;
+    --card-foreground: 60 6% 92%;
+    --popover: 60 2% 13%;
+    --popover-foreground: 60 6% 92%;
+    --primary: 213 74% 62%;
+    --primary-foreground: 60 2% 10%;
+    --secondary: 60 2% 18%;
+    --secondary-foreground: 60 6% 90%;
+    --muted: 60 2% 18%;
+    --muted-foreground: 60 5% 62%;
+    --accent: 213 40% 24%;
+    --accent-foreground: 213 74% 82%;
+    --destructive: 0 61% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 60 3% 22%;
+    --input: 60 3% 22%;
+    --ring: 213 74% 62%;
+
+    --chart-1: 213 74% 62%;
+    --chart-2: 159 70% 46%;
+    --chart-3: 41 90% 58%;
+    --chart-4: 120 60% 50%;
+    --chart-5: 249 64% 68%;
+    --chart-6: 0 79% 68%;
+    --chart-7: 322 68% 68%;
+    --chart-8: 22 88% 60%;
+
+    --status-ok: 120 60% 55%;
+    --status-warn: 41 90% 60%;
+    --status-error: 0 70% 64%;
+    --status-info: 213 74% 62%;
+    --status-offline: 60 2% 53%;
+
+    --chart-surface: 60 2% 10%;
+  }
+}

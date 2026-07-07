@@ -1,0 +1,155 @@
+name: CI (admin-web)
+
+on:
+  push:
+    branches: [main, 'Month-*']
+    paths:
+      - 'admin-web/**'
+      - '.github/workflows/ci-admin-web.yml'
+  pull_request:
+    paths:
+      - 'admin-web/**'
+      - '.github/workflows/ci-admin-web.yml'
+
+defaults:
+  run:
+    working-directory: admin-web
+
+jobs:
+  # ── Fast gate (blocks merge): typecheck → lint → unit/component (MSW) → build →
+  #    palette validator → Swagger↔client contract-drift. Network is mocked. ──────
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: yarn
+          cache-dependency-path: admin-web/yarn.lock
+
+      - name: Enable Corepack (yarn)
+        run: corepack enable
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Typecheck
+        run: yarn typecheck
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Unit + component tests (Vitest + RTL, MSW-mocked)
+        run: yarn test
+
+      - name: Build
+        run: yarn build
+        env:
+          SESSION_SECRET: ci_session_secret_at_least_32_chars_long
+          BACKEND_URL: http://localhost:3000/v1
+          NEXT_PUBLIC_BACKEND_WS_URL: ws://localhost:3000
+
+      - name: Validate chart palette (light + dark)
+        run: yarn validate-palette
+
+      - name: Swagger ↔ client contract-drift check
+        run: yarn check-contract
+
+      - name: Dependency audit (non-blocking; Dependabot is the merge signal)
+        run: yarn audit --level high
+        continue-on-error: true
+
+  # ── Hardware-free, deterministic E2E: real backend + seed + simulator + the
+  #    built admin-web, then Playwright + axe + Lighthouse (non-blocking). ────────
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:6
+        ports: ['27017:27017']
+    env:
+      # Backend
+      MONGO_URI: mongodb://localhost:27017/observator_ci
+      JWT_ACCESS_SECRET: ci_access_secret
+      JWT_REFRESH_SECRET: ci_refresh_secret
+      SWAGGER_USER: docs
+      SWAGGER_PASSWORD: ci_docs
+      # dev mode so forgot-password returns a devToken (reset E2E has no mailbox)
+      NODE_ENV: development
+      MOBILE_API_KEY: obs_mob_ci_simulator_key
+      FRONTEND_URL: http://localhost:3001
+      # admin-web
+      SESSION_SECRET: ci_session_secret_at_least_32_chars_long
+      BACKEND_URL: http://localhost:3000/v1
+      NEXT_PUBLIC_BACKEND_WS_URL: ws://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── Backend: install, build, seed, capture the seeded org id, start ──
+      - name: Backend install
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend build
+        working-directory: backend
+        run: npm run build
+
+      - name: Seed backend (idempotent; ~1080 MET measures + NEP data)
+        working-directory: backend
+        run: |
+          npm run seed | tee /tmp/seed.log
+          ORG_ID=$(grep -oE 'Organization ID: [a-f0-9]{24}' /tmp/seed.log | awk '{print $3}')
+          echo "MOBILE_ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+
+      - name: Start backend
+        working-directory: backend
+        run: |
+          node dist/main.js &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && break || sleep 2;
+          done
+
+      # ── admin-web: install, build, start against the backend ──
+      - name: Enable Corepack (yarn)
+        run: corepack enable
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      - name: Start admin-web
+        run: |
+          yarn start &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/login && break || sleep 2;
+          done
+
+      # ── Simulator: emit live events through the real pipeline ──
+      - name: Run simulator (8 ticks)
+        run: TICKS=8 INTERVAL_MS=1500 yarn simulator
+
+      - name: Install Playwright browsers
+        run: yarn playwright install --with-deps chromium
+
+      - name: Playwright + axe
+        run: yarn test:e2e
+
+      - name: Lighthouse (Web-Vitals budget, non-blocking now)
+        run: yarn lighthouse || true
+        continue-on-error: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: admin-web/playwright-report
+          retention-days: 7

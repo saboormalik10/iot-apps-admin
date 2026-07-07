@@ -1,0 +1,15 @@
+# Keep the backend Docker build context small. The backend Dockerfile only
+# COPYs backend/**, but Render sends the whole repo as build context — so exclude
+# the frontend + all deps/build outputs.
+admin-web
+**/node_modules
+**/.next
+**/dist
+**/.git
+**/coverage
+**/playwright-report
+**/test-results
+**/storybook-static
+deliveryreport-month*
+met-link-mob
+observator-nep-link-ble

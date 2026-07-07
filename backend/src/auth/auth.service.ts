@@ -7,7 +7,7 @@ import { User, IUser } from '../models/User';
 import { RefreshToken } from '../models/RefreshToken';
 import { PasswordResetToken } from '../models/PasswordResetToken';
 import { AuditLog } from '../models/AuditLog';
-import { signAccessToken, JWTPayload } from '../utils/jwt';
+import { signAccessToken, signWsTicket, JWTPayload } from '../utils/jwt';
 import { slugify } from '../utils/slug';
 
 const BCRYPT_COST = 12;
@@ -177,6 +177,21 @@ export class AuthService {
     return { accessToken };
   }
 
+  /**
+   * Mint a short-lived (~60s) WebSocket auth ticket for the socket.io handshake.
+   * The BFF hands this to the browser so the long-lived access token never leaves
+   * the server. Claim shape mirrors `buildAuthResult`'s access-token payload.
+   */
+  mintWsTicket(user: JWTPayload): { ticket: string; expiresInSec: number } {
+    const ticket = signWsTicket({
+      userId: user.userId,
+      organizationId: user.organizationId,
+      role: user.role,
+      email: user.email,
+    });
+    return { ticket, expiresInSec: 60 };
+  }
+
   async logout(rawRefreshToken: string): Promise<void> {
     const tokenHash = this.hashToken(rawRefreshToken);
     await RefreshToken.findOneAndUpdate({ tokenHash }, { revokedAt: new Date() });
@@ -200,7 +215,9 @@ export class AuthService {
       ipAddress: ipAddress ?? null,
     });
 
-    const resetUrl = `${process.env.API_BASE_URL ?? 'http://localhost:3000'}/auth/reset-password?token=${rawToken}`;
+    // Points at the admin-web (frontend) origin — the reset-password PAGE lives
+    // there, not on the backend. `FRONTEND_URL` is the admin-web origin.
+    const resetUrl = `${(process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/reset-password?token=${rawToken}`;
 
     try {
       await sendPasswordResetEmail(user.email, user.firstName, resetUrl);

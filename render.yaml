@@ -33,6 +33,11 @@ services:
       - key: API_BASE_URL
         sync: false           # e.g. https://observator-backend.onrender.com
 
+      # Admin-web (frontend) origin — builds invite / password-reset email links
+      # (Month 7 A2). Those pages live on admin-web, not the backend.
+      - key: FRONTEND_URL
+        sync: false           # e.g. https://admin.observator.com (the Vercel origin)
+
       # Swagger docs password gate (HTTP Basic Auth) — /api returns 503 without these
       - key: SWAGGER_USER
         sync: false

@@ -8,6 +8,7 @@ import morgan from 'morgan';
 import * as express from 'express';
 import * as path from 'path';
 import * as Sentry from '@sentry/node';
+import mongoose from 'mongoose';
 
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -70,6 +71,17 @@ async function bootstrap(): Promise<void> {
   }
 
   configureCloudinary();
+
+  // The raw Mongoose models in `src/models/*` use the DEFAULT global connection
+  // (`mongoose.model(...)`), but @nestjs/mongoose connects its OWN connection via
+  // `createConnection` — so the default connection is never opened and every
+  // model query buffers then times out ("buffering timed out after 10000ms").
+  // Connect the default connection explicitly (same URI/options the seed uses).
+  if (process.env.MONGO_URI) {
+    await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 8000 });
+    console.log('🔌 Default Mongoose connection established (raw models)');
+  }
+
   const app = await NestFactory.create(AppModule);
 
   // ── Security Middleware ────────────────────────────────────────────────────

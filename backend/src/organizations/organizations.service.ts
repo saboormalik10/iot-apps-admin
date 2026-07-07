@@ -192,7 +192,9 @@ export class OrganizationsService {
       expiresAt,
     });
 
-    const inviteUrl = `${(process.env.API_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '')}/auth/accept-invite?token=${rawToken}`;
+    // Points at the admin-web (frontend) origin — the accept-invite PAGE lives
+    // there, not on the backend. `FRONTEND_URL` is the admin-web origin.
+    const inviteUrl = `${(process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/accept-invite?token=${rawToken}`;
 
     const org = await Organization.findById(organizationId);
     try {

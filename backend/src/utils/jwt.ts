@@ -16,6 +16,17 @@ export function signAccessToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): strin
   return jwt.sign(payload, ACCESS_SECRET, { expiresIn: '15m' });
 }
 
+/**
+ * Short-TTL (~60s) access token minted for the socket.io handshake under the BFF
+ * model, so the long-lived 15m access token never reaches the browser. Signed on
+ * the SAME `ACCESS_SECRET`, so the realtime gateway's `verifyAccessToken` accepts
+ * it with no gateway change. Deliberately separate from `signAccessToken` (which
+ * hardcodes 15m) rather than parameterising it.
+ */
+export function signWsTicket(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
+  return jwt.sign(payload, ACCESS_SECRET, { expiresIn: '60s' });
+}
+
 export function verifyAccessToken(token: string): JWTPayload {
   return jwt.verify(token, ACCESS_SECRET) as JWTPayload;
 }

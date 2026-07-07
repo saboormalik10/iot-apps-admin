@@ -19,6 +19,9 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JWTPayload } from '../utils/jwt';
 import { AuthService, RegisterInput, LoginInput, AuthResult } from './auth.service';
 import {
   RegisterDto,
@@ -228,6 +231,23 @@ export class AuthController {
     }
 
     await this.authService.resetPassword(body.token, body.newPassword);
+  }
+
+  @ApiOperation({
+    summary: 'Mint a short-lived WebSocket auth ticket (~60s)',
+    description:
+      'Admin-panel only. JWT-guarded. Returns a short-lived access token for the socket.io ' +
+      'handshake (auth.token) so the long-lived access token never leaves the server under the ' +
+      'BFF model. The /v1/ws gateway verifies it with the normal access-token secret.',
+  })
+  @ApiBearerAuth()
+  @ApiCreatedResponse({ description: 'Ticket minted', schema: { example: { data: { ticket: 'eyJhbGci…', expiresInSec: 60 } } } })
+  @ApiErrors('unauthorized')
+  @Post('ws-ticket')
+  @HttpCode(201)
+  @UseGuards(JwtAuthGuard)
+  async wsTicket(@CurrentUser() user: JWTPayload): Promise<{ data: { ticket: string; expiresInSec: number } }> {
+    return { data: this.authService.mintWsTicket(user) };
   }
 }
 

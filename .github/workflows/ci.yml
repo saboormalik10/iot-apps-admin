@@ -3,7 +3,18 @@ name: CI
 on:
   push:
     branches: [main, 'Month-*']
+    # Path-isolated: a frontend-only PR must not run the backend job.
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+      - 'Dockerfile'
+      - 'render.yaml'
   pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci.yml'
+      - 'Dockerfile'
+      - 'render.yaml'
 
 jobs:
   build-test:
