@@ -59,6 +59,49 @@ function checkClientEventMirror() {
   return true;
 }
 
+// ── Scales mirror (§10.9): scales.ts enumerations must match analytics.util.ts ──
+
+/** Slice a `const NAME … <terminator>` block out of a TS source. */
+function sliceConst(source, name, terminator) {
+  const start = source.indexOf(`const ${name}`);
+  if (start === -1) return '';
+  const end = source.indexOf(terminator, start);
+  return end === -1 ? source.slice(start) : source.slice(start, end);
+}
+const labelsIn = (block) => (block.match(/label:\s*'([^']+)'/g) || []).map((s) => s.replace(/label:\s*'|'/g, ''));
+const keysIn = (block) => (block.match(/'([0-9a-z]+)'\s*:/g) || []).map((s) => s.replace(/'|\s*:/g, ''));
+
+function checkScalesMirror() {
+  const backendPath = path.join(__dirname, '..', '..', 'backend', 'src', 'analytics', 'analytics.util.ts');
+  const clientPath = path.join(__dirname, '..', 'lib', 'api', 'scales.ts');
+  if (!fs.existsSync(backendPath)) {
+    console.log('• Scales mirror: backend source not present — skipping (frontend-only checkout).');
+    return true;
+  }
+  const be = fs.readFileSync(backendPath, 'utf8');
+  const fe = fs.readFileSync(clientPath, 'utf8');
+
+  const checks = [
+    ['SPEED_BANDS', labelsIn(sliceConst(be, 'SPEED_BANDS', '];')), labelsIn(sliceConst(fe, 'WIND_SPEED_BANDS', '];'))],
+    ['BEAUFORT', labelsIn(sliceConst(be, 'BEAUFORT', '];')), labelsIn(sliceConst(fe, 'BEAUFORT', '];'))],
+    ['NTU_CLASSES', labelsIn(sliceConst(be, 'NTU_CLASSES', '];')), labelsIn(sliceConst(fe, 'NTU_CLASSES', '];'))],
+    ['INTERVAL_MS', keysIn(sliceConst(be, 'INTERVAL_MS', '};')), keysIn(sliceConst(fe, 'INTERVAL_MS', '};'))],
+  ];
+  const problems = [];
+  for (const [name, beVals, feVals] of checks) {
+    if (beVals.join('|') !== feVals.join('|')) {
+      problems.push(`  ${name}: backend [${beVals.join(', ')}] ≠ scales.ts [${feVals.join(', ')}]`);
+    }
+  }
+  if (problems.length) {
+    console.error('✗ scales.ts drift vs backend/src/analytics/analytics.util.ts:');
+    problems.forEach((p) => console.error(p));
+    return false;
+  }
+  console.log(`✓ Scales mirror OK (${checks.length} scales match analytics.util.ts).`);
+  return true;
+}
+
 // Backend paths (relative to /v1) the typed client depends on — kept in lockstep
 // with lib/api/endpoints.ts. Verified against the live Admin spec when available.
 const CLIENT_ENDPOINTS = [
@@ -78,6 +121,27 @@ const CLIENT_ENDPOINTS = [
   { method: 'get', path: '/users/me' },
   { method: 'patch', path: '/users/me' },
   { method: 'get', path: '/notifications' },
+  // ── Month 8: dashboard + devices ──
+  { method: 'get', path: '/dashboard/summary' },
+  { method: 'get', path: '/dashboard/devices' },
+  { method: 'get', path: '/dashboard/met/latest' },
+  { method: 'get', path: '/dashboard/met/windrose' },
+  { method: 'get', path: '/dashboard/met/history' },
+  { method: 'get', path: '/dashboard/nep/latest' },
+  { method: 'get', path: '/dashboard/org/device-map' },
+  { method: 'get', path: '/devices' },
+  { method: 'post', path: '/devices' },
+  { method: 'get', path: '/devices/{id}' },
+  { method: 'patch', path: '/devices/{id}' },
+  { method: 'delete', path: '/devices/{id}' },
+  { method: 'get', path: '/devices/{id}/stats' },
+  { method: 'get', path: '/devices/{id}/health' },
+  { method: 'get', path: '/devices/{id}/firmware-history' },
+  { method: 'get', path: '/devices/{id}/settings' },
+  { method: 'patch', path: '/devices/{id}/settings' },
+  { method: 'get', path: '/devices/firmware-target' },
+  { method: 'put', path: '/devices/firmware-target' },
+  { method: 'get', path: '/devices/firmware-status' },
 ];
 
 async function checkSwagger() {
@@ -120,6 +184,7 @@ async function checkSwagger() {
 
 (async () => {
   const a = checkClientEventMirror();
+  const s = checkScalesMirror();
   const b = await checkSwagger();
-  process.exit(a && b ? 0 : 1);
+  process.exit(a && s && b ? 0 : 1);
 })();

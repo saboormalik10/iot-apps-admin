@@ -14,9 +14,9 @@ test('admin signs in, reaches the shell, and opens the org module', async ({ pag
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: /sign in/i }).click();
 
-  // Lands on the authenticated shell (welcome placeholder for Month 7).
+  // Lands on the authenticated shell — the live dashboard home (Month 8).
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { name: /welcome/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /fleet status/i })).toBeVisible();
 
   // Navigate to Organization → People.
   await page.getByRole('link', { name: /organization/i }).click();

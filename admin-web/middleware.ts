@@ -20,15 +20,18 @@ function buildCsp(nonce: string): string {
   const wsOrigins = [wsUrl, wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:')]
     .filter(Boolean)
     .join(' ');
+  // Free OSM raster tiles for the MapLibre fleet map (no token/billing — plan §1).
+  // Needed on img-src (tile images) and connect-src (MapLibre fetches tiles too).
+  const tileOrigins = 'https://tile.openstreetmap.org https://*.tile.openstreetmap.org';
 
   return [
     `default-src 'self'`,
     // 'strict-dynamic' lets Next's nonce'd bootstrap load the rest; dev needs eval.
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`,
     `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' https://res.cloudinary.com data: blob:`,
+    `img-src 'self' https://res.cloudinary.com ${tileOrigins} data: blob:`,
     `font-src 'self' data:`,
-    `connect-src 'self' ${wsOrigins}${isDev ? ' ws: http:' : ''}`.trim(),
+    `connect-src 'self' ${wsOrigins} ${tileOrigins}${isDev ? ' ws: http:' : ''}`.trim(),
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

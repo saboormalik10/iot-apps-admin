@@ -44,6 +44,8 @@ export const http = {
     unwrap<T>(await request<{ data: T } | T>('POST', path, body)),
   patch: async <T>(path: string, body?: unknown): Promise<T> =>
     unwrap<T>(await request<{ data: T } | T>('PATCH', path, body)),
+  put: async <T>(path: string, body?: unknown): Promise<T> =>
+    unwrap<T>(await request<{ data: T } | T>('PUT', path, body)),
   delete: async <T>(path: string): Promise<T> =>
     unwrap<T>(await request<{ data: T } | T>('DELETE', path)),
   /** Raw variant for list endpoints that need `pagination`/`unreadCount` siblings. */

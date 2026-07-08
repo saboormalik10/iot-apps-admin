@@ -3,13 +3,36 @@ import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
   AppNotification,
   AuditEntry,
+  DashboardDevice,
+  DashboardSummary,
+  Device,
+  DeviceHealth,
+  DeviceSettings,
+  DeviceStats,
+  DeviceType,
+  FirmwareHistory,
+  FirmwareStatus,
+  FirmwareStatusRow,
+  FirmwareTarget,
+  FleetMapPoint,
+  MetHistory,
+  MetLatest,
+  MetWindrose,
+  NepLatest,
   Organization,
   OrgUser,
   Profile,
   Role,
   SessionUser,
 } from './types';
-import type { InviteUserInput, UpdateOrgInput, UpdateUserInput } from './schemas';
+import type {
+  CreateDeviceInput,
+  DeviceSettingsInput,
+  InviteUserInput,
+  UpdateDeviceInput,
+  UpdateOrgInput,
+  UpdateUserInput,
+} from './schemas';
 
 /**
  * Typed endpoint functions. Every path is relative to the BFF (`/api/**`) — the
@@ -89,5 +112,77 @@ export const listNotifications = async (
 };
 export const markNotificationRead = (id: string) => http.patch<unknown>(`/notifications/${id}/read`, {});
 export const markAllNotificationsRead = () => http.post<{ updated: number }>('/notifications/read-all', {});
+
+// ── Dashboard (Month 8) ─────────────────────────────────────────────────────
+export const getSummary = (signal?: AbortSignal) => http.get<DashboardSummary>('/dashboard/summary', signal);
+export const getDashboardDevices = (signal?: AbortSignal) =>
+  http.get<DashboardDevice[]>('/dashboard/devices', signal);
+export const getMetLatest = (deviceId: string, signal?: AbortSignal) =>
+  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}`, signal);
+export const getMetWindrose = (deviceId: string, signal?: AbortSignal) =>
+  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}`, signal);
+export const getMetHistory = (
+  params: { deviceId: string; sensor: string; from: number; to: number },
+  signal?: AbortSignal,
+) => {
+  const qs = new URLSearchParams({
+    deviceId: params.deviceId,
+    sensor: params.sensor,
+    from: String(params.from),
+    to: String(params.to),
+  }).toString();
+  return http.get<MetHistory>(`/dashboard/met/history?${qs}`, signal);
+};
+export const getNepLatest = (deviceId: string, signal?: AbortSignal) =>
+  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}`, signal);
+export const getOrgDeviceMap = (signal?: AbortSignal) =>
+  http.get<FleetMapPoint[]>('/dashboard/org/device-map', signal);
+
+// ── Devices (Month 8) ───────────────────────────────────────────────────────
+export interface DevicesQuery {
+  type?: DeviceType;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+export const listDevices = async (q: DevicesQuery = {}, signal?: AbortSignal): Promise<Page<Device>> => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  }
+  const qs = params.toString();
+  const body = await http.getRaw<{ data: Device[]; meta: { page: number; limit: number; total: number; pages: number } }>(
+    `/devices${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };
+  return { rows: body.data ?? [], page: m.page, limit: m.limit, total: m.total, pageCount: m.pages };
+};
+export const getDevice = (id: string, signal?: AbortSignal) => http.get<Device>(`/devices/${id}`, signal);
+export const createDevice = (input: CreateDeviceInput) => http.post<Device>('/devices', input);
+export const updateDevice = (id: string, input: UpdateDeviceInput) => http.patch<Device>(`/devices/${id}`, input);
+export const deleteDevice = (id: string) => http.delete<void>(`/devices/${id}`);
+export const getDeviceStats = (id: string, signal?: AbortSignal) =>
+  http.get<DeviceStats>(`/devices/${id}/stats`, signal);
+export const getDeviceHealth = (id: string, signal?: AbortSignal) =>
+  http.get<DeviceHealth>(`/devices/${id}/health`, signal);
+export const getFirmwareHistory = (id: string, signal?: AbortSignal) =>
+  http.get<FirmwareHistory>(`/devices/${id}/firmware-history`, signal);
+export const getDeviceSettings = (id: string, signal?: AbortSignal) =>
+  http.get<DeviceSettings>(`/devices/${id}/settings`, signal);
+export const updateDeviceSettings = (id: string, input: DeviceSettingsInput) =>
+  http.patch<DeviceSettings>(`/devices/${id}/settings`, input);
+export const getFirmwareTargets = (signal?: AbortSignal) =>
+  http.get<FirmwareTarget[]>('/devices/firmware-target', signal);
+export const setFirmwareTarget = (input: FirmwareTarget) =>
+  http.put<FirmwareTarget>('/devices/firmware-target', input);
+export const getFirmwareStatus = async (type?: DeviceType, signal?: AbortSignal): Promise<FirmwareStatus> => {
+  const qs = type ? `?type=${type}` : '';
+  const body = await http.getRaw<{ data: FirmwareStatusRow[]; meta: { total: number; outdated: number } }>(
+    `/devices/firmware-status${qs}`,
+    signal,
+  );
+  return { rows: body.data ?? [], total: body.meta?.total ?? 0, outdated: body.meta?.outdated ?? 0 };
+};
 
 export type { Role };

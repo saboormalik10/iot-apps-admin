@@ -3,15 +3,21 @@ import { getTranslations } from 'next-intl/server';
 import { UserPlus, Cpu } from 'lucide-react';
 import { getSession } from '@/lib/session';
 import { can } from '@/lib/rbac/capabilities';
+import { isFeatureEnabled } from '@/lib/config/flags';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { DashboardHome } from '@/features/dashboard/dashboard-home';
 
 /**
- * Month 7 dash index = shell + first-run/welcome placeholder (plan §13). The live
- * dashboard home (KPIs, tiles, wind rose) lands Month 8. Empty-org onboarding
- * teaches the next actions.
+ * Dash index. From Month 8 (the `dashboardHome` flag) this is the live dashboard
+ * home — KPIs, live tiles, wind rose, fleet table + map. Until the flag is on it
+ * falls back to the Month-7 welcome/onboarding placeholder.
  */
 export default async function DashHomePage() {
+  if (isFeatureEnabled('dashboardHome')) {
+    return <DashboardHome />;
+  }
+
   const t = await getTranslations('onboarding');
   const session = await getSession();
   const isAdmin = can(session.user?.role, 'manageOrg');

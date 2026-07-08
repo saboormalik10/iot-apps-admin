@@ -7,6 +7,7 @@ import {
   Bell,
   Building2,
   Settings,
+  Map as MapIcon,
   type LucideIcon,
 } from 'lucide-react';
 import type { Capability } from '@/lib/rbac/capabilities';
@@ -31,6 +32,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard', href: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
   { key: 'devices', href: '/devices', labelKey: 'nav.devices', icon: Cpu, flag: 'devices' },
+  { key: 'map', href: '/map', labelKey: 'nav.map', icon: MapIcon, flag: 'maps' },
   { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: Waves, flag: 'sessions' },
   { key: 'records', href: '/records', labelKey: 'nav.records', icon: FileText, flag: 'records' },
   { key: 'analytics', href: '/analytics', labelKey: 'nav.analytics', icon: BarChart3, flag: 'analytics' },

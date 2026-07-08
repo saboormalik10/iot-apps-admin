@@ -93,3 +93,66 @@ export const profileSchema = z
     }
   });
 export type ProfileInput = z.infer<typeof profileSchema>;
+
+// ── Devices (Month 8) ─────────────────────────────────────────────────────────
+export const deviceTypeSchema = z.enum(['MET-LINK', 'NEP-LINK']);
+
+export const createDeviceSchema = z.object({
+  bleId: z.string().min(1, 'devices.errors.bleIdRequired').max(120),
+  name: z.string().min(1, 'devices.errors.nameRequired').max(120),
+  type: deviceTypeSchema,
+  serialNo: z.string().max(120).optional(),
+  firmwareVersion: z.string().max(60).optional(),
+  customName: z.string().max(120).optional(),
+});
+export type CreateDeviceInput = z.infer<typeof createDeviceSchema>;
+
+export const updateDeviceSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  customName: z.string().max(120).nullable().optional(),
+  serialNo: z.string().max(120).nullable().optional(),
+  firmwareVersion: z.string().max(60).nullable().optional(),
+});
+export type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
+
+export const firmwareTargetSchema = z.object({
+  deviceType: deviceTypeSchema,
+  version: z.string().min(1, 'devices.errors.versionRequired').max(60),
+});
+export type FirmwareTargetInput = z.infer<typeof firmwareTargetSchema>;
+
+/**
+ * Device settings — client Zod is the SOLE guard: the backend `UpdateDeviceSettingsDto`
+ * has ZERO server-side validation (§10.6), yet these writes reach the live field device.
+ * Every field is optional (PATCH is partial) but strictly typed/bounded when present.
+ */
+const sensorPrefSchema = z.object({
+  NMEA: z.string(),
+  Type: z.string(),
+  Unit: z.string(),
+  Desc: z.string(),
+  EnShow: z.number().int().min(0).max(1).optional(),
+  EnLog: z.number().int().min(0).max(1).optional(),
+});
+
+export const deviceSettingsSchema = z.object({
+  qqEnabled: z.boolean().optional(),
+  qqGpsHeight: z.boolean().optional(),
+  qfeHeightM: z.number().min(-500).max(10000).optional(),
+  qnhHeightM: z.number().min(-500).max(10000).optional(),
+  dewPointEnabled: z.boolean().optional(),
+  windRoseUnit: z.string().max(20).optional(),
+  windRosePeriod: z.string().max(20).optional(),
+  windRoseOrient: z.enum(['true', 'relative']).optional(),
+  graphicalType: z.string().max(20).optional(),
+  graphItem: z.number().int().min(0).max(50).optional(),
+  colorScheme: z.number().int().min(0).max(10).optional(),
+  pageLayout: z.number().int().min(0).max(10).optional(),
+  unitWindSpeed: z.string().max(10).optional(),
+  unitPressure: z.string().max(10).optional(),
+  unitTemperature: z.string().max(10).optional(),
+  unitAltitude: z.string().max(10).optional(),
+  sensorShowPrefs: z.array(sensorPrefSchema).nullable().optional(),
+  sensorLogPrefs: z.array(sensorPrefSchema).nullable().optional(),
+});
+export type DeviceSettingsInput = z.infer<typeof deviceSettingsSchema>;

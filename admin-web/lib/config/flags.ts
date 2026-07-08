@@ -18,17 +18,17 @@ export type FeatureFlag =
   | 'maps';
 
 const DEFAULTS: Record<FeatureFlag, boolean> = {
-  // Month 7 ships org/people/audit/profile + the shell only. Everything below
-  // lands Month 8–12 and stays flagged off until then.
-  dashboardHome: false,
-  devices: false,
+  // Month 8 ships the live dashboard home, the devices module, and the fleet map.
+  // Later-month sections stay flagged off until their month lands.
+  dashboardHome: true,
+  devices: true,
+  maps: true,
   sessions: false,
   records: false,
   analytics: false,
   alerts: false,
   reports: false,
   commandPalette: false,
-  maps: false,
 };
 
 function forcedFlags(): Set<string> {

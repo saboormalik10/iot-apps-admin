@@ -11,6 +11,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { UnitsToggle } from '@/components/units-toggle';
 import { LiveIndicator } from '@/components/live-indicator';
 import { NotificationBell } from '@/features/notifications/notification-bell';
+import { ScopeBar } from '@/components/scope/scope-bar';
 import type { SessionUser } from '@/lib/api/types';
 
 /**
@@ -55,6 +56,9 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           <NotificationBell />
           <UserMenu user={user} />
         </header>
+
+        {/* Global Scope Bar (plan §3.6) — self-hides on non-data routes. */}
+        <ScopeBar />
 
         <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
       </div>
