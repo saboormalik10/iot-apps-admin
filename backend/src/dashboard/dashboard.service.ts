@@ -39,6 +39,38 @@ import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
+import { AlertRule } from '../models/AlertRule';
+
+// ─── Daily-count sparkline helper (§10.8) ────────────────────────────────────
+
+/** Aggregates the last `days` daily document counts (by `createdAt`, UTC),
+ *  zero-filled oldest→newest, for KPI-tile sparklines. */
+async function dailyCounts(
+  model: { aggregate(pipeline: unknown[]): Promise<Array<{ _id: string; count: number }>> },
+  orgId: Types.ObjectId,
+  days: number,
+): Promise<number[]> {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - (days - 1)); // include today → `days` buckets
+  const rows = await model.aggregate([
+    { $match: { organizationId: orgId, deletedAt: null, createdAt: { $gte: start } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  const byDay = new Map(rows.map((r) => [r._id, r.count]));
+  const out: number[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setUTCDate(d.getUTCDate() + i);
+    out.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0);
+  }
+  return out;
+}
 
 // ─── In-process cache (30-second TTL) ────────────────────────────────────────
 
@@ -75,6 +107,8 @@ export class DashboardService {
 
     const orgId = new Types.ObjectId(organizationId);
 
+    const SPARKLINE_DAYS = 14;
+
     const [
       totalDevices,
       onlineDevices,
@@ -82,6 +116,9 @@ export class DashboardService {
       nepDevices,
       totalRecords,
       totalSessions,
+      activeAlertRules,
+      recordsSparkline,
+      sessionsSparkline,
     ] = await Promise.all([
       Device.countDocuments({ organizationId: orgId, deletedAt: null }),
       Device.countDocuments({ organizationId: orgId, deletedAt: null, isOnline: true }),
@@ -89,6 +126,9 @@ export class DashboardService {
       Device.countDocuments({ organizationId: orgId, deletedAt: null, type: 'NEP-LINK' }),
       MetRecord.countDocuments({ organizationId: orgId, deletedAt: null }),
       NepSession.countDocuments({ organizationId: orgId, deletedAt: null }),
+      AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
+      dailyCounts(MetRecord, orgId, SPARKLINE_DAYS),
+      dailyCounts(NepSession, orgId, SPARKLINE_DAYS),
     ]);
 
     const result = {
@@ -99,6 +139,9 @@ export class DashboardService {
       nepLinkDevices: nepDevices,
       totalMetRecords: totalRecords,
       totalNepSessions: totalSessions,
+      // §10.8 enrichment — armed alert rules + last-14-day daily-count sparklines
+      activeAlertRules,
+      sparklines: { records: recordsSparkline, sessions: sessionsSparkline },
       serverTime: new Date().toISOString(),
     };
 

@@ -20,7 +20,11 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @ApiOperation({ summary: 'Organisation-wide summary counts' })
-  @ApiOkResponse({ description: 'Device / record / session counts' })
+  @ApiOkResponse({
+    description:
+      'Device / record / session counts, plus the active (armed) alert-rule count and ' +
+      'last-14-day daily-count sparklines ({ records[], sessions[] }) for the dashboard KPI tiles.',
+  })
   @Get('summary')
   @UseGuards(JwtAuthGuard)
   async getSummary(@CurrentUser() user: JWTPayload) {

@@ -78,8 +78,32 @@ export class CreateSessionDto {
 }
 
 export class UpdateSessionDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Free-text note on the session' })
   comment?: string;
+
+  @ApiPropertyOptional({ description: 'Display name of the device that logged the session' })
+  deviceName?: string;
+
+  @ApiPropertyOptional({ description: 'Unix ms — when logging ended (null while still open)' })
+  endTimestamp?: number | null;
+
+  @ApiPropertyOptional({ example: 'Australia/Brisbane' })
+  timezoneName?: string;
+
+  @ApiPropertyOptional({ example: 10 })
+  timezoneOffset?: number;
+
+  @ApiPropertyOptional()
+  turbidityEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  temperatureEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  locationEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Marks the session as demo data' })
+  isDemoMode?: boolean;
 }
 
 export class BulkSamplesDto {

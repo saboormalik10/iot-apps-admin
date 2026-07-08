@@ -29,7 +29,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { SessionsService, CreateSessionInput, BulkSampleInput } from './sessions.service';
+import { SessionsService, CreateSessionInput, BulkSampleInput, UpdateSessionInput } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 
 const SESSION_EXAMPLE = {
@@ -125,15 +125,36 @@ export class SessionsController {
     return { data: session };
   }
 
-  @ApiOperation({ summary: 'Update session comment (admin dashboard)' })
-  @ApiBody({ type: UpdateSessionDto })
+  @ApiOperation({
+    summary: 'Update a NEP-LINK session (mobile + admin)',
+    description:
+      'Partial update — every field provided in the body is applied. Used by the NEP-LINK app to edit ' +
+      'session metadata (comment, endTimestamp, timezone, sensor flags, demo flag) and by the admin ' +
+      'dashboard to edit the comment. Identity/ownership fields (`id`, `deviceId`, org) and the ' +
+      'sample-derived stats (sampleCount, probeRange, turbidity/temperature aggregates) are protected ' +
+      'and cannot be changed here.',
+  })
+  @Consumers('nep-link', 'admin')
+  @ApiBody({
+    type: UpdateSessionDto,
+    examples: {
+      nepLink: {
+        summary: '📱 NEP-LINK session update',
+        value: { comment: 'Re-sampled after rain', endTimestamp: 1746061200000, temperatureEnabled: false },
+      },
+      adminComment: {
+        summary: '🖥️ Admin comment edit',
+        value: { comment: 'Reviewed — values look nominal' },
+      },
+    },
+  })
   @ApiOkResponse({ description: 'Updated session', schema: { example: { data: SESSION_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async updateSession(
     @Param('id') id: string,
-    @Body() body: { comment?: string },
+    @Body() body: UpdateSessionInput,
     @CurrentUser() user?: JWTPayload,
   ) {
     const session = await this.sessionsService.updateSession(user!.organizationId, id, body);

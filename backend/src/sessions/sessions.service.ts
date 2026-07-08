@@ -70,6 +70,36 @@ export interface CreateSessionInput {
   samples?: SampleInput[];
 }
 
+export interface UpdateSessionInput {
+  comment?: string;
+  deviceName?: string;
+  endTimestamp?: number | null;
+  timezoneName?: string;
+  timezoneOffset?: number;
+  turbidityEnabled?: boolean;
+  temperatureEnabled?: boolean;
+  locationEnabled?: boolean;
+  isDemoMode?: boolean;
+}
+
+/**
+ * Session fields a client may set via PATCH. Identity/ownership (`id`,
+ * `organizationId`, `deviceId`, `syncedAt`) and the sample-derived stats
+ * (`sampleCount`, `probeRange`, turbidity/temperature aggregates, `hasTempData`,
+ * `hasGpsData`) are intentionally NOT mutable here — they'd corrupt integrity.
+ */
+const MUTABLE_SESSION_FIELDS: (keyof UpdateSessionInput)[] = [
+  'comment',
+  'deviceName',
+  'endTimestamp',
+  'timezoneName',
+  'timezoneOffset',
+  'turbidityEnabled',
+  'temperatureEnabled',
+  'locationEnabled',
+  'isDemoMode',
+];
+
 export interface BulkSampleInput {
   timestamp: number;
   turbidityValue?: number | null;
@@ -149,9 +179,15 @@ export class SessionsService {
     return session;
   }
 
-  async updateSession(organizationId: string, sessionId: string, body: { comment?: string }): Promise<INepSession> {
+  async updateSession(organizationId: string, sessionId: string, body: UpdateSessionInput): Promise<INepSession> {
     const session = await this.getSession(organizationId, sessionId);
-    if (body.comment !== undefined) session.comment = body.comment;
+    // Apply every provided field that is in the mutable whitelist ("whatever is in
+    // the body gets updated" — minus the protected identity/ownership + computed stats).
+    for (const key of MUTABLE_SESSION_FIELDS) {
+      if (body[key] !== undefined) {
+        (session as unknown as Record<string, unknown>)[key] = body[key];
+      }
+    }
     await session.save();
     return session;
   }
