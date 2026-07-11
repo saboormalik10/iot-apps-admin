@@ -41,7 +41,7 @@ import type { OrgUser, Role } from '@/lib/api/types';
 
 const columnHelper = createColumnHelper<OrgUser>();
 
-export function UsersTable() {
+export function UsersTable({ roles }: { roles?: Role[] } = {}) {
   const t = useTranslations('users');
   const { data, isLoading, isError, refetch } = useUsers();
   const update = useUpdateUser();
@@ -50,7 +50,12 @@ export function UsersTable() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
 
-  const rows = useMemo(() => data?.rows ?? [], [data]);
+  // Optional role narrowing (the Users page shows only admins here "for now";
+  // the /org page keeps the unfiltered table).
+  const rows = useMemo(
+    () => (data?.rows ?? []).filter((u) => !roles || roles.includes(u.role)),
+    [data, roles],
+  );
   const activeAdminCount = useMemo(
     () => rows.filter((u) => u.role === 'admin' && u.isActive).length,
     [rows],

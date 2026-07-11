@@ -24,8 +24,9 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   devices: true,
   maps: true,
   sessions: false,
-  records: false,
-  analytics: false,
+  // Month 9 lands the MET analytics suite + the records module.
+  records: true,
+  analytics: true,
   alerts: false,
   reports: false,
   commandPalette: false,

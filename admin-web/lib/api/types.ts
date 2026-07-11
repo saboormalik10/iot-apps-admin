@@ -36,6 +36,25 @@ export interface OrgUser {
   invitedAt: string | null;
 }
 
+/** Mobile-app user with upload activity — GET /organizations/me/mobile-users. */
+export interface MobileUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: Role;
+  isActive: boolean;
+  /** Which app the user signed up from (null = inferred from activity). */
+  mobileAppType: DeviceType | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+  metRecordCount: number;
+  nepSessionCount: number;
+  lastUploadAt: string | null;
+  /** Devices this user registered or synced data for. */
+  devices: { id: string; name: string; type: DeviceType }[];
+}
+
 /** GET/PATCH /organizations/me. */
 export interface Organization {
   id: string;
@@ -329,4 +348,226 @@ export interface DeviceSettings {
   sensorShowPrefs: SensorPref[] | null;
   sensorLogPrefs: SensorPref[] | null;
   updatedAt: string;
+}
+
+// ── Analytics (Month 9 — MET deep-dive) ──────────────────────────────────────
+
+/** GET /analytics/met/wind-rose — aggregated polar rose over the whole window. */
+export interface WindRoseSector {
+  dir: number;
+  label: string;
+  count: number;
+  pct: number;
+  avgSpeedMs: number;
+  maxSpeedMs: number;
+  avgSpeed: number;
+  maxSpeed: number;
+  speedBuckets: { label: string; count: number }[];
+}
+export interface MetWindRoseAgg {
+  deviceId: string;
+  from: number;
+  to: number;
+  period: string;
+  unit: string;
+  totalSamples: number;
+  sectors: WindRoseSector[];
+}
+
+/** GET /analytics/met/multi-sensor — aligned small-multiples (no dual axis). */
+export interface MetMultiSensorSeries {
+  sensor: string;
+  unit: string;
+  values: Array<number | null>;
+}
+export interface MetMultiSensor {
+  deviceId: string;
+  from: number;
+  to: number;
+  interval: string;
+  timestamps: number[];
+  series: MetMultiSensorSeries[];
+}
+
+/** GET /analytics/met/statistics — descriptive profile (+ Beaufort for wind_speed). */
+export interface BeaufortBreakdownRow {
+  force: number;
+  label: string;
+  description: string;
+  minMs: number;
+  maxMs: number | null;
+  count: number;
+  pct: number;
+  totalHrs: number;
+}
+export interface MetStatistics {
+  sensor: string;
+  unit: string;
+  count: number;
+  mean?: number | null;
+  median?: number | null;
+  stdDev?: number | null;
+  variance?: number | null;
+  p10?: number | null;
+  p25?: number | null;
+  p50?: number | null;
+  p75?: number | null;
+  p90?: number | null;
+  p95?: number | null;
+  p99?: number | null;
+  min?: number | null;
+  max?: number | null;
+  range?: number | null;
+  skewness?: number | null;
+  beaufortBreakdown?: BeaufortBreakdownRow[];
+}
+
+/** GET /analytics/met/wind-gust-history. */
+export interface MetGustPoint {
+  ts: number;
+  gustMs: number;
+  gustKmh: number;
+  gustKnots: number;
+  dirDeg: number | null;
+}
+export interface MetWindGust {
+  deviceId: string;
+  interval: string;
+  data: MetGustPoint[];
+}
+
+/** GET /analytics/met/comfort-indices. */
+export interface MetComfortPoint {
+  ts: number;
+  tempC: number | null;
+  humidityPct: number | null;
+  windSpeedMs: number | null;
+  heatIndexC: number | null;
+  windChillC: number | null;
+  effectiveTempC: number | null;
+  comfortLabel: string;
+}
+export interface MetComfort {
+  deviceId: string;
+  interval: string;
+  data: MetComfortPoint[];
+}
+
+/** GET /analytics/met/fog-risk. */
+export interface MetFogPoint {
+  ts: number;
+  tempC: number;
+  dewPointC: number;
+  spread: number;
+  fogRisk: 'HIGH' | 'MODERATE' | 'LOW';
+  relativeHumidityPct: number | null;
+}
+export interface MetFogRisk {
+  deviceId: string;
+  interval: string;
+  data: MetFogPoint[];
+}
+
+/** GET /analytics/met/pressure-tendency. */
+export interface MetPressureTendency {
+  deviceId: string;
+  hours: number;
+  current: number | null;
+  previous: number | null;
+  deltaHpa: number | null;
+  deltaPerHr: number | null;
+  tendency: string;
+  label: string;
+}
+
+// ── Records (Month 9 — MET records) ──────────────────────────────────────────
+
+/** GET /records — a MET logging record (list row + detail header). */
+export interface MetRecordRow {
+  _id: string;
+  organizationId: string;
+  deviceId: string;
+  deviceName: string;
+  urlMaps: string | null;
+  dateStart: string;
+  dateEnd: string | null;
+  dateStartMs: number;
+  dateEndMs: number | null;
+  comment: string;
+  measureCount: number;
+  hasHeaderRow: boolean;
+  isDemoMode: boolean;
+  createdAt: string;
+}
+
+/** GET /records/:id/measures — one measure row (full measure set). */
+export interface MetMeasureRow {
+  _id: string;
+  recordId: string;
+  rowType: 'header' | 'data';
+  dataSentence: string;
+  timeStamp: string;
+  timestampMs: number;
+  windSpeedMs: number | null;
+  windSpeedTrueMs: number | null;
+  windSpeedRelMs: number | null;
+  windDirTrueDeg: number | null;
+  windDirRelDeg: number | null;
+  tempC: number | null;
+  humidityPct: number | null;
+  pressureHpa: number | null;
+  precipMm: number | null;
+  precipRateMmHr: number | null;
+  solarWm2: number | null;
+  voltageV: number | null;
+  batteryVoltageV: number | null;
+  currentA: number | null;
+  dewPointC: number | null;
+  qnhHpa: number | null;
+  qfeHpa: number | null;
+  gpsLat: number | null;
+  gpsLng: number | null;
+  gpsAltM: number | null;
+  gpsSatellites: number | null;
+  gpsHorDilution: number | null;
+  gpsGeoidalSepM: number | null;
+  gpsQuality: number | null;
+}
+
+/** GET /analytics/met/daily-summary (§10.7). */
+export interface MetDailySummary {
+  deviceId: string;
+  organizationId: string;
+  date: string;
+  dateMs: number;
+  windSpeedAvgMs: number | null;
+  windSpeedMaxMs: number | null;
+  windSpeedMaxAt: number | null;
+  windDirPrevailing: number | null;
+  windCalmPct: number | null;
+  beaufortDistribution: number[];
+  tempAvgC: number | null;
+  tempMaxC: number | null;
+  tempMinC: number | null;
+  tempMaxAt: number | null;
+  tempMinAt: number | null;
+  humidityAvgPct: number | null;
+  humidityMaxPct: number | null;
+  humidityMinPct: number | null;
+  pressureAvgHpa: number | null;
+  pressureMaxHpa: number | null;
+  pressureMinHpa: number | null;
+  pressureTendency: string | null;
+  pressureTendencyHpaPerHr: number | null;
+  precipTotalMm: number | null;
+  precipRateMaxMmHr: number | null;
+  precipRateAvgMmHr: number | null;
+  solarMaxWm2: number | null;
+  solarAvgWm2: number | null;
+  solarDailyKwhM2: number | null;
+  dewPointAvgC: number | null;
+  dewPointSpreadAvg: number | null;
+  sampleCount: number;
+  expectedSamples: number;
+  completenessPercent: number;
 }

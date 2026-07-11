@@ -1,14 +1,22 @@
-import type { AuditQuery, DevicesQuery } from '../api/endpoints';
+import type { AuditQuery, DevicesQuery, RecordsQuery } from '../api/endpoints';
 
 /**
  * Central query-key factory. Realtime events invalidate by these keys (plan §3.1
  * "invalidate the sessions list rather than hand-patching it"), so every consumer
  * must key through here — never inline string arrays.
+ *
+ * ⚠ Time-range rule (prevents refetch loops): any key that includes a time window
+ * (`from`/`to`) MUST take those values from the memoized `useScope().window` — never
+ * from a raw `Date.now()` computed in a component body. An unmemoized `Date.now()`
+ * changes every render, so the key changes every render → fetch → re-render → fetch,
+ * forever. The Scope Bar window is quantized to the minute and memoized for exactly
+ * this reason (see lib/hooks/use-scope.ts). All Month-9 analytics keys follow this.
  */
 export const queryKeys = {
   session: ['session'] as const,
   org: ['org'] as const,
   users: ['users'] as const,
+  mobileUsers: ['users', 'mobile'] as const,
   audit: (q: AuditQuery) => ['audit', q] as const,
   profile: ['profile'] as const,
   notifications: (opts: { unread?: boolean; limit?: number }) => ['notifications', opts] as const,
@@ -22,6 +30,33 @@ export const queryKeys = {
     ['dashboard', 'met', 'history', deviceId, sensor, from, to] as const,
   nepLatest: (deviceId: string) => ['dashboard', 'nep', 'latest', deviceId] as const,
   orgDeviceMap: ['dashboard', 'org', 'device-map'] as const,
+
+  // ── Analytics (Month 9) — time windows come from the memoized useScope().window ──
+  analytics: {
+    all: ['analytics'] as const,
+    met: ['analytics', 'met'] as const,
+    windRose: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'met', 'wind-rose', deviceId, from, to] as const,
+    multiSensor: (deviceId: string, sensors: string, interval: string, from: number, to: number) =>
+      ['analytics', 'met', 'multi-sensor', deviceId, sensors, interval, from, to] as const,
+    statistics: (deviceId: string, sensor: string, from: number, to: number) =>
+      ['analytics', 'met', 'statistics', deviceId, sensor, from, to] as const,
+    windGust: (deviceId: string, interval: string, from: number, to: number) =>
+      ['analytics', 'met', 'wind-gust', deviceId, interval, from, to] as const,
+    comfort: (deviceId: string, interval: string, from: number, to: number) =>
+      ['analytics', 'met', 'comfort', deviceId, interval, from, to] as const,
+    fogRisk: (deviceId: string, interval: string, from: number, to: number) =>
+      ['analytics', 'met', 'fog-risk', deviceId, interval, from, to] as const,
+    pressureTendency: (deviceId: string, hours: number) =>
+      ['analytics', 'met', 'pressure-tendency', deviceId, hours] as const,
+    metDaily: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'met', 'daily-summary', deviceId, from, to] as const,
+  },
+
+  // ── Records (Month 9) ──
+  records: (q: RecordsQuery) => ['records', q] as const,
+  record: (id: string) => ['records', id] as const,
+  recordMeasures: (id: string, page: number, limit: number) => ['records', id, 'measures', page, limit] as const,
 
   // ── Devices (Month 8) ──
   devices: (q: DevicesQuery) => ['devices', q] as const,

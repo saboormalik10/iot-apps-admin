@@ -49,10 +49,13 @@ export function middleware(request: NextRequest): NextResponse {
   const hasSession = request.cookies.has(SESSION_COOKIE);
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  // Redirect authenticated users away from the login page.
-  if (hasSession && pathname === '/login') {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
+  // NB: we deliberately do NOT bounce /login → / on mere cookie presence. The
+  // middleware only knows the cookie EXISTS, not that the session is LIVE (the
+  // (dash) layout enforces liveness). A present-but-stale cookie — idled out, or
+  // undecryptable after a SESSION_SECRET change — would otherwise ping-pong
+  // /login ⇄ / forever. The "already logged in → skip login" redirect now lives
+  // in the login page, where liveness is actually checked.
+
   // Gate protected pages.
   if (!hasSession && !isPublic) {
     const url = new URL('/login', request.url);

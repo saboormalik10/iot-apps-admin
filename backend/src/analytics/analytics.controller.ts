@@ -6,6 +6,11 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { AnalyticsService } from './analytics.service';
+import { DailySummaryService } from './daily-summary.service';
+import { MET_SENSOR_FIELD } from './analytics.util';
+
+/** Swagger doc string — the accepted MET sensor keys (source of truth: MET_SENSOR_FIELD). */
+const VALID_MET_SENSORS = `Valid: ${Object.keys(MET_SENSOR_FIELD).join(', ')}`;
 
 /** Normalise a query param that may be a single string or an array into string[]. */
 function toArray(v: string | string[] | undefined): string[] {
@@ -24,7 +29,10 @@ function includeDemo(v: string | undefined): boolean {
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
 export class AnalyticsController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly dailySummary: DailySummaryService,
+  ) {}
 
   // ── MET-LINK ──────────────────────────────────────────────────────────────
 
@@ -52,7 +60,7 @@ export class AnalyticsController {
 
   @ApiOperation({ summary: 'MET multi-sensor overlay (up to 5) on one aligned axis' })
   @ApiQuery({ name: 'deviceId', required: true })
-  @ApiQuery({ name: 'sensors', required: true, description: 'Repeatable: sensors[]=wind_speed&sensors[]=temperature' })
+  @ApiQuery({ name: 'sensors', required: true, description: `Repeatable: sensors[]=wind_speed&sensors[]=temperature. ${VALID_MET_SENSORS}` })
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
   @ApiQuery({ name: 'interval', required: false, description: '1min | 5min | 1h' })
@@ -73,7 +81,7 @@ export class AnalyticsController {
 
   @ApiOperation({ summary: 'MET full statistical profile for a sensor (+ Beaufort for wind_speed)' })
   @ApiQuery({ name: 'deviceId', required: true })
-  @ApiQuery({ name: 'sensor', required: true })
+  @ApiQuery({ name: 'sensor', required: true, description: VALID_MET_SENSORS })
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
   @Get('met/statistics')
@@ -243,7 +251,7 @@ export class AnalyticsController {
 
   @ApiOperation({ summary: 'Org multi-device sensor overlay' })
   @ApiQuery({ name: 'deviceIds', required: true, description: 'Repeatable: deviceIds[]=id1&deviceIds[]=id2' })
-  @ApiQuery({ name: 'sensor', required: true })
+  @ApiQuery({ name: 'sensor', required: true, description: VALID_MET_SENSORS })
   @Get('org/device-comparison')
   orgDeviceComparison(
     @Query('deviceIds') deviceIds: string | string[],
@@ -263,6 +271,36 @@ export class AnalyticsController {
   @Get('org/fleet-health')
   orgFleetHealth(@CurrentUser() user: JWTPayload) {
     return this.analytics.orgFleetHealth(user.organizationId);
+  }
+
+  // ── Daily-summary rollups (§10.7) ────────────────────────────────────────────
+
+  @ApiOperation({ summary: 'MET daily-summary rollups (completeness, prevailing wind, Beaufort dist, min/max bands, solar/precip)' })
+  @ApiQuery({ name: 'deviceId', required: true })
+  @ApiQuery({ name: 'from', required: false, description: 'Unix ms (default: 30 days ago)' })
+  @ApiQuery({ name: 'to', required: false, description: 'Unix ms (default: now)' })
+  @Get('met/daily-summary')
+  metDailySummary(
+    @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    return this.dailySummary.getMetDailySummaries(user.organizationId, deviceId, from, to);
+  }
+
+  @ApiOperation({ summary: 'NEP daily-summary rollups (turbidity min/max bands, completeness)' })
+  @ApiQuery({ name: 'deviceId', required: true })
+  @ApiQuery({ name: 'from', required: false, description: 'Unix ms (default: 30 days ago)' })
+  @ApiQuery({ name: 'to', required: false, description: 'Unix ms (default: now)' })
+  @Get('nep/daily-summary')
+  nepDailySummary(
+    @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    return this.dailySummary.getNepDailySummaries(user.organizationId, deviceId, from, to);
   }
 
   @ApiOperation({ summary: 'Unit conversion utility (wind/pressure/temp/altitude + Beaufort)' })

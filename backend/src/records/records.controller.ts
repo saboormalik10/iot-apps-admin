@@ -79,7 +79,13 @@ export class RecordsController {
 
   @ApiOperation({
     summary: 'Upload a MET-LINK logging record from the mobile app',
-    description: 'Used by the MET-LINK app. `localRecordId` (SQLite id_record) is the idempotency key. Save the returned `_id` for the measures upload.',
+    description:
+      '**Call this when a logging record finishes (or to sync one recorded offline).**\n\n' +
+      'Send `localRecordId` — your app\'s own record id from its local database. It is the ' +
+      'duplicate-guard: if the upload is interrupted, retry with the same `localRecordId` and ' +
+      'nothing is duplicated. **Save the returned `_id`** — you need it to push the readings with ' +
+      '`POST /v1/records/{id}/measures` and pictures with `POST /v1/records/{id}/pictures`. The ' +
+      'record is saved with the logged-in user\'s id, so the admin panel shows who uploaded it.',
   })
   @Consumers('met-link')
   @ApiBody({
@@ -155,7 +161,15 @@ export class RecordsController {
 
   @ApiOperation({
     summary: 'Bulk upload measures for a record',
-    description: 'Used by the MET-LINK app immediately after the record upload. `:id` is the record `_id`. First row must be the header row. Max 10 000 rows per call.',
+    description:
+      '**Call this right after uploading the record** to push its readings. `:id` is the record ' +
+      '`_id` you got back. Send the rows exactly as the instrument produced them — the **first row ' +
+      'must be the header row**; the server parses wind, temperature, humidity, pressure, solar ' +
+      '(W/m²), precipitation, voltage, dew point and GPS from each line\'s value,unit,description ' +
+      'triplets. **Important: the LAST TWO values of every data row are always read as the phone\'s ' +
+      'latitude,longitude** — always end the row with them (they can be empty, but a sensor triplet ' +
+      'in that position would be lost). Up to **10 000 rows per call** — split longer records into ' +
+      'several calls. Rows with a GPS position also place the device on the admin panel\'s fleet map.',
   })
   @Consumers('met-link')
   @ApiBody({
@@ -165,8 +179,8 @@ export class RecordsController {
         summary: '📱 MET-LINK measures (header row first)',
         value: {
           measures: [
-            { dataSentence: 'Wind speed,Unit,Description,Temperature,Unit,Description,Humidity,Unit,Description,Pressure,Unit,Description', timeStamp: '2026-05-01 14:32:00' },
-            { dataSentence: '12.5,m/s,relative,23.4,°C,TEMP,63.5,%,RH,1.025,B,PRESS', timeStamp: '2026-05-01 14:32:01' },
+            { dataSentence: 'Wind speed,Unit,Description,Temperature,Unit,Description,Humidity,Unit,Description,Pressure,Unit,Description,Solar,Unit,Description,Latitude phone,Longitude phone', timeStamp: '2026-05-01 14:32:00' },
+            { dataSentence: '12.5,m/s,relative,23.4,°C,TEMP,63.5,%,RH,1.025,B,PRESS,450,W/m²,SOLAR,31.5204,74.3587', timeStamp: '2026-05-01 14:32:01' },
           ],
         },
       },

@@ -15,9 +15,20 @@ import type {
   FirmwareStatusRow,
   FirmwareTarget,
   FleetMapPoint,
+  MetComfort,
+  MetDailySummary,
+  MetFogRisk,
   MetHistory,
   MetLatest,
+  MetMeasureRow,
+  MetMultiSensor,
+  MetPressureTendency,
+  MetRecordRow,
+  MetStatistics,
+  MetWindGust,
+  MetWindRoseAgg,
   MetWindrose,
+  MobileUser,
   NepLatest,
   Organization,
   OrgUser,
@@ -53,6 +64,8 @@ export const listUsers = async (signal?: AbortSignal): Promise<Page<OrgUser>> =>
   const rows = await http.get<OrgUser[]>('/organizations/me/users', signal);
   return fullArrayPage(rows);
 };
+export const listMobileUsers = (signal?: AbortSignal) =>
+  http.get<MobileUser[]>('/organizations/me/mobile-users', signal);
 export const inviteUser = (input: InviteUserInput) =>
   http.post<{ user: OrgUser }>('/organizations/me/users/invite', input);
 export const updateUser = (id: string, input: UpdateUserInput) =>
@@ -114,15 +127,29 @@ export const markNotificationRead = (id: string) => http.patch<unknown>(`/notifi
 export const markAllNotificationsRead = () => http.post<{ updated: number }>('/notifications/read-all', {});
 
 // ── Dashboard (Month 8) ─────────────────────────────────────────────────────
-export const getSummary = (signal?: AbortSignal) => http.get<DashboardSummary>('/dashboard/summary', signal);
+const demoParam = (includeDemo?: boolean) => (includeDemo ? '&includeDemoMode=true' : '');
+
+export interface SummaryScope {
+  includeDemo?: boolean;
+  type?: DeviceType;
+  deviceId?: string;
+}
+export const getSummary = (scope: SummaryScope = {}, signal?: AbortSignal) => {
+  const params = new URLSearchParams();
+  if (scope.includeDemo) params.set('includeDemoMode', 'true');
+  if (scope.type) params.set('type', scope.type);
+  if (scope.deviceId) params.set('deviceId', scope.deviceId);
+  const qs = params.toString();
+  return http.get<DashboardSummary>(`/dashboard/summary${qs ? `?${qs}` : ''}`, signal);
+};
 export const getDashboardDevices = (signal?: AbortSignal) =>
   http.get<DashboardDevice[]>('/dashboard/devices', signal);
-export const getMetLatest = (deviceId: string, signal?: AbortSignal) =>
-  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}`, signal);
-export const getMetWindrose = (deviceId: string, signal?: AbortSignal) =>
-  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}`, signal);
+export const getMetLatest = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
+  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
+export const getMetWindrose = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
+  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
 export const getMetHistory = (
-  params: { deviceId: string; sensor: string; from: number; to: number },
+  params: { deviceId: string; sensor: string; from: number; to: number; includeDemo?: boolean },
   signal?: AbortSignal,
 ) => {
   const qs = new URLSearchParams({
@@ -130,11 +157,14 @@ export const getMetHistory = (
     sensor: params.sensor,
     from: String(params.from),
     to: String(params.to),
-  }).toString();
-  return http.get<MetHistory>(`/dashboard/met/history?${qs}`, signal);
+  });
+  if (params.includeDemo) qs.set('includeDemoMode', 'true');
+  // getRaw (NOT get): the payload itself has a top-level `data` array, which the
+  // `{ data }`-envelope unwrapper in http.get would wrongly strip to just the array.
+  return http.getRaw<MetHistory>(`/dashboard/met/history?${qs.toString()}`, signal);
 };
-export const getNepLatest = (deviceId: string, signal?: AbortSignal) =>
-  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}`, signal);
+export const getNepLatest = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
+  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
 export const getOrgDeviceMap = (signal?: AbortSignal) =>
   http.get<FleetMapPoint[]>('/dashboard/org/device-map', signal);
 
@@ -184,5 +214,95 @@ export const getFirmwareStatus = async (type?: DeviceType, signal?: AbortSignal)
   );
   return { rows: body.data ?? [], total: body.meta?.total ?? 0, outdated: body.meta?.outdated ?? 0 };
 };
+
+// ── Analytics (Month 9 — MET deep-dive) ─────────────────────────────────────
+/** Shared window for the device-scoped analytics endpoints. */
+export interface AnalyticsWindow {
+  deviceId: string;
+  from?: number;
+  to?: number;
+  includeDemo?: boolean;
+}
+
+function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefined> = {}): string {
+  const p = new URLSearchParams({ deviceId: w.deviceId });
+  if (w.from != null) p.set('from', String(w.from));
+  if (w.to != null) p.set('to', String(w.to));
+  if (w.includeDemo) p.set('includeDemoMode', 'true');
+  for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') p.set(k, v);
+  return p.toString();
+}
+
+export const getMetWindRoseAgg = (w: AnalyticsWindow, opts: { period?: string; unit?: string } = {}, signal?: AbortSignal) =>
+  http.get<MetWindRoseAgg>(`/analytics/met/wind-rose?${analyticsQs(w, { period: opts.period, unit: opts.unit })}`, signal);
+
+export const getMetMultiSensor = (w: AnalyticsWindow, sensors: string[], interval?: string, signal?: AbortSignal) => {
+  const base = analyticsQs(w, { interval });
+  const list = sensors.map((s) => `sensors[]=${encodeURIComponent(s)}`).join('&');
+  return http.get<MetMultiSensor>(`/analytics/met/multi-sensor?${base}&${list}`, signal);
+};
+
+export const getMetStatistics = (w: AnalyticsWindow, sensor: string, signal?: AbortSignal) =>
+  http.get<MetStatistics>(`/analytics/met/statistics?${analyticsQs(w, { sensor })}`, signal);
+
+// getRaw (NOT get) for the three below: their payloads carry a top-level `data`
+// array that the `{ data }`-envelope unwrapper in http.get would wrongly strip.
+export const getMetWindGust = (w: AnalyticsWindow, interval?: string, signal?: AbortSignal) =>
+  http.getRaw<MetWindGust>(`/analytics/met/wind-gust-history?${analyticsQs(w, { interval })}`, signal);
+
+export const getMetComfort = (w: AnalyticsWindow, interval?: string, signal?: AbortSignal) =>
+  http.getRaw<MetComfort>(`/analytics/met/comfort-indices?${analyticsQs(w, { interval })}`, signal);
+
+export const getMetFogRisk = (w: AnalyticsWindow, interval?: string, signal?: AbortSignal) =>
+  http.getRaw<MetFogRisk>(`/analytics/met/fog-risk?${analyticsQs(w, { interval })}`, signal);
+
+export const getMetPressureTendency = (deviceId: string, hours?: number, signal?: AbortSignal) =>
+  http.get<MetPressureTendency>(
+    `/analytics/met/pressure-tendency?deviceId=${deviceId}${hours ? `&hours=${hours}` : ''}`,
+    signal,
+  );
+
+export const getMetDailySummary = (w: AnalyticsWindow, signal?: AbortSignal) =>
+  http.get<MetDailySummary[]>(`/analytics/met/daily-summary?${analyticsQs(w)}`, signal);
+
+// ── Records (Month 9 — MET records) ─────────────────────────────────────────
+export interface RecordsQuery {
+  deviceId?: string;
+  from?: number;
+  to?: number;
+  page?: number;
+  limit?: number;
+}
+
+export const listRecords = async (q: RecordsQuery = {}, signal?: AbortSignal): Promise<Page<MetRecordRow>> => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  const qs = params.toString();
+  const body = await http.getRaw<{ data: MetRecordRow[]; meta: { page: number; limit: number; total: number; pages: number } }>(
+    `/records${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };
+  return { rows: body.data ?? [], page: m.page, limit: m.limit, total: m.total, pageCount: m.pages };
+};
+
+export const getRecord = (id: string, signal?: AbortSignal) => http.get<MetRecordRow>(`/records/${id}`, signal);
+
+export const getRecordMeasures = async (
+  id: string,
+  page = 1,
+  limit = 1000,
+  signal?: AbortSignal,
+): Promise<Page<MetMeasureRow>> => {
+  const body = await http.getRaw<{ data: MetMeasureRow[]; meta: { page: number; limit: number; total: number; pages: number } }>(
+    `/records/${id}/measures?page=${page}&limit=${limit}`,
+    signal,
+  );
+  const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };
+  return { rows: body.data ?? [], page: m.page, limit: m.limit, total: m.total, pageCount: m.pages };
+};
+
+/** Same-origin BFF URL for the CSV export (a plain download link; cookie rides along). */
+export const recordCsvHref = (id: string) => `/api/records/${id}/export.csv`;
 
 export type { Role };

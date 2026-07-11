@@ -6,8 +6,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody, ApiOkResponse } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { UsersService } from './users.service';
@@ -31,22 +32,30 @@ const PROFILE_EXAMPLE = {
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @ApiOperation({ summary: 'Get the current user profile' })
+  @ApiOperation({
+    summary: 'Get the current user profile',
+    description: 'Returns the logged-in user\'s profile — id, name, email, role, and org. Works for both admin and mobile (field) users.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiOkResponse({ description: 'Current user profile', schema: { example: { data: PROFILE_EXAMPLE } } })
   @ApiErrors('unauthorized')
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async getMe(@CurrentUser() user?: JWTPayload) {
     const data = await this.usersService.getProfile(user!.userId);
     return { data };
   }
 
-  @ApiOperation({ summary: 'Update own profile (name) and/or change password' })
+  @ApiOperation({
+    summary: 'Update own profile (name) and/or change password',
+    description: 'Mobile users can update their first/last name and change their password from this endpoint.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({ type: UpdateProfileDto })
   @ApiOkResponse({ description: 'Updated profile', schema: { example: { data: PROFILE_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized')
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async updateMe(
     @Body() body: UpdateProfileDto,
     @CurrentUser() user?: JWTPayload,

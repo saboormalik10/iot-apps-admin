@@ -66,6 +66,24 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.body).toHaveProperty('median');
   });
 
+  // §10.5 — QNH / QFE / GPS-altitude are now comparable analytics sensors.
+  it.each(['qnh', 'qfe', 'gps_altitude'])('MET statistics accepts the %s sensor (§10.5)', async (sensor) => {
+    const res = await request(http)
+      .get('/v1/analytics/met/statistics')
+      .query({ deviceId: metDeviceId, sensor })
+      .set(auth());
+    expect(res.status).toBe(200); // not 400 "Unknown sensor" → the map wiring works
+    expect(res.body).toHaveProperty('median');
+  });
+
+  it('MET multi-sensor overlays the three §10.5 sensors', async () => {
+    const res = await request(http)
+      .get('/v1/analytics/met/multi-sensor')
+      .query({ deviceId: metDeviceId, sensors: ['qnh', 'qfe', 'gps_altitude'] })
+      .set(auth());
+    expect(res.status).toBe(200);
+  });
+
   it('NEP gps-density returns spatial cells', async () => {
     const res = await request(http)
       .get('/v1/analytics/nep/gps-density')
@@ -83,6 +101,35 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('pearsonR');
     expect(res.body).toHaveProperty('scatterPoints');
+  });
+
+  // §10.7 — daily-summary rollups (populated incrementally on sync + by backfill).
+  it('MET daily-summary returns an array with completeness fields', async () => {
+    const res = await request(http)
+      .get('/v1/analytics/met/daily-summary')
+      .query({ deviceId: metDeviceId })
+      .set(auth());
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    if (res.body.length) {
+      expect(res.body[0]).toHaveProperty('completenessPercent');
+      expect(res.body[0]).toHaveProperty('beaufortDistribution');
+      expect(res.body[0]).toHaveProperty('date');
+    }
+  });
+
+  it('MET daily-summary requires deviceId', async () => {
+    const res = await request(http).get('/v1/analytics/met/daily-summary').set(auth());
+    expect(res.status).toBe(400);
+  });
+
+  it('NEP daily-summary returns an array', async () => {
+    const res = await request(http)
+      .get('/v1/analytics/nep/daily-summary')
+      .query({ deviceId: nepDeviceId })
+      .set(auth());
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
   it('MET export-bulk CSV has a header row', async () => {

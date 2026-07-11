@@ -11,11 +11,26 @@ import {
   getOrgDeviceMap,
 } from '@/lib/api/endpoints';
 import { queryKeys } from '@/lib/query/keys';
+import { useScope } from '@/lib/hooks/use-scope';
 
-/** Dashboard query hooks (plan §14). Realtime handlers invalidate these keys. */
+/**
+ * Dashboard query hooks (plan §14). Realtime handlers invalidate these keys.
+ *
+ * The Scope Bar's "Include demo data" toggle is threaded through here: it's passed
+ * to the backend (which filters demo records/sessions) AND appended to the query key
+ * — at the END, so the realtime prefix-invalidations (e.g. queryKeys.summary) still
+ * match. Default is OFF → demo data is excluded.
+ */
 
 export function useSummary() {
-  return useQuery({ queryKey: queryKeys.summary, queryFn: ({ signal }) => getSummary(signal) });
+  const { scope } = useScope();
+  return useQuery({
+    // Scope (type/device/demo) appended AFTER the prefix so realtime
+    // prefix-invalidations on queryKeys.summary still match.
+    queryKey: [...queryKeys.summary, scope.includeDemo, scope.deviceType ?? null, scope.deviceId ?? null] as const,
+    queryFn: ({ signal }) =>
+      getSummary({ includeDemo: scope.includeDemo, type: scope.deviceType, deviceId: scope.deviceId }, signal),
+  });
 }
 
 export function useDashboardDevices() {
@@ -23,33 +38,38 @@ export function useDashboardDevices() {
 }
 
 export function useMetLatest(deviceId?: string) {
+  const { scope } = useScope();
   return useQuery({
-    queryKey: queryKeys.metLatest(deviceId ?? ''),
-    queryFn: ({ signal }) => getMetLatest(deviceId!, signal),
+    queryKey: [...queryKeys.metLatest(deviceId ?? ''), scope.includeDemo] as const,
+    queryFn: ({ signal }) => getMetLatest(deviceId!, scope.includeDemo, signal),
     enabled: Boolean(deviceId),
   });
 }
 
 export function useMetWindrose(deviceId?: string) {
+  const { scope } = useScope();
   return useQuery({
-    queryKey: queryKeys.metWindrose(deviceId ?? ''),
-    queryFn: ({ signal }) => getMetWindrose(deviceId!, signal),
+    queryKey: [...queryKeys.metWindrose(deviceId ?? ''), scope.includeDemo] as const,
+    queryFn: ({ signal }) => getMetWindrose(deviceId!, scope.includeDemo, signal),
     enabled: Boolean(deviceId),
   });
 }
 
-export function useMetHistory(params?: { deviceId: string; sensor: string; from: number; to: number }) {
+export function useMetHistory(params?: { deviceId: string; sensor: string; from: number; to: number; includeDemo?: boolean }) {
   return useQuery({
-    queryKey: params ? queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to) : ['met-history', 'idle'],
+    queryKey: params
+      ? ([...queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to), params.includeDemo ?? false] as const)
+      : (['met-history', 'idle'] as const),
     queryFn: ({ signal }) => getMetHistory(params!, signal),
     enabled: Boolean(params?.deviceId),
   });
 }
 
 export function useNepLatest(deviceId?: string) {
+  const { scope } = useScope();
   return useQuery({
-    queryKey: queryKeys.nepLatest(deviceId ?? ''),
-    queryFn: ({ signal }) => getNepLatest(deviceId!, signal),
+    queryKey: [...queryKeys.nepLatest(deviceId ?? ''), scope.includeDemo] as const,
+    queryFn: ({ signal }) => getNepLatest(deviceId!, scope.includeDemo, signal),
     enabled: Boolean(deviceId),
   });
 }

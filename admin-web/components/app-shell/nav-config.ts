@@ -5,7 +5,7 @@ import {
   FileText,
   BarChart3,
   Bell,
-  Building2,
+  Users,
   Settings,
   Map as MapIcon,
   type LucideIcon,
@@ -37,6 +37,9 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'records', href: '/records', labelKey: 'nav.records', icon: FileText, flag: 'records' },
   { key: 'analytics', href: '/analytics', labelKey: 'nav.analytics', icon: BarChart3, flag: 'analytics' },
   { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
-  { key: 'org', href: '/org', labelKey: 'nav.org', icon: Building2, capability: 'manageOrg' },
+  // The Organization page was retired from the nav — user management moved to
+  // /users (MET / NEP / all people). The /org route itself still exists for
+  // direct navigation (org settings + audit log).
+  { key: 'users', href: '/users', labelKey: 'nav.users', icon: Users, capability: 'manageOrg' },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];

@@ -8,7 +8,7 @@ import { WindRosePanel } from './wind-rose-panel';
 import { MetHistoryPanel } from './met-history-panel';
 import { ActiveAlertsPanel } from './active-alerts-panel';
 import { FleetMapPanel } from '@/features/maps/fleet-map-panel';
-import { useScopedDevice } from './use-scoped-device';
+import { useScopedDevice, useEffectiveDeviceType } from './use-scoped-device';
 import { useDashboardRealtime } from './use-dashboard-realtime';
 
 /**
@@ -22,18 +22,25 @@ export function DashboardHome() {
   const nep = useScopedDevice('NEP-LINK');
   useDashboardRealtime({ met: met.deviceId, nep: nep.deviceId });
 
+  // The EFFECTIVE type drives which instrument panels show: the type filter, or —
+  // when a single device is picked in "All devices" — that device's own type.
+  // A MET scope hides the NEP panels and vice-versa; "All" shows both.
+  const effectiveType = useEffectiveDeviceType();
+  const showMet = !effectiveType || effectiveType === 'MET-LINK';
+  const showNep = !effectiveType || effectiveType === 'NEP-LINK';
+
   return (
     <div className="space-y-4">
       <KpiRow />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          <MetLiveTiles deviceId={met.deviceId} isAuto={met.isAuto} />
-          <MetHistoryPanel deviceId={met.deviceId} />
-          <NepLiveTile deviceId={nep.deviceId} isAuto={nep.isAuto} />
+          {showMet ? <MetLiveTiles deviceId={met.deviceId} isAuto={met.isAuto} /> : null}
+          {showMet ? <MetHistoryPanel deviceId={met.deviceId} /> : null}
+          {showNep ? <NepLiveTile deviceId={nep.deviceId} isAuto={nep.isAuto} /> : null}
         </div>
         <div className="space-y-4">
-          <WindRosePanel deviceId={met.deviceId} />
+          {showMet ? <WindRosePanel deviceId={met.deviceId} /> : null}
           <ActiveAlertsPanel />
         </div>
       </div>

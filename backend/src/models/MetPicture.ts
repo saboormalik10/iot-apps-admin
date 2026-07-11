@@ -3,6 +3,8 @@ import { Schema, model, Document, Types } from 'mongoose';
 export interface IMetPicture extends Document {
   recordId: Types.ObjectId;
   organizationId: Types.ObjectId;
+  /** Mobile user who uploaded this picture (null for legacy rows). */
+  userId: Types.ObjectId | null;
   storageKey: string;
   url: string | null;
   resourceType: string | null;
@@ -17,6 +19,7 @@ const metPictureSchema = new Schema<IMetPicture>(
   {
     recordId: { type: Schema.Types.ObjectId, ref: 'MetRecord', required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     storageKey: { type: String, required: true },
     url: { type: String, default: null },
     resourceType: { type: String, default: null },

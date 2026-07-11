@@ -11,6 +11,19 @@ import { useDashboardDevices } from './use-dashboard';
  * Bar is on "All" we auto-select a sensible default (the most-recently-seen device
  * of the requested type) and flag it as auto-selected, rather than erroring.
  */
+/**
+ * The device type the scope is EFFECTIVELY narrowed to: the explicit type filter,
+ * or — when a single device is selected — that device's type. Drives which
+ * instrument panels and KPI tiles are shown.
+ */
+export function useEffectiveDeviceType(): DeviceType | undefined {
+  const { scope } = useScope();
+  const { data: devices = [] } = useDashboardDevices();
+  if (scope.deviceType) return scope.deviceType;
+  if (scope.deviceId) return devices.find((d) => d._id === scope.deviceId)?.type;
+  return undefined;
+}
+
 export function useScopedDevice(type: DeviceType): {
   deviceId?: string;
   device?: DashboardDevice;

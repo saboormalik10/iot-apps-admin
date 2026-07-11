@@ -84,6 +84,7 @@
     "alerts": "Alerts",
     "notifications": "Notifications",
     "org": "Organization",
+    "users": "Users",
     "audit": "Audit log",
     "settings": "Settings",
     "reports": "Reports"
@@ -121,6 +122,28 @@
     "timezone": "Timezone",
     "settingsSaved": "Organization settings saved",
     "adminOnly": "Only admins can change organization settings."
+  },
+  "mobileUsers": {
+    "title": "Users",
+    "metTab": "MET users",
+    "nepTab": "NEP users",
+    "adminsTab": "Admins",
+    "metSubtitle": "Field users of the MET-LINK app and their upload activity",
+    "nepSubtitle": "Field users of the NEP-LINK app and their upload activity",
+    "colName": "Name",
+    "colEmail": "Email",
+    "colStatus": "Status",
+    "colSignedUp": "Signed up",
+    "colLastLogin": "Last sign-in",
+    "colUploads": "Uploads",
+    "colLastUpload": "Last upload",
+    "colDevices": "Devices",
+    "records": "records",
+    "sessions": "sessions",
+    "never": "Never",
+    "none": "—",
+    "empty": "No mobile users yet",
+    "emptyBody": "Users appear here after they sign up in the mobile app or upload data."
   },
   "users": {
     "title": "People",

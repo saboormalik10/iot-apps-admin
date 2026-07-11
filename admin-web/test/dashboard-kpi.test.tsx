@@ -1,7 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from './utils';
 import { KpiRow } from '@/features/dashboard/kpi-row';
+
+// KpiRow → useSummary → useScope reads the URL via next/navigation.
+vi.mock('next/navigation', () => {
+  const searchParams = new URLSearchParams();
+  return {
+    useRouter: () => ({ replace: () => {}, push: () => {} }),
+    usePathname: () => '/',
+    useSearchParams: () => searchParams,
+  };
+});
 
 describe('KpiRow (§10.8 summary enrichment)', () => {
   it('renders the KPI numbers, the armed-alerts tile, and the sparklines', async () => {

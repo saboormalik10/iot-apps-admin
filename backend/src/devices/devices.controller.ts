@@ -10,7 +10,9 @@ import {
   Query,
   HttpCode,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -51,6 +53,7 @@ export class DevicesController {
 
   @ApiOperation({ summary: 'List all devices in org' })
   @ApiQuery({ name: 'type', required: false, enum: ['MET-LINK', 'NEP-LINK'], description: 'Filter by device type' })
+  @ApiQuery({ name: 'bleId', required: false, description: 'Filter by BLE identifier — useful for re-pairing lookup' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
   @ApiOkResponse({
@@ -62,6 +65,7 @@ export class DevicesController {
   @UseGuards(JwtAuthGuard)
   async listDevices(
     @Query('type') type?: 'MET-LINK' | 'NEP-LINK',
+    @Query('bleId') bleId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @CurrentUser() user?: JWTPayload,
@@ -69,14 +73,23 @@ export class DevicesController {
     return this.devicesService.listDevices({
       organizationId: user!.organizationId,
       type,
+      bleId,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
     });
   }
 
   @ApiOperation({
-    summary: 'Register a new device',
-    description: 'Used by NEP-LINK app & MET-LINK app on first pairing — the only difference is `type` (see the **Examples** dropdown). Save the returned `_id` as `deviceId`.',
+    summary: 'Register a new device (idempotent)',
+    description:
+      '**Call this the first time the app pairs with a new instrument over Bluetooth.**\n\n' +
+      'Send the instrument\'s BLE id, a display name, and `type` ("MET-LINK" or "NEP-LINK" — the ' +
+      'only difference between the two apps, see the **Examples** dropdown).\n\n' +
+      '**Save the returned `_id` on the phone — that is the `deviceId` every upload, heartbeat and ' +
+      'settings call asks for.** This endpoint is **idempotent**: if the same `bleId` was already ' +
+      'registered it returns **200** with the existing device instead of an error, so a re-install ' +
+      'or re-pair just works. HTTP **201** means a brand-new device was created. The ' +
+      'registering user is remembered so the admin panel can show who added each device.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -92,7 +105,7 @@ export class DevicesController {
       },
     },
   })
-  @ApiCreatedResponse({ description: 'Registered device', schema: { example: { data: DEVICE_EXAMPLE } } })
+  @ApiCreatedResponse({ description: 'Registered device (201 = new, 200 = already existed)', schema: { example: { data: DEVICE_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized')
   @Post()
   @HttpCode(201)
@@ -100,12 +113,14 @@ export class DevicesController {
   async createDevice(
     @Body() body: { bleId: string; name: string; type: 'MET-LINK' | 'NEP-LINK'; serialNo?: string; firmwareVersion?: string; customName?: string },
     @CurrentUser() user?: JWTPayload,
+    @Res({ passthrough: true }) res?: Response,
   ) {
-    const device = await this.devicesService.createDevice(
+    const { device, created } = await this.devicesService.createDevice(
       user!.organizationId,
       body,
       { userId: user!.userId, email: user!.email ?? '' },
     );
+    if (!created) res!.status(200);
     return { data: device };
   }
 
@@ -224,11 +239,18 @@ export class DevicesController {
     return { data: result };
   }
 
-  @ApiOperation({ summary: 'Get per-device configuration (settings) — admin dashboard' })
+  @ApiOperation({
+    summary: 'Get per-device configuration (settings) — mobile + admin',
+    description:
+      '**Call this on app launch or after a re-install** to restore the settings the user last ' +
+      'saved for this instrument (units, wind-rose options, capture toggles…). Defaults are ' +
+      'created automatically on the first read. Use `PATCH /devices/:id/settings` to push changes.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiOkResponse({ description: 'Device settings (defaults created on first read)' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/settings')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async getDeviceSettings(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const settings = await this.devicesService.getDeviceSettings(user!.organizationId, id);
     return { data: settings };
@@ -236,7 +258,11 @@ export class DevicesController {
 
   @ApiOperation({
     summary: 'Update per-device configuration (partial; mobile + admin)',
-    description: 'Used by MET-LINK app (and optionally NEP-LINK) **and** the admin dashboard. Send only the keys that changed.',
+    description:
+      '**Call this whenever the user changes a setting in your app** (units, wind-rose options, ' +
+      'capture toggles…). Send ONLY the keys that changed — everything else keeps its value. ' +
+      'Settings are saved per device in the cloud, so they survive re-installs and show up in the ' +
+      'admin dashboard too. Used by the MET-LINK app (and optionally NEP-LINK) **and** the admin panel.',
   })
   @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({

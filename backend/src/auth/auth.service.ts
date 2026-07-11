@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import { Types } from 'mongoose';
 import { Injectable } from '@nestjs/common';
 import { sendPasswordResetEmail } from '../utils/mailer';
 import { Organization } from '../models/Organization';
@@ -28,6 +29,16 @@ export interface LoginInput {
   password: string;
   userAgent?: string;
   ipAddress?: string;
+}
+
+export interface MobileSignupInput {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  /** Which app is signing the user up — shown on the admin panel's Users page. */
+  appType?: 'MET-LINK' | 'NEP-LINK';
+  userAgent?: string;
 }
 
 export interface AuthResult {
@@ -115,6 +126,51 @@ export class AuthService {
     });
 
     return this.buildAuthResult(user);
+  }
+
+  /**
+   * Mobile signup — creates a FIELD user in the org configured by MOBILE_ORG_ID.
+   * The mobile apps no longer share a static API key; each user gets their own JWT
+   * (which carries the real org + user id, so devices/records land in the right org
+   * and audit correctly). Role is 'operator'. We validate that MOBILE_ORG_ID points
+   * to a REAL organization BEFORE creating the user, so a mis-set env can't orphan
+   * accounts (the exact failure mode that produced the orphaned devices earlier).
+   */
+  async mobileSignup(input: MobileSignupInput): Promise<AuthResult> {
+    const orgId = process.env.MOBILE_ORG_ID;
+    if (!orgId || !Types.ObjectId.isValid(orgId)) {
+      throw Object.assign(new Error('Mobile signup is not configured (MOBILE_ORG_ID missing or invalid)'), {
+        statusCode: 500,
+        code: 'MOBILE_ORG_NOT_CONFIGURED',
+      });
+    }
+    const org = await Organization.findById(orgId);
+    if (!org) {
+      throw Object.assign(
+        new Error('Mobile signup is misconfigured: MOBILE_ORG_ID does not reference an existing organization'),
+        { statusCode: 500, code: 'MOBILE_ORG_NOT_FOUND' },
+      );
+    }
+
+    const email = input.email.toLowerCase();
+    const existing = await User.findOne({ email });
+    if (existing) {
+      throw Object.assign(new Error('Email already registered'), { statusCode: 409, code: 'EMAIL_EXISTS' });
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
+    const user = await User.create({
+      organizationId: org._id,
+      email,
+      passwordHash,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      role: 'operator',
+      mobileAppType: input.appType === 'MET-LINK' || input.appType === 'NEP-LINK' ? input.appType : null,
+      isActive: true,
+    });
+
+    return this.buildAuthResult(user, input.userAgent);
   }
 
   async login(input: LoginInput): Promise<AuthResult> {

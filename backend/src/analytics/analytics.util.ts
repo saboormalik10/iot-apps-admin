@@ -22,6 +22,10 @@ export const MET_SENSOR_FIELD: Record<string, string> = {
   voltage: 'voltageV',
   battery_voltage: 'batteryVoltageV',
   current: 'currentA',
+  // §10.5 — comparable atmospheric/altitude channels (fields already on MetMeasure).
+  qnh: 'qnhHpa',
+  qfe: 'qfeHpa',
+  gps_altitude: 'gpsAltM',
 };
 
 export const MET_SENSOR_UNIT: Record<string, string> = {
@@ -37,6 +41,9 @@ export const MET_SENSOR_UNIT: Record<string, string> = {
   voltage: 'V',
   battery_voltage: 'V',
   current: 'A',
+  qnh: 'hPa',
+  qfe: 'hPa',
+  gps_altitude: 'm',
 };
 
 // ─── Wind rose: 16 compass sectors (22.5° each) ─────────────────────────────

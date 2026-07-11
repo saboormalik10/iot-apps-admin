@@ -3,6 +3,8 @@ import { Schema, model, Document, Types } from 'mongoose';
 export interface IMetRecord extends Document {
   organizationId: Types.ObjectId;
   deviceId: Types.ObjectId;
+  /** Mobile user who uploaded/synced this record (null for legacy rows). */
+  userId: Types.ObjectId | null;
   deviceName: string;
   urlMaps: string | null;
   dateStart: string;
@@ -24,6 +26,7 @@ const metRecordSchema = new Schema<IMetRecord>(
   {
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     deviceName: { type: String, required: true },
     urlMaps: { type: String, default: null },
     dateStart: { type: String, required: true },
@@ -48,5 +51,6 @@ metRecordSchema.index(
   { unique: true, sparse: true },
 );
 metRecordSchema.index({ organizationId: 1, isDemoMode: 1 }, { sparse: true });
+metRecordSchema.index({ organizationId: 1, userId: 1 }, { sparse: true });
 
 export const MetRecord = model<IMetRecord>('MetRecord', metRecordSchema);

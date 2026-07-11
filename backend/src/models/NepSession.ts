@@ -6,6 +6,8 @@ export interface INepSession extends Document {
   id: string; // UUID v4 from mobile app
   organizationId: Types.ObjectId;
   deviceId: Types.ObjectId;
+  /** Mobile user who uploaded/synced this session (null for legacy rows). */
+  userId: Types.ObjectId | null;
   deviceName: string;
   startTimestamp: number;
   endTimestamp: number | null;
@@ -37,6 +39,7 @@ const nepSessionSchema = new Schema<INepSession>(
     id: { type: String, required: true, unique: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     deviceName: { type: String, required: true },
     startTimestamp: { type: Number, required: true },
     endTimestamp: { type: Number, default: null },
@@ -68,5 +71,6 @@ nepSessionSchema.index({ organizationId: 1, startTimestamp: -1 });
 nepSessionSchema.index({ deviceId: 1, startTimestamp: -1 });
 nepSessionSchema.index({ organizationId: 1, turbidityAvg: -1 });
 nepSessionSchema.index({ organizationId: 1, isDemoMode: 1 }, { sparse: true });
+nepSessionSchema.index({ organizationId: 1, userId: 1 }, { sparse: true });
 
 export const NepSession = model<INepSession>('NepSession', nepSessionSchema);

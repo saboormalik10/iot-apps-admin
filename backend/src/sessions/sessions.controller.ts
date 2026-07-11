@@ -82,7 +82,12 @@ export class SessionsController {
 
   @ApiOperation({
     summary: 'Upload a NEP-LINK session from the mobile app',
-    description: 'Used by the NEP-LINK app. `id` is a client-generated UUID v4 (idempotency key — reuse it on retry).',
+    description:
+      '**Call this when a measuring session finishes (or to sync one recorded offline).**\n\n' +
+      'Generate a UUID v4 on the phone and send it as `id` — if the upload is interrupted, retry ' +
+      'with the SAME id and nothing is duplicated. Send the session\'s metadata here, then push its ' +
+      'readings with `POST /v1/sessions/{id}/samples`. The session is saved with the logged-in ' +
+      'user\'s id, so the admin panel shows who recorded it.',
   })
   @Consumers('nep-link')
   @ApiBody({
@@ -111,7 +116,7 @@ export class SessionsController {
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
   async createSession(@Body() body: CreateSessionInput, @CurrentUser() user?: JWTPayload) {
-    const session = await this.sessionsService.createSession(user!.organizationId, body);
+    const session = await this.sessionsService.createSession(user!.organizationId, body, user!.userId);
     return { data: session };
   }
 
@@ -128,11 +133,10 @@ export class SessionsController {
   @ApiOperation({
     summary: 'Update a NEP-LINK session (mobile + admin)',
     description:
-      'Partial update — every field provided in the body is applied. Used by the NEP-LINK app to edit ' +
-      'session metadata (comment, endTimestamp, timezone, sensor flags, demo flag) and by the admin ' +
-      'dashboard to edit the comment. Identity/ownership fields (`id`, `deviceId`, org) and the ' +
-      'sample-derived stats (sampleCount, probeRange, turbidity/temperature aggregates) are protected ' +
-      'and cannot be changed here.',
+      '**Call this when the user edits a session in your app** — e.g. adds a comment, or the session ' +
+      'ends and you now know `endTimestamp`. Send only the fields that changed; everything else stays ' +
+      'as it was. You cannot change who/what the session belongs to (`id`, `deviceId`, organisation) ' +
+      'or the computed statistics — those are protected. Also used by the admin panel to edit comments.',
   })
   @Consumers('nep-link', 'admin')
   @ApiBody({
@@ -177,7 +181,11 @@ export class SessionsController {
 
   @ApiOperation({
     summary: 'Bulk insert samples for a session',
-    description: 'Used by the NEP-LINK app immediately after the session upload. `:id` is the session UUID. Max 7200 samples per call.',
+    description:
+      '**Call this right after uploading the session** to push its readings. `:id` is the session ' +
+      'UUID you generated. Send up to **7200 samples per call** — for longer sessions, split into ' +
+      'several calls. Include `locationLat`/`locationLng` when the phone has a GPS fix: those points ' +
+      'draw the session on the map AND place the device on the admin panel\'s fleet map.',
   })
   @Consumers('nep-link')
   @ApiBody({

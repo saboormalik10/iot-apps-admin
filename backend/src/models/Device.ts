@@ -15,6 +15,10 @@ export interface IDevice extends Document {
   lastBatteryVoltage: number | null;
   lastBatteryCharging: boolean | null;
   isOnline: boolean;
+  /** Mobile user who first registered this device (null for legacy rows). */
+  registeredByUserId: Types.ObjectId | null;
+  /** Mobile user whose app sent the most recent heartbeat. */
+  lastSeenByUserId: Types.ObjectId | null;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +38,8 @@ const deviceSchema = new Schema<IDevice>(
     lastBatteryVoltage: { type: Number, default: null },
     lastBatteryCharging: { type: Boolean, default: null },
     isOnline: { type: Boolean, default: false },
+    registeredByUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    lastSeenByUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },

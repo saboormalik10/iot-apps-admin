@@ -28,6 +28,7 @@ function computeIsOnline(lastSeenAt: Date | null): boolean {
 export interface ListDevicesOptions {
   organizationId: string;
   type?: 'MET-LINK' | 'NEP-LINK';
+  bleId?: string;
   page?: number;
   limit?: number;
 }
@@ -40,12 +41,13 @@ export interface ListDevicesResult {
 @Injectable()
 export class DevicesService {
   async listDevices(opts: ListDevicesOptions): Promise<ListDevicesResult> {
-    const { organizationId, type, page = 1, limit = 20 } = opts;
+    const { organizationId, type, bleId, page = 1, limit = 20 } = opts;
     const query: Record<string, unknown> = {
       organizationId: new Types.ObjectId(organizationId),
       deletedAt: null,
     };
     if (type) query.type = type;
+    if (bleId) query.bleId = bleId;
 
     const [items, total] = await Promise.all([
       Device.find(query)
@@ -71,17 +73,16 @@ export class DevicesService {
       customName?: string;
     },
     actor: { userId: string; email: string },
-  ): Promise<IDevice> {
+  ): Promise<{ device: IDevice; created: boolean }> {
     const existing = await Device.findOne({
       organizationId: new Types.ObjectId(organizationId),
       bleId: body.bleId,
       deletedAt: null,
     });
     if (existing) {
-      throw Object.assign(new Error('A device with this BLE ID already exists in your organization'), {
-        statusCode: 409,
-        code: 'DEVICE_ALREADY_EXISTS',
-      });
+      // Idempotent: return the already-registered device so the mobile app can
+      // reuse its `_id` without a separate GET /devices lookup.
+      return { device: existing, created: false };
     }
 
     const device = await Device.create({
@@ -92,20 +93,28 @@ export class DevicesService {
       serialNo: body.serialNo ?? null,
       firmwareVersion: body.firmwareVersion ?? null,
       customName: body.customName ?? null,
+      registeredByUserId: Types.ObjectId.isValid(actor.userId) ? new Types.ObjectId(actor.userId) : null,
     });
 
-    AuditLog.create({
-      organizationId: device.organizationId,
-      userId: new Types.ObjectId(actor.userId),
-      userEmail: actor.email,
-      action: 'create',
-      resourceType: 'device',
-      resourceId: (device._id as unknown as string).toString(),
-      resourceName: device.name,
-      changes: null,
-    }).catch(() => void 0);
+    // Audit is best-effort AND only meaningful for a real user. Mobile / API-key
+    // requests carry a placeholder actor id ('mobile-device') that is NOT an
+    // ObjectId — `new Types.ObjectId(actor.userId)` for it throws SYNCHRONOUSLY
+    // (before the promise exists, so the .catch never sees it) and 500s the
+    // request even though the device was already created. Only audit real users.
+    if (Types.ObjectId.isValid(actor.userId)) {
+      AuditLog.create({
+        organizationId: device.organizationId,
+        userId: new Types.ObjectId(actor.userId),
+        userEmail: actor.email,
+        action: 'create',
+        resourceType: 'device',
+        resourceId: (device._id as unknown as string).toString(),
+        resourceName: device.name,
+        changes: null,
+      }).catch(() => void 0);
+    }
 
-    return device;
+    return { device, created: true };
   }
 
   async getDevice(organizationId: string, deviceId: string): Promise<IDevice> {

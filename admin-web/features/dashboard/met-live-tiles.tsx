@@ -1,12 +1,12 @@
 'use client';
 
 import { Wind, Thermometer, Droplets, Gauge, Sun, CloudRain, Zap, Navigation } from 'lucide-react';
-import type { MetLatest } from '@/lib/api/types';
 import { Card } from '@/components/ui/card';
 import { StatTile } from '@/components/charts/stat-tile';
 import { BeaufortBadge } from '@/components/charts/beaufort-scale';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { fmt, COMPASS_16, sectorIndex } from '@/components/charts/chart-utils';
+import { DataFreshness } from './data-freshness';
 import { useMetLatest } from './use-dashboard';
 
 /**
@@ -27,10 +27,13 @@ export function MetLiveTiles({ deviceId, isAuto }: { deviceId?: string; isAuto?:
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">
-          Live weather · {data.deviceName}
-          {isAuto ? <span className="ml-2 text-xs font-normal text-muted-foreground">(auto-selected)</span> : null}
-        </h3>
+        <div className="space-y-0.5">
+          <h3 className="text-sm font-medium">
+            Live weather · {data.deviceName}
+            {isAuto ? <span className="ml-2 text-xs font-normal text-muted-foreground">(auto-selected)</span> : null}
+          </h3>
+          <DataFreshness tsMs={data.measuredAtMs} />
+        </div>
         <BeaufortBadge windMs={data.windSpeedMs} />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { RotateCcw } from 'lucide-react';
 import type { DeviceType } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
+import { useDashboardDevices } from '@/features/dashboard/use-dashboard';
 import { DeviceSelect } from '@/components/data/device-select';
 import { DateRangePicker } from '@/components/data/date-range-picker';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,10 @@ const HIDDEN_PREFIXES = ['/org', '/settings', '/profile'];
 export function ScopeBar() {
   const pathname = usePathname();
   const { scope, setScope, reset, isDefault } = useScope();
+  // Type options come from the backend device list — only families the org
+  // actually owns are offered (no hardcoded frontend filter values).
+  const { data: devices = [] } = useDashboardDevices();
+  const availableTypes = Array.from(new Set(devices.map((d) => d.type)));
 
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
@@ -49,8 +54,11 @@ export function ScopeBar() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL_TYPES}>All types</SelectItem>
-          <SelectItem value="MET-LINK">MET-LINK</SelectItem>
-          <SelectItem value="NEP-LINK">NEP-LINK</SelectItem>
+          {availableTypes.map((t) => (
+            <SelectItem key={t} value={t}>
+              {t}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

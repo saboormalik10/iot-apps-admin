@@ -76,16 +76,22 @@ export class RecordsService {
     const dateEndMs = input.dateEnd ? parseTimestampMs(input.dateEnd) : null;
     const record = await MetRecord.create({
       organizationId: new Types.ObjectId(organizationId), deviceId: new Types.ObjectId(input.deviceId),
+      userId: Types.ObjectId.isValid(actor.userId) ? new Types.ObjectId(actor.userId) : null,
       deviceName: input.deviceName ?? device.name, dateStart: input.dateStart, dateEnd: input.dateEnd ?? null,
       dateStartMs, dateEndMs, comment: input.comment ?? '', measureCount: 0, hasHeaderRow: true,
       localRecordId: input.localRecordId ?? null, isDemoMode: input.isDemoMode ?? false,
       urlMaps: input.urlMaps ?? null, syncedAt: new Date(),
     });
-    AuditLog.create({
-      organizationId: new Types.ObjectId(organizationId), userId: new Types.ObjectId(actor.userId), userEmail: actor.email,
-      action: 'create', resourceType: 'record', resourceId: (record._id as unknown as string).toString(),
-      resourceName: record.deviceName + ' — ' + record.dateStart, changes: null,
-    }).catch(() => {});
+    // Only audit real users — a mobile/API-key actor ('mobile-device') is not an
+    // ObjectId and `new Types.ObjectId(actor.userId)` would throw synchronously
+    // (escaping the .catch) and 500 the request, same as the createDevice bug.
+    if (Types.ObjectId.isValid(actor.userId)) {
+      AuditLog.create({
+        organizationId: new Types.ObjectId(organizationId), userId: new Types.ObjectId(actor.userId), userEmail: actor.email,
+        action: 'create', resourceType: 'record', resourceId: (record._id as unknown as string).toString(),
+        resourceName: record.deviceName + ' — ' + record.dateStart, changes: null,
+      }).catch(() => {});
+    }
     return record;
   }
 

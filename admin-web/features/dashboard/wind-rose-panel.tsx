@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { WindRose, type WindDatum } from '@/components/charts/wind-rose';
 import { LoadingState, EmptyState } from '@/components/screen-states';
+import { DataFreshness } from './data-freshness';
 import { useMetWindrose } from './use-dashboard';
 
 /**
@@ -27,14 +28,21 @@ export function WindRosePanel({ deviceId }: { deviceId?: string }) {
   if (isLoading) return <Card className="p-4"><LoadingState label="Loading wind rose…" /></Card>;
   if (!data) return <Card className="p-4"><EmptyState title="No wind data" /></Card>;
 
+  // Newest sample in the payload (arrays are sorted newest-first). The rose shows
+  // "the last 10 min OF THIS data" — which may itself be old, so stamp its age.
+  const newestTsMs = data.last600[0]?.timestampMs ?? data.last120[0]?.timestampMs ?? null;
+
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <Toggle active={orient === 'true'} onClick={() => setOrient('true')}>True</Toggle>
         <Toggle active={orient === 'relative'} onClick={() => setOrient('relative')}>Relative</Toggle>
         <span className="mx-1 w-px bg-border" />
         <Toggle active={period === '10m'} onClick={() => setPeriod('10m')}>10 min</Toggle>
         <Toggle active={period === '2m'} onClick={() => setPeriod('2m')}>2 min</Toggle>
+        <span className="ml-auto">
+          <DataFreshness tsMs={newestTsMs} />
+        </span>
       </div>
       <WindRose samples={samples} title={`Wind rose · ${orient} · ${period === '10m' ? '10 min' : '2 min'}`} />
     </div>

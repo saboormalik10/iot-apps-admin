@@ -74,5 +74,17 @@ export function useScope() {
 
   const isDefault = !scope.deviceId && !scope.deviceType && scope.range === DEFAULT_RANGE && !scope.includeDemo;
 
-  return { scope, setScope: write, reset, isDefault, window: rangeWindow(scope.range) };
+  // The window MUST be stable across renders: it feeds query keys (metHistory and
+  // every Month-9 analytics chart). Computing `Date.now()` inline on each render
+  // churns `from`/`to` every render → the query key changes → infinite refetch
+  // loop. Quantize `now` to the current minute (MET data is 1-min bucketed anyway)
+  // and memoize, so the window is reference-stable within a minute and advances at
+  // most once per minute — i.e. one legitimate refetch when the minute rolls over.
+  const minuteBucket = Math.floor(Date.now() / 60_000);
+  const window = useMemo(
+    () => rangeWindow(scope.range, minuteBucket * 60_000),
+    [scope.range, minuteBucket],
+  );
+
+  return { scope, setScope: write, reset, isDefault, window };
 }

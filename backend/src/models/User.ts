@@ -2,6 +2,8 @@ import { Schema, model, Document, Types } from 'mongoose';
 
 export type UserRole = 'admin' | 'operator' | 'viewer';
 
+export type MobileAppType = 'MET-LINK' | 'NEP-LINK';
+
 export interface IUser extends Document {
   organizationId: Types.ObjectId;
   email: string;
@@ -9,6 +11,8 @@ export interface IUser extends Document {
   firstName: string;
   lastName: string;
   role: UserRole;
+  /** Which mobile app the user signed up from (null = admin-panel user). */
+  mobileAppType: MobileAppType | null;
   isActive: boolean;
   lastLoginAt: Date | null;
   invitedAt: Date | null;
@@ -25,6 +29,7 @@ const userSchema = new Schema<IUser>(
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     role: { type: String, enum: ['admin', 'operator', 'viewer'], default: 'viewer' },
+    mobileAppType: { type: String, enum: ['MET-LINK', 'NEP-LINK', null], default: null },
     isActive: { type: Boolean, default: true },
     lastLoginAt: { type: Date, default: null },
     invitedAt: { type: Date, default: null },

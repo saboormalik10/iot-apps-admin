@@ -33,6 +33,33 @@ export class LoginDto {
   password!: string;
 }
 
+export class MobileSignupDto {
+  @ApiProperty({ example: 'field.tech@observator.com' })
+  email!: string;
+
+  @ApiProperty({ minLength: 8, example: 'Field@1234' })
+  password!: string;
+
+  @ApiProperty({ example: 'Sam' })
+  firstName!: string;
+
+  @ApiProperty({ example: 'Rivers' })
+  lastName!: string;
+
+  @ApiPropertyOptional({
+    enum: ['MET-LINK', 'NEP-LINK'],
+    example: 'NEP-LINK',
+    description:
+      'Which app the user signed up from. Send your app\'s name so the admin panel can list the user under "MET users" or "NEP users".',
+  })
+  appType?: 'MET-LINK' | 'NEP-LINK';
+}
+
+export class MobileRefreshDto {
+  @ApiProperty({ description: 'Raw refresh token returned by mobile login/signup.' })
+  refreshToken!: string;
+}
+
 export class RefreshDto {
   @ApiPropertyOptional({ description: 'Raw refresh token. Optional — falls back to the httpOnly cookie.' })
   refreshToken?: string;

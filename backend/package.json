@@ -8,6 +8,7 @@
     "build": "nest build",
     "start": "node dist/main",
     "seed": "ts-node src/scripts/seed.ts",
+    "backfill:daily-summary": "ts-node src/scripts/backfill-daily-summary.ts",
     "test": "jest --config test/jest-e2e.json",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/**/*.ts"

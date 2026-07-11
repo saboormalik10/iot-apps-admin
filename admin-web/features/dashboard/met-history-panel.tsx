@@ -31,11 +31,11 @@ const SENSORS: { key: string; label: string }[] = [
  * 1-min bucket) with a sensor picker. Range comes from the global Scope Bar.
  */
 export function MetHistoryPanel({ deviceId }: { deviceId?: string }) {
-  const { window } = useScope();
+  const { window, scope } = useScope();
   const [sensor, setSensor] = useState('temperature');
 
   const params = deviceId
-    ? { deviceId, sensor, from: window.from ?? window.to - 6 * 3_600_000, to: window.to }
+    ? { deviceId, sensor, from: window.from ?? window.to - 6 * 3_600_000, to: window.to, includeDemo: scope.includeDemo }
     : undefined;
   const { data, isLoading } = useMetHistory(params);
 
@@ -58,7 +58,7 @@ export function MetHistoryPanel({ deviceId }: { deviceId?: string }) {
       </div>
       {isLoading ? (
         <LoadingState label="Loading history…" />
-      ) : !data || data.data.length === 0 ? (
+      ) : !data?.data?.length ? (
         <EmptyState title="No history in range" body="Widen the date range or pick another sensor." />
       ) : (
         <TimeSeriesChart

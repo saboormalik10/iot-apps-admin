@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { NepSession } from '../models/NepSession';
-import { NepSample } from '../models/NepSample';
 import { MetRecord } from '../models/MetRecord';
+import { insertNewNepSamples, recomputeNepSessionStats, BulkSampleInput } from '../sessions/sessions.service';
 import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
 import { FirmwareHistory } from '../models/FirmwareHistory';
@@ -11,6 +11,11 @@ import { parseMeasureSentence, isHeaderSentence, parseTimestampMs } from '../uti
 import { DomainEvent } from '../realtime/realtime.events';
 
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+
+/** Mobile-user attribution: JWT userId → ObjectId (null if absent/invalid). */
+function toUserObjectId(userId?: string): Types.ObjectId | null {
+  return userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null;
+}
 
 export interface DeviceStatusInput {
   batteryPct?: number;
@@ -65,7 +70,7 @@ export class SyncService {
   constructor(private readonly eventEmitter: EventEmitter2) {}
 
   // ── PATCH /sync/device-status — heartbeat (mobile) ────────────────────────
-  async updateDeviceStatus(organizationId: string, deviceId: string, body: DeviceStatusInput) {
+  async updateDeviceStatus(organizationId: string, deviceId: string, body: DeviceStatusInput, userId?: string) {
     if (!deviceId) {
       throw Object.assign(new Error('deviceId is required'), { code: 'VALIDATION_ERROR', statusCode: 400 });
     }
@@ -97,6 +102,8 @@ export class SyncService {
     if (body.batteryPct !== undefined) device.lastBatteryPct = body.batteryPct;
     if (body.batteryVoltage !== undefined) device.lastBatteryVoltage = body.batteryVoltage;
     if (body.batteryCharging !== undefined) device.lastBatteryCharging = body.batteryCharging;
+    const heartbeatUser = toUserObjectId(userId);
+    if (heartbeatUser) device.lastSeenByUserId = heartbeatUser;
     await device.save();
 
     this.eventEmitter.emit(DomainEvent.DEVICE_STATUS, {
@@ -156,14 +163,14 @@ export class SyncService {
     };
   }
 
-  async syncUpload(organizationId: string, payload: SyncUploadPayload) {
+  async syncUpload(organizationId: string, payload: SyncUploadPayload, userId?: string) {
     if (!payload.type) {
       throw Object.assign(new Error('type is required: "nep_session" or "met_record"'), { code: 'VALIDATION_ERROR', statusCode: 400 });
     }
     if (payload.type === 'nep_session') {
-      return this._upsertNepSession(organizationId, payload);
+      return this._upsertNepSession(organizationId, payload, userId);
     }
-    return this._upsertMetRecord(organizationId, payload);
+    return this._upsertMetRecord(organizationId, payload, userId);
   }
 
   async syncDownload(organizationId: string, deviceId: string, since?: number) {
@@ -199,7 +206,7 @@ export class SyncService {
     };
   }
 
-  private async _upsertNepSession(organizationId: string, payload: SyncUploadPayload) {
+  private async _upsertNepSession(organizationId: string, payload: SyncUploadPayload, userId?: string) {
     if (!payload.sessionId || !payload.deviceId || !payload.startTimestamp) {
       throw Object.assign(
         new Error('sessionId, deviceId and startTimestamp are required for nep_session'),
@@ -219,41 +226,25 @@ export class SyncService {
     }
 
     const samples = payload.samples ?? [];
-    const turbValues = samples.map((s) => s.turbidityValue).filter((v): v is number => v != null);
-    const tempValues = samples.map((s) => s.temperatureValue).filter((v): v is number => v != null);
-    const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
-
-    let probeRange: string | null = null;
-    for (const s of samples) {
-      if (s.turbidityValue != null) {
-        probeRange = s.turbidityValue < 10 ? 'R1' : s.turbidityValue <= 1000 ? 'R2' : 'R3';
-        break;
-      }
-    }
-
     const now = new Date();
+
+    // Metadata only — the sample-derived stats (sampleCount, aggregates,
+    // hasGpsData, probeRange) are recomputed from the STORED samples below, so a
+    // metadata-only re-upload can't wipe them and a retried upload can't
+    // double-count them.
     const sessionData = {
       organizationId: orgId,
       deviceId: new Types.ObjectId(payload.deviceId),
+      userId: toUserObjectId(userId),
       deviceName: payload.deviceName ?? device.name,
       startTimestamp: payload.startTimestamp,
       endTimestamp: payload.endTimestamp ?? null,
       timezoneName: payload.timezoneName ?? 'UTC',
       timezoneOffset: payload.timezoneOffset ?? 0,
-      probeRange,
       turbidityEnabled: payload.turbidityEnabled ?? true,
       temperatureEnabled: payload.temperatureEnabled ?? true,
       locationEnabled: payload.locationEnabled ?? false,
       comment: payload.comment ?? '',
-      sampleCount: samples.length,
-      turbidityAvg: avg(turbValues),
-      turbidityMin: turbValues.length ? Math.min(...turbValues) : null,
-      turbidityMax: turbValues.length ? Math.max(...turbValues) : null,
-      temperatureAvg: avg(tempValues),
-      temperatureMin: tempValues.length ? Math.min(...tempValues) : null,
-      temperatureMax: tempValues.length ? Math.max(...tempValues) : null,
-      hasTempData: tempValues.length > 0,
-      hasGpsData: samples.some((s) => s.locationLat != null),
       isDemoMode: payload.isDemoMode ?? false,
       syncedAt: now,
     };
@@ -261,29 +252,17 @@ export class SyncService {
     const prev = await NepSession.findOne({ id: payload.sessionId }).select('endTimestamp').lean();
     const existed = !!prev;
 
-    const session = await NepSession.findOneAndUpdate(
+    await NepSession.findOneAndUpdate(
       { id: payload.sessionId, organizationId: orgId },
       { $set: sessionData, $setOnInsert: { id: payload.sessionId, createdAt: now } },
       { upsert: true, new: true },
     );
 
-    if (samples.length > 0) {
-      const sampleDocs = samples.map((s) => ({
-        sessionId: payload.sessionId,
-        organizationId: orgId,
-        timestamp: s.timestamp,
-        turbidityValue: s.turbidityValue ?? null,
-        temperatureValue: s.temperatureValue ?? null,
-        probeRange: s.probeRange ?? null,
-        locationLat: s.locationLat ?? null,
-        locationLng: s.locationLng ?? null,
-        batteryLevel: s.batteryLevel ?? null,
-        batteryRawVoltage: s.batteryRawVoltage ?? null,
-        batteryCharging: s.batteryCharging ?? null,
-        demoModeEnabled: s.demoModeEnabled ?? null,
-      }));
-      await NepSample.insertMany(sampleDocs, { ordered: false });
-    }
+    // Retry-safe: only samples with a NEW timestamp are inserted (a re-sent
+    // payload inserts nothing), then stats reflect everything actually stored.
+    const samplesInserted = await insertNewNepSamples(payload.sessionId, orgId, samples);
+    const stats = await recomputeNepSessionStats(payload.sessionId);
+    const session = await NepSession.findOne({ id: payload.sessionId, organizationId: orgId });
 
     const deviceIdStr = (payload.deviceId as string);
     if (!existed) {
@@ -292,7 +271,7 @@ export class SyncService {
         deviceId: deviceIdStr,
         sessionId: payload.sessionId,
         startTimestamp: payload.startTimestamp,
-        probeRange,
+        probeRange: stats.probeRange,
       });
     }
     if (samples.length > 0) {
@@ -305,7 +284,7 @@ export class SyncService {
           timestamp: last.timestamp,
           turbidityValue: last.turbidityValue ?? null,
           temperatureValue: last.temperatureValue ?? null,
-          probeRange: last.probeRange ?? probeRange,
+          probeRange: last.probeRange ?? stats.probeRange,
         },
       });
     }
@@ -316,16 +295,16 @@ export class SyncService {
       this.eventEmitter.emit(DomainEvent.NEP_SESSION_COMPLETED, {
         organizationId,
         deviceId: deviceIdStr,
-        deviceName: session.deviceName,
+        deviceName: session?.deviceName ?? sessionData.deviceName,
         sessionId: payload.sessionId,
-        sampleCount: session.sampleCount,
+        sampleCount: stats.sampleCount,
       });
     }
 
-    return { type: 'nep_session', session, samplesInserted: samples.length };
+    return { type: 'nep_session', session, samplesInserted };
   }
 
-  private async _upsertMetRecord(organizationId: string, payload: SyncUploadPayload) {
+  private async _upsertMetRecord(organizationId: string, payload: SyncUploadPayload, userId?: string) {
     if (!payload.deviceId || !payload.dateStart) {
       throw Object.assign(
         new Error('deviceId and dateStart are required for met_record'),
@@ -351,6 +330,7 @@ export class SyncService {
     const recordData = {
       organizationId: orgId,
       deviceId: new Types.ObjectId(payload.deviceId),
+      userId: toUserObjectId(userId),
       deviceName: payload.deviceName ?? device.name,
       dateStart: payload.dateStart,
       dateEnd: payload.dateEnd ?? null,

@@ -4,6 +4,9 @@ import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Organization } from '../models/Organization';
 import { User, IUser, UserRole } from '../models/User';
+import { Device } from '../models/Device';
+import { MetRecord } from '../models/MetRecord';
+import { NepSession } from '../models/NepSession';
 import { RefreshToken } from '../models/RefreshToken';
 import { InviteToken } from '../models/InviteToken';
 import { AuditLog } from '../models/AuditLog';
@@ -52,6 +55,7 @@ function publicUser(user: IUser) {
     lastName: user.lastName,
     role: user.role,
     isActive: user.isActive,
+    mobileAppType: user.mobileAppType ?? null,
     lastLoginAt: user.lastLoginAt,
     invitedAt: user.invitedAt,
     createdAt: user.createdAt,
@@ -140,6 +144,89 @@ export class OrganizationsService {
     const users = await User.find({ organizationId: new Types.ObjectId(organizationId) })
       .sort({ createdAt: 1 });
     return users.map(publicUser);
+  }
+
+  /**
+   * Mobile users for the admin panel's Users page: everyone who signed up from a
+   * mobile app (User.mobileAppType) or has app activity (uploads / registered
+   * devices attributed via the userId fields), with per-user upload stats and the
+   * devices they touched. Legacy users without a signup appType are classified by
+   * what they uploaded.
+   */
+  async listMobileUsers(organizationId: string) {
+    const orgId = new Types.ObjectId(organizationId);
+
+    const activityGroup = {
+      _id: '$userId',
+      count: { $sum: 1 },
+      lastAt: { $max: '$syncedAt' },
+      devices: { $addToSet: '$deviceId' },
+    };
+
+    const [users, recAgg, sessAgg, devices] = await Promise.all([
+      User.find({ organizationId: orgId }).sort({ createdAt: 1 }).lean(),
+      MetRecord.aggregate([
+        { $match: { organizationId: orgId, deletedAt: null, userId: { $ne: null } } },
+        { $group: activityGroup },
+      ]),
+      NepSession.aggregate([
+        { $match: { organizationId: orgId, deletedAt: null, userId: { $ne: null } } },
+        { $group: activityGroup },
+      ]),
+      Device.find({ organizationId: orgId, deletedAt: null })
+        .select('_id name customName type registeredByUserId')
+        .lean(),
+    ]);
+
+    const deviceInfo = new Map(
+      devices.map((d) => [
+        (d._id as Types.ObjectId).toString(),
+        { id: (d._id as Types.ObjectId).toString(), name: d.customName ?? d.name, type: d.type },
+      ]),
+    );
+    type ActivityRow = { _id: Types.ObjectId; count: number; lastAt: Date | null; devices: Types.ObjectId[] };
+    const recByUser = new Map((recAgg as ActivityRow[]).map((r) => [r._id.toString(), r]));
+    const sessByUser = new Map((sessAgg as ActivityRow[]).map((r) => [r._id.toString(), r]));
+
+    return users
+      .map((u) => {
+        const id = (u._id as Types.ObjectId).toString();
+        const rec = recByUser.get(id);
+        const sess = sessByUser.get(id);
+
+        const deviceIds = new Set<string>(
+          [...(rec?.devices ?? []), ...(sess?.devices ?? [])].map((d) => d.toString()),
+        );
+        for (const d of devices) {
+          if (d.registeredByUserId && d.registeredByUserId.toString() === id) {
+            deviceIds.add((d._id as Types.ObjectId).toString());
+          }
+        }
+
+        const metRecordCount = rec?.count ?? 0;
+        const nepSessionCount = sess?.count ?? 0;
+        const lastDates = [rec?.lastAt, sess?.lastAt].filter((d): d is Date => d != null);
+        const lastUploadAt = lastDates.length
+          ? new Date(Math.max(...lastDates.map((d) => new Date(d).getTime())))
+          : null;
+
+        return {
+          id,
+          email: u.email,
+          firstName: u.firstName,
+          lastName: u.lastName,
+          role: u.role,
+          isActive: u.isActive,
+          mobileAppType: u.mobileAppType ?? null,
+          createdAt: u.createdAt,
+          lastLoginAt: u.lastLoginAt ?? null,
+          metRecordCount,
+          nepSessionCount,
+          lastUploadAt,
+          devices: [...deviceIds].map((did) => deviceInfo.get(did)).filter((d) => d != null),
+        };
+      })
+      .filter((r) => r.mobileAppType || r.metRecordCount > 0 || r.nepSessionCount > 0 || r.devices.length > 0);
   }
 
   async inviteUser(organizationId: string, input: InviteUserInput, actor: ActorMeta) {

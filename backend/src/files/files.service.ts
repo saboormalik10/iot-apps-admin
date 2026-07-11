@@ -16,6 +16,7 @@ export class FilesService {
     file: Express.Multer.File,
     fileType: 'map' | 'photo' | 'thumbnail',
     capturedAt?: string,
+    userId?: string,
   ) {
     const session = await NepSession.findOne({
       id: sessionId,
@@ -32,6 +33,7 @@ export class FilesService {
     const doc = await NepFile.create({
       sessionId,
       organizationId: new Types.ObjectId(organizationId),
+      userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null,
       fileType,
       storageKey: saved.storageKey,
       url: saved.url,
@@ -84,6 +86,7 @@ export class FilesService {
     recordId: string,
     file: Express.Multer.File,
     takenAt?: string,
+    userId?: string,
   ) {
     const record = await MetRecord.findOne({
       _id: new Types.ObjectId(recordId),
@@ -100,6 +103,7 @@ export class FilesService {
     const doc = await MetPicture.create({
       recordId: new Types.ObjectId(recordId),
       organizationId: new Types.ObjectId(organizationId),
+      userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null,
       storageKey: saved.storageKey,
       url: saved.url,
       resourceType: saved.resourceType,

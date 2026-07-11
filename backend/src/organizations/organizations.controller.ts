@@ -78,6 +78,47 @@ export class OrganizationsController {
     return { data: users };
   }
 
+  @ApiOperation({
+    summary: 'List mobile-app users with upload activity (admin only)',
+    description:
+      'Users who signed up from the MET-LINK / NEP-LINK apps (or have app activity), each with: ' +
+      'profile basics, which app they signed up from (mobileAppType), MET-record and NEP-session ' +
+      'upload counts, the last upload time, and every device they registered or synced data for. ' +
+      'Powers the admin panel Users page (MET users / NEP users tabs).',
+  })
+  @ApiOkResponse({
+    description: 'Mobile users with activity stats',
+    schema: {
+      example: {
+        data: [
+          {
+            id: '664a1f2e3c4d5e6f7a8b9c0d',
+            email: 'field.tech@observator.com',
+            firstName: 'Sam',
+            lastName: 'Rivers',
+            role: 'operator',
+            isActive: true,
+            mobileAppType: 'NEP-LINK',
+            createdAt: '2026-06-01T08:00:00.000Z',
+            lastLoginAt: '2026-07-09T10:00:00.000Z',
+            metRecordCount: 0,
+            nepSessionCount: 12,
+            lastUploadAt: '2026-07-09T10:30:00.000Z',
+            devices: [{ id: '664a1f2e3c4d5e6f7a8b9c0f', name: 'NEP-LINK-001', type: 'NEP-LINK' }],
+          },
+        ],
+      },
+    },
+  })
+  @ApiErrors('unauthorized', 'forbidden')
+  @Get('me/mobile-users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async listMobileUsers(@CurrentUser() user?: JWTPayload) {
+    const users = await this.organizationsService.listMobileUsers(user!.organizationId);
+    return { data: users };
+  }
+
   @ApiOperation({ summary: 'Invite a user by email (admin only)' })
   @ApiBody({ type: InviteUserDto })
   @ApiCreatedResponse({ description: 'Invited (email sent); 409 if the email already exists', schema: { example: { data: { user: { id: '664a1f2e3c4d5e6f7a8b9c0d', email: 'new.user@observator.com', role: 'viewer', isActive: false } } } } })

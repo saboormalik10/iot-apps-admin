@@ -67,7 +67,7 @@ export interface CreateSessionInput {
   locationEnabled?: boolean;
   comment?: string;
   isDemoMode?: boolean;
-  samples?: SampleInput[];
+  samples?: BulkSampleInput[];
 }
 
 export interface UpdateSessionInput {
@@ -125,6 +125,61 @@ const MAX_SAMPLES_PER_REQUEST = 7200;
 const DOWNSAMPLE_THRESHOLD = 500;
 const ONE_MINUTE_MS = 60 * 1000;
 
+/**
+ * Insert only the samples whose timestamp is NOT already stored for this session.
+ * This is what makes every sample-upload path retry-safe: re-sending the same
+ * payload (mobile retry after a dropped connection) inserts nothing the second
+ * time instead of duplicating rows. Returns how many were actually inserted.
+ * Shared with SyncService (the /sync/upload path).
+ */
+export async function insertNewNepSamples(
+  sessionId: string,
+  organizationId: Types.ObjectId,
+  samples: BulkSampleInput[],
+): Promise<number> {
+  if (!samples.length) return 0;
+  const timestamps = samples.map((s) => s.timestamp).filter((t) => t != null);
+  const existingDocs = await NepSample.find({ sessionId, timestamp: { $in: timestamps } })
+    .select('timestamp')
+    .lean();
+  const existing = new Set(existingDocs.map((d) => d.timestamp));
+  const fresh = samples.filter((s) => !existing.has(s.timestamp));
+  if (!fresh.length) return 0;
+  await NepSample.insertMany(
+    fresh.map((s) => ({
+      sessionId,
+      organizationId,
+      timestamp: s.timestamp,
+      turbidityValue: s.turbidityValue ?? null,
+      temperatureValue: s.temperatureValue ?? null,
+      probeRange: s.probeRange ?? null,
+      locationLat: s.locationLat ?? null,
+      locationLng: s.locationLng ?? null,
+      batteryLevel: s.batteryLevel ?? null,
+      batteryRawVoltage: s.batteryRawVoltage ?? null,
+      batteryCharging: s.batteryCharging ?? null,
+      demoModeEnabled: s.demoModeEnabled ?? null,
+    })),
+    { ordered: false },
+  );
+  return fresh.length;
+}
+
+/**
+ * Recompute a session's sample-derived stats (sampleCount, turbidity/temperature
+ * aggregates, hasGpsData, probeRange) from ALL stored samples — the single source
+ * of truth. Payload-derived stats are never trusted: a partial or repeated upload
+ * would otherwise wipe or double-count them. Shared with SyncService.
+ */
+export async function recomputeNepSessionStats(sessionId: string) {
+  const all = await NepSample.find({ sessionId })
+    .select('turbidityValue temperatureValue locationLat locationLng')
+    .lean();
+  const stats = computeStats(all);
+  await NepSession.updateOne({ id: sessionId }, { $set: stats });
+  return stats;
+}
+
 @Injectable()
 export class SessionsService {
   constructor(private readonly eventEmitter: EventEmitter2) {}
@@ -146,13 +201,26 @@ export class SessionsService {
     return { data: items, meta: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
-  async createSession(organizationId: string, input: CreateSessionInput): Promise<INepSession> {
+  async createSession(organizationId: string, input: CreateSessionInput, userId?: string): Promise<INepSession> {
     const existing = await NepSession.findOne({ id: input.id });
-    if (existing) return existing;
+    if (existing) {
+      // Retry path: the first attempt may have died between creating the session
+      // and inserting its inline samples — top up whatever is missing (dedup by
+      // timestamp) and heal the stats instead of silently dropping the payload.
+      if (input.samples?.length) {
+        const added = await insertNewNepSamples(existing.id, existing.organizationId, input.samples);
+        if (added > 0) {
+          await recomputeNepSessionStats(existing.id);
+          return (await NepSession.findOne({ id: input.id }))!;
+        }
+      }
+      return existing;
+    }
     const device = await Device.findOne({ _id: new Types.ObjectId(input.deviceId), organizationId: new Types.ObjectId(organizationId), deletedAt: null });
     const stats = computeStats(input.samples ?? []);
     const session = await NepSession.create({
       id: input.id, organizationId: new Types.ObjectId(organizationId), deviceId: new Types.ObjectId(input.deviceId),
+      userId: userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null,
       deviceName: input.deviceName, startTimestamp: input.startTimestamp, endTimestamp: input.endTimestamp ?? null,
       timezoneName: input.timezoneName, timezoneOffset: input.timezoneOffset,
       turbidityEnabled: input.turbidityEnabled ?? true, temperatureEnabled: input.temperatureEnabled ?? true,
@@ -160,8 +228,7 @@ export class SessionsService {
       syncedAt: new Date(), ...stats,
     });
     if (input.samples && input.samples.length > 0) {
-      const docs = input.samples.map((s) => ({ sessionId: session.id, organizationId: new Types.ObjectId(organizationId), ...s }));
-      await NepSample.insertMany(docs, { ordered: false });
+      await insertNewNepSamples(session.id, session.organizationId, input.samples);
     }
     this.eventEmitter.emit(DomainEvent.NEP_SESSION_CREATED, {
       organizationId,
@@ -210,17 +277,9 @@ export class SessionsService {
     if (samples.length > MAX_SAMPLES_PER_REQUEST)
       throw Object.assign(new Error('Maximum ' + MAX_SAMPLES_PER_REQUEST + ' samples per request'), { statusCode: 400, code: 'TOO_MANY_SAMPLES' });
     const session = await this.getSession(organizationId, sessionId);
-    const docs = samples.map((s) => ({
-      sessionId: session.id, organizationId: new Types.ObjectId(organizationId),
-      timestamp: s.timestamp, turbidityValue: s.turbidityValue ?? null, temperatureValue: s.temperatureValue ?? null,
-      probeRange: s.probeRange ?? null, locationLat: s.locationLat ?? null, locationLng: s.locationLng ?? null,
-      batteryLevel: s.batteryLevel ?? null, batteryRawVoltage: s.batteryRawVoltage ?? null,
-      batteryCharging: s.batteryCharging ?? null, demoModeEnabled: s.demoModeEnabled ?? null,
-    }));
-    const result = await NepSample.insertMany(docs, { ordered: false });
-    const allSamples = await NepSample.find({ sessionId: session.id }).select('turbidityValue temperatureValue locationLat locationLng').lean();
-    const stats = computeStats(allSamples);
-    await NepSession.updateOne({ id: session.id }, { $set: stats });
+    // Dedup by timestamp so a mobile retry of the same batch can't duplicate rows.
+    const inserted = await insertNewNepSamples(session.id, new Types.ObjectId(organizationId), samples);
+    const stats = await recomputeNepSessionStats(session.id);
 
     const last = samples[samples.length - 1];
     this.eventEmitter.emit(DomainEvent.NEP_SAMPLE, {
@@ -234,7 +293,7 @@ export class SessionsService {
         probeRange: last.probeRange ?? stats.probeRange ?? null,
       },
     });
-    return { inserted: result.length };
+    return { inserted };
   }
 
   async getSamples(opts: GetSamplesOptions) {

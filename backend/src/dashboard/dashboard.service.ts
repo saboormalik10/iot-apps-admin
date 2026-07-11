@@ -49,12 +49,22 @@ async function dailyCounts(
   model: { aggregate(pipeline: unknown[]): Promise<Array<{ _id: string; count: number }>> },
   orgId: Types.ObjectId,
   days: number,
+  includeDemo: boolean,
+  extraMatch: Record<string, unknown> = {},
 ): Promise<number[]> {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   start.setUTCDate(start.getUTCDate() - (days - 1)); // include today → `days` buckets
   const rows = await model.aggregate([
-    { $match: { organizationId: orgId, deletedAt: null, createdAt: { $gte: start } } },
+    {
+      $match: {
+        organizationId: orgId,
+        deletedAt: null,
+        createdAt: { $gte: start },
+        ...(includeDemo ? {} : { isDemoMode: false }),
+        ...extraMatch,
+      },
+    },
     {
       $group: {
         _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
@@ -100,14 +110,35 @@ export class DashboardService {
 
   // ── GET /dashboard/summary ────────────────────────────────────────────────
 
-  async getSummary(organizationId: string) {
-    const cacheKey = `summary:${organizationId}`;
+  async getSummary(
+    organizationId: string,
+    includeDemo = false,
+    type?: 'MET-LINK' | 'NEP-LINK',
+    deviceId?: string,
+  ) {
+    const cacheKey = `summary:${organizationId}:${includeDemo}:${type ?? 'all'}:${deviceId ?? 'all'}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
     const orgId = new Types.ObjectId(organizationId);
+    // Records/sessions carry isDemoMode; devices do not (a device is never "demo").
+    const demoFilter = includeDemo ? {} : { isDemoMode: false };
+
+    // Scope narrowing: `type` restricts device counts to that family and zeroes the
+    // other family's data counts; `deviceId` narrows every count to one device.
+    const devMatch: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
+    if (type) devMatch.type = type;
+    if (deviceId && Types.ObjectId.isValid(deviceId)) devMatch._id = new Types.ObjectId(deviceId);
+
+    const dataMatch: Record<string, unknown> = {};
+    if (deviceId && Types.ObjectId.isValid(deviceId)) dataMatch.deviceId = new Types.ObjectId(deviceId);
+
+    const countMet = !type || type === 'MET-LINK';
+    const countNep = !type || type === 'NEP-LINK';
 
     const SPARKLINE_DAYS = 14;
+    const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+    const zeros = () => Promise.resolve(new Array(SPARKLINE_DAYS).fill(0) as number[]);
 
     const [
       totalDevices,
@@ -120,15 +151,17 @@ export class DashboardService {
       recordsSparkline,
       sessionsSparkline,
     ] = await Promise.all([
-      Device.countDocuments({ organizationId: orgId, deletedAt: null }),
-      Device.countDocuments({ organizationId: orgId, deletedAt: null, isOnline: true }),
-      Device.countDocuments({ organizationId: orgId, deletedAt: null, type: 'MET-LINK' }),
-      Device.countDocuments({ organizationId: orgId, deletedAt: null, type: 'NEP-LINK' }),
-      MetRecord.countDocuments({ organizationId: orgId, deletedAt: null }),
-      NepSession.countDocuments({ organizationId: orgId, deletedAt: null }),
+      Device.countDocuments(devMatch),
+      // Online = seen in the last 5 min (same rule as the fleet table), not the
+      // sticky isOnline flag which is never reset.
+      Device.countDocuments({ ...devMatch, lastSeenAt: { $gte: new Date(Date.now() - ONLINE_THRESHOLD_MS) } }),
+      countMet ? Device.countDocuments({ ...devMatch, type: 'MET-LINK' }) : Promise.resolve(0),
+      countNep ? Device.countDocuments({ ...devMatch, type: 'NEP-LINK' }) : Promise.resolve(0),
+      countMet ? MetRecord.countDocuments({ organizationId: orgId, deletedAt: null, ...demoFilter, ...dataMatch }) : Promise.resolve(0),
+      countNep ? NepSession.countDocuments({ organizationId: orgId, deletedAt: null, ...demoFilter, ...dataMatch }) : Promise.resolve(0),
       AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
-      dailyCounts(MetRecord, orgId, SPARKLINE_DAYS),
-      dailyCounts(NepSession, orgId, SPARKLINE_DAYS),
+      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, includeDemo, dataMatch) : zeros(),
+      countNep ? dailyCounts(NepSession, orgId, SPARKLINE_DAYS, includeDemo, dataMatch) : zeros(),
     ]);
 
     const result = {
@@ -180,8 +213,8 @@ export class DashboardService {
 
   // ── GET /dashboard/met/latest ─────────────────────────────────────────────
 
-  async getMetLatest(organizationId: string, deviceId: string) {
-    const cacheKey = `met:latest:${organizationId}:${deviceId}`;
+  async getMetLatest(organizationId: string, deviceId: string, includeDemo = false) {
+    const cacheKey = `met:latest:${organizationId}:${deviceId}:${includeDemo}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -193,6 +226,7 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
+      ...(includeDemo ? {} : { isDemoMode: false }),
     })
       .sort({ dateStartMs: -1 })
       .select('_id deviceName dateStart')
@@ -252,8 +286,8 @@ export class DashboardService {
 
   // ── GET /dashboard/met/windrose ───────────────────────────────────────────
 
-  async getMetWindrose(organizationId: string, deviceId: string) {
-    const cacheKey = `met:windrose:${organizationId}:${deviceId}`;
+  async getMetWindrose(organizationId: string, deviceId: string, includeDemo = false) {
+    const cacheKey = `met:windrose:${organizationId}:${deviceId}:${includeDemo}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -265,6 +299,7 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
+      ...(includeDemo ? {} : { isDemoMode: false }),
     })
       .sort({ dateStartMs: -1 })
       .select('_id')
@@ -312,6 +347,7 @@ export class DashboardService {
     sensor: string,
     fromMs: number,
     toMs: number,
+    includeDemo = false,
   ) {
     const field = SENSOR_FIELD_MAP[sensor];
     if (!field) {
@@ -320,7 +356,7 @@ export class DashboardService {
       );
     }
 
-    const cacheKey = `met:history:${organizationId}:${deviceId}:${sensor}:${fromMs}:${toMs}`;
+    const cacheKey = `met:history:${organizationId}:${deviceId}:${sensor}:${fromMs}:${toMs}:${includeDemo}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -334,6 +370,7 @@ export class DashboardService {
       deletedAt: null,
       dateStartMs: { $lte: toMs },
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
+      ...(includeDemo ? {} : { isDemoMode: false }),
     })
       .select('_id')
       .lean();
@@ -428,8 +465,8 @@ export class DashboardService {
 
   // ── GET /dashboard/nep/latest ─────────────────────────────────────────────
 
-  async getNepLatest(organizationId: string, deviceId: string) {
-    const cacheKey = `nep:latest:${organizationId}:${deviceId}`;
+  async getNepLatest(organizationId: string, deviceId: string, includeDemo = false) {
+    const cacheKey = `nep:latest:${organizationId}:${deviceId}:${includeDemo}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -440,6 +477,7 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
+      ...(includeDemo ? {} : { isDemoMode: false }),
     })
       .sort({ startTimestamp: -1 })
       .lean();

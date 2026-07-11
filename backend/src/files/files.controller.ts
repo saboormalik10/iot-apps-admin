@@ -58,7 +58,12 @@ export class FilesController {
 
   @ApiOperation({
     summary: 'Upload a file to a NEP session (photo, map screenshot, thumbnail)',
-    description: 'Used by the NEP-LINK app. `:id` is the session UUID. File is validated by magic bytes; allowed: jpeg/png/webp/gif/csv/pdf, ≤10 MB. Returns a Cloudinary CDN `url`.',
+    description:
+      '**Call this to attach a photo, map screenshot or thumbnail to a session the user recorded.** ' +
+      '`:id` is the session UUID. Send the file as ordinary `multipart/form-data` (like a web form ' +
+      'upload) with an optional `fileType` and `capturedAt`. Allowed: jpeg/png/webp/gif/csv/pdf, up ' +
+      'to 10 MB. You get back a permanent `url` you can show in the app; the admin panel shows the ' +
+      'same file on the session, tagged with the uploading user.',
   })
   @Consumers('nep-link')
   @ApiConsumes('multipart/form-data')
@@ -109,6 +114,7 @@ export class FilesController {
       file,
       fileType,
       body.capturedAt,
+      user!.userId,
     );
     return { data: result };
   }
@@ -141,7 +147,12 @@ export class FilesController {
 
   @ApiOperation({
     summary: 'Upload a picture to a MET record',
-    description: 'Used by the MET-LINK app. `:id` is the record `_id`. File is validated by magic bytes; allowed: jpeg/png/webp/gif/csv/pdf, ≤10 MB. Returns a Cloudinary CDN `url`.',
+    description:
+      '**Call this to attach a photo to a logging record** (e.g. a shot of the station site). `:id` ' +
+      'is the record `_id` from the record upload. Send the file as ordinary `multipart/form-data` ' +
+      'with an optional `takenAt` timestamp. Allowed: jpeg/png/webp/gif/csv/pdf, up to 10 MB. You ' +
+      'get back a permanent `url`; the admin panel shows the same picture on the record, tagged ' +
+      'with the uploading user.',
   })
   @Consumers('met-link')
   @ApiConsumes('multipart/form-data')
@@ -185,6 +196,7 @@ export class FilesController {
       id,
       file,
       body.takenAt,
+      user!.userId,
     );
     return { data: result };
   }

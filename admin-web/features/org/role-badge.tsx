@@ -16,7 +16,7 @@ export function RoleLabel({ role }: { role: Role }) {
 }
 
 /** Status badge with icon + label (never colour alone — the a11y rule). */
-export function UserStatusBadge({ user }: { user: OrgUser }) {
+export function UserStatusBadge({ user }: { user: Pick<OrgUser, 'isActive' | 'invitedAt' | 'lastLoginAt'> }) {
   const t = useTranslations('users');
   if (user.isActive) {
     return (

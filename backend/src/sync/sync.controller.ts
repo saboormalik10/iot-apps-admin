@@ -24,7 +24,10 @@ export class SyncController {
 
   @ApiOperation({
     summary: 'Get sync status for the organisation',
-    description: 'Used by NEP-LINK app & MET-LINK app. Returns synced session/record counts and last-sync timestamps, optionally scoped to one device.',
+    description:
+      '**Call this to show a "last synced" screen in your app.** Returns how many sessions/records ' +
+      'are already in the cloud and when the last one arrived — org-wide, or for one device if you ' +
+      'pass `deviceId`. Compare against your local database to decide what still needs uploading.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiQuery({ name: 'deviceId', required: false, description: 'Device ObjectId — omit for org-wide totals' })
@@ -56,7 +59,13 @@ export class SyncController {
   @ApiOperation({
     summary: 'Upload (upsert) a session or record from mobile',
     description:
-      'Used by NEP-LINK app & MET-LINK app — the payload differs per app (see the **Examples** dropdown). Idempotent: NEP dedupes by `sessionId` UUID, MET by `localRecordId` (or `deviceId + dateStart`).',
+      '**The one-shot upload: send a whole session/record WITH its readings in a single call** — ' +
+      'the easiest way to sync. Set `type` to `nep_session` or `met_record`; the rest of the payload ' +
+      'differs per app (see the **Examples** dropdown).\n\n' +
+      'Safe to retry: if the connection drops, send the exact same payload again and nothing is ' +
+      'duplicated (NEP matches on the `sessionId` UUID, MET on `localRecordId`). Everything is saved ' +
+      'with the logged-in user\'s id, so the admin panel shows who synced it. For very large uploads ' +
+      'prefer the split flow (`POST /v1/sessions` + samples, or `POST /v1/records` + measures).',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -90,8 +99,8 @@ export class SyncController {
           dateEnd: '2026-05-01 15:00:00',
           localRecordId: 42,
           measures: [
-            { dataSentence: 'Wind speed,Unit,Description,Temperature,Unit,Description', timeStamp: '2026-05-01 14:00:00' },
-            { dataSentence: '12.5,m/s,relative,23.4,°C,TEMP', timeStamp: '2026-05-01 14:00:01' },
+            { dataSentence: 'Wind speed,Unit,Description,Temperature,Unit,Description,Solar,Unit,Description,Latitude phone,Longitude phone', timeStamp: '2026-05-01 14:00:00' },
+            { dataSentence: '12.5,m/s,relative,23.4,°C,TEMP,450,W/m²,SOLAR,31.5204,74.3587', timeStamp: '2026-05-01 14:00:01' },
           ],
         },
       },
@@ -122,13 +131,18 @@ export class SyncController {
     @Body() body: SyncUploadPayload,
     @CurrentUser() user?: JWTPayload,
   ) {
-    const result = await this.syncService.syncUpload(user!.organizationId, body);
+    const result = await this.syncService.syncUpload(user!.organizationId, body, user!.userId);
     return { data: result };
   }
 
   @ApiOperation({
     summary: 'Download sessions/records for a device',
-    description: 'Used by NEP-LINK app & MET-LINK app. Cursor-based pull of everything synced since `since` (Unix ms). Returns `nepSessions` for NEP-LINK devices, `metRecords` for MET-LINK devices (≤100).',
+    description:
+      '**Call this to pull cloud data back onto the phone** — e.g. after a re-install, or to show ' +
+      'data uploaded from another phone. Pass the `deviceId` and (optionally) `since` = the last time ' +
+      'you pulled (Unix ms). You get everything synced after that moment — sessions for NEP devices, ' +
+      'records for MET devices, up to 100 at a time. Save the newest `syncedAt` you receive and use ' +
+      'it as the next `since`.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
@@ -164,7 +178,13 @@ export class SyncController {
 
   @ApiOperation({
     summary: 'Device heartbeat — update lastSeenAt + battery + firmware (mobile)',
-    description: 'Used by NEP-LINK app & MET-LINK app. Call on BLE connect and ~every 60s while connected. `appType` distinguishes the caller; a firmware change appends a firmware-history entry.',
+    description:
+      '**Call this when the app connects to the instrument over Bluetooth, then about once a minute ' +
+      'while connected.** It is what makes the device show as **Online** on the admin dashboard ' +
+      '(a device with no heartbeat in 5 minutes shows Offline). Include the battery level and ' +
+      'firmware version if you have them — the dashboard displays both, and a firmware change is ' +
+      'recorded in the device\'s history. Send `appType` ("MET-LINK" or "NEP-LINK") so the server ' +
+      'knows which app reported it.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -194,7 +214,7 @@ export class SyncController {
     @CurrentUser() user?: JWTPayload,
   ) {
     const { deviceId, ...rest } = body;
-    const result = await this.syncService.updateDeviceStatus(user!.organizationId, deviceId, rest);
+    const result = await this.syncService.updateDeviceStatus(user!.organizationId, deviceId, rest, user!.userId);
     return { data: result };
   }
 }

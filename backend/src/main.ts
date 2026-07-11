@@ -41,14 +41,35 @@ function filterByConsumer(full: OpenAPIObject, audience: Audience): OpenAPIObjec
 }
 
 const MOBILE_GUIDE = `
-### Mobile Apps (NEP-LINK & MET-LINK)
-Both mobile apps authenticate with a **static API key** (no login/refresh):
+### Mobile Apps (NEP-LINK & MET-LINK) — how to integrate, step by step
+Every person using the app has their **own account**. Everything the app uploads is
+saved together with that user's id, so the admin panel can show who did what.
+
+**1. Get the user signed in**
+- First time: \`POST /v1/auth/mobile/signup\` with name, email, password and your
+  \`appType\` ("MET-LINK" or "NEP-LINK").
+- Coming back: \`POST /v1/auth/mobile/login\` with email + password.
+- Both return an \`accessToken\` and a \`refreshToken\`. Save both securely on the
+  phone (e.g. Keychain / Keystore).
+
+**2. Call the API**
+Send the access token on every request:
 \`\`\`
-Authorization: Bearer obs_mob_<your-key>
+Authorization: Bearer <accessToken>
 Content-Type: application/json
 \`\`\`
-Configured server-side via \`MOBILE_API_KEY\` + \`MOBILE_ORG_ID\`. Use the audience
-dropdown (top-right) to see only one app's endpoints.
+
+**3. Keep the user signed in (refresh)**
+The access token only lives **15 minutes**. When a request comes back
+**401 TOKEN_INVALID**, call \`POST /v1/auth/mobile/refresh\` with your saved
+\`refreshToken\`, store the new \`accessToken\`, and retry the request. You can also
+refresh proactively just before the 15 minutes are up. The refresh token lives
+**30 days** — if the refresh call itself fails, send the user back to the login
+screen. On logout, call \`POST /v1/auth/mobile/logout\` and delete both tokens.
+
+**4. Register the device once, then upload**
+On first BLE pairing call \`POST /v1/devices\` and keep the returned \`_id\` — that is
+the \`deviceId\` every other call asks for.
 
 **📱 NEP-LINK flow:** \`POST /v1/devices\` (type NEP-LINK) → \`POST /v1/sessions\` →
 \`POST /v1/sessions/{id}/samples\` (or the one-shot \`POST /v1/sync/upload\`).
@@ -56,8 +77,13 @@ dropdown (top-right) to see only one app's endpoints.
 **📱 MET-LINK flow:** \`POST /v1/devices\` (type MET-LINK) → \`POST /v1/records\` →
 \`POST /v1/records/{id}/measures\` (or the one-shot \`POST /v1/sync/upload\`).
 
+While connected to the instrument, send \`PATCH /v1/sync/device-status\` about once a
+minute so the dashboard shows the device as online (include GPS-bearing data in your
+uploads if you want the device on the fleet map).
+
 Live updates over WebSocket \`/v1/ws\` are **admin/JWT-only** — mobile polls
-\`GET /v1/sync/download\` instead.
+\`GET /v1/sync/download\` instead. Use the audience dropdown (top-right) to see only
+one app's endpoints.
 `;
 
 async function bootstrap(): Promise<void> {
@@ -174,9 +200,9 @@ async function bootstrap(): Promise<void> {
         `Use the **definition dropdown (top-right)** to view endpoints for a single ` +
         `audience: All / 📱 NEP-LINK App / 📱 MET-LINK App / 🖥️ Admin Panel.\n\n` +
         `### Authentication\nProtected endpoints require a **Bearer** token in the ` +
-        `\`Authorization\` header. The single **Authorize** field accepts *either* a ` +
-        `JWT access token (admin — 15-min expiry, renew via \`POST /v1/auth/refresh\`) ` +
-        `*or* the static mobile API key \`obs_mob_…\`.\n\n` +
+        `\`Authorization\` header — a per-user JWT access token (15-min expiry). ` +
+        `Admin panel renews via \`POST /v1/auth/refresh\`; mobile apps via ` +
+        `\`POST /v1/auth/mobile/refresh\`.\n\n` +
         `### Response Envelope\nSuccess: \`{ "data": … }\` (lists add \`"meta"\`). ` +
         `Error: \`{ "error": { "code", "message" } }\`.\n` +
         `\n### CORS / security\nBrowser access is restricted to the configured ` +
@@ -187,7 +213,7 @@ async function bootstrap(): Promise<void> {
       type: 'http',
       scheme: 'bearer',
       bearerFormat: 'JWT',
-      description: 'Paste a JWT access token (admin) OR the static mobile key obs_mob_…',
+      description: 'Paste a JWT access token (from admin login or mobile login/signup)',
     })
     // NB: no .addServer('/v1') — the global prefix is already baked into the paths
     // (e.g. /v1/devices), and /health,/version are correctly left at the root, so

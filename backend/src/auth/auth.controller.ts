@@ -19,13 +19,16 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
+import { Consumers } from '../common/decorators/consumers.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { AuthService, RegisterInput, LoginInput, AuthResult } from './auth.service';
+import { AuthService, RegisterInput, LoginInput, MobileSignupInput, AuthResult } from './auth.service';
 import {
   RegisterDto,
   LoginDto,
+  MobileSignupDto,
+  MobileRefreshDto,
   RefreshDto,
   LogoutDto,
   ForgotPasswordDto,
@@ -42,6 +45,13 @@ const AUTH_RESULT_EXAMPLE = {
     refreshToken: 'a1b2c3d4e5f6…(64-char hex)',
   },
 };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 400 validation error in the shape the global exception filter expects. */
+function validationError(message: string, code = 'VALIDATION_ERROR'): Error {
+  return Object.assign(new Error(message), { statusCode: 400, code });
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -126,6 +136,111 @@ export class AuthController {
     return { data: result };
   }
 
+  // ── Mobile auth ─────────────────────────────────────────────────────────────
+  // The MET-LINK / NEP-LINK apps authenticate with their OWN per-user JWTs (no
+  // shared API key). Tokens are returned in the BODY (no httpOnly cookie) since a
+  // native app stores them itself; the app then sends `Authorization: Bearer …`.
+
+  @ApiOperation({
+    summary: 'Mobile signup — create a field user account',
+    description:
+      '**For the MET-LINK / NEP-LINK apps — call this from your "Create account" screen.**\n\n' +
+      'Send the person\'s name, email and a password (8+ characters), plus `appType` — the name of ' +
+      'your app ("MET-LINK" or "NEP-LINK") — so the admin panel can list them under the right tab.\n\n' +
+      'What you get back: the new user profile plus an `accessToken` and a `refreshToken`, so the ' +
+      'user is signed in straight away — no separate login call needed. **Store both tokens securely ' +
+      'on the phone** and send `Authorization: Bearer <accessToken>` on every other API call.\n\n' +
+      'If the email is already registered you get a **409** — show a "try logging in instead" message. ' +
+      'The account joins the organisation configured on the server, so everything this user uploads ' +
+      'shows up in that organisation\'s dashboard, tagged with their user id.',
+  })
+  @Consumers('nep-link', 'met-link')
+  @ApiBody({ type: MobileSignupDto })
+  @ApiCreatedResponse({ description: 'User created (auto-login)', schema: { example: AUTH_RESULT_EXAMPLE } })
+  @ApiErrors('badRequest', 'unauthorized')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('mobile/signup')
+  @HttpCode(201)
+  async mobileSignup(@Body() body: MobileSignupInput, @Req() req: Request): Promise<{ data: AuthResult }> {
+    if (!body.email || !body.password || !body.firstName || !body.lastName) {
+      throw validationError('email, password, firstName and lastName are required');
+    }
+    if (!EMAIL_RE.test(body.email)) throw validationError('A valid email is required', 'INVALID_EMAIL');
+    if (body.password.length < 8) throw validationError('Password must be at least 8 characters', 'WEAK_PASSWORD');
+
+    const userAgent = req.headers['user-agent'] ?? '';
+    const result = await this.authService.mobileSignup({ ...body, userAgent });
+    return { data: result };
+  }
+
+  @ApiOperation({
+    summary: 'Mobile login — sign an existing user in',
+    description:
+      '**For the MET-LINK / NEP-LINK apps — call this from your "Sign in" screen.**\n\n' +
+      'Send email + password. You get back the user profile plus an `accessToken` (valid 15 minutes) ' +
+      'and a `refreshToken` (valid 30 days). **Store both tokens securely on the phone** and send ' +
+      '`Authorization: Bearer <accessToken>` on every other API call.\n\n' +
+      'Wrong email/password returns **401** — show a friendly "check your details" message. ' +
+      'Login attempts are limited to 10 per minute per device.',
+  })
+  @Consumers('nep-link', 'met-link')
+  @ApiBody({ type: LoginDto })
+  @ApiOkResponse({ description: 'Authenticated', schema: { example: AUTH_RESULT_EXAMPLE } })
+  @ApiErrors('badRequest', 'unauthorized', 'tooManyRequests')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('mobile/login')
+  @HttpCode(200)
+  async mobileLogin(@Body() body: LoginInput, @Req() req: Request): Promise<{ data: AuthResult }> {
+    if (!body.email || !body.password) throw validationError('email and password are required');
+    const userAgent = req.headers['user-agent'] ?? '';
+    const ipAddress =
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.socket.remoteAddress ??
+      '';
+    const result = await this.authService.login({ ...body, userAgent, ipAddress });
+    return { data: result };
+  }
+
+  @ApiOperation({
+    summary: 'Mobile refresh — get a new access token without logging in again',
+    description:
+      '**When to call this:** the `accessToken` from login/signup expires after **15 minutes**. ' +
+      'When any API call returns **401 TOKEN_INVALID**, call this endpoint with your saved ' +
+      '`refreshToken`, save the new `accessToken` it returns, then retry the original call. ' +
+      'You can also call it proactively (e.g. every ~12–14 minutes, or on app resume) so the ' +
+      'user never notices a hiccup.\n\n' +
+      'The `refreshToken` itself lasts **30 days** and does not change here. If THIS call fails ' +
+      'with 401, the refresh token has expired or been revoked — clear both stored tokens and ' +
+      'send the user back to the login screen.',
+  })
+  @Consumers('nep-link', 'met-link')
+  @ApiBody({ type: MobileRefreshDto })
+  @ApiOkResponse({ description: 'New access token', schema: { example: { data: { accessToken: 'eyJhbGci…' } } } })
+  @ApiErrors('badRequest', 'unauthorized')
+  @Post('mobile/refresh')
+  @HttpCode(200)
+  async mobileRefresh(@Body() body: { refreshToken?: string }): Promise<{ data: { accessToken: string } }> {
+    if (!body.refreshToken) throw validationError('refreshToken is required');
+    const result = await this.authService.refreshAccessToken(body.refreshToken);
+    return { data: result };
+  }
+
+  @ApiOperation({
+    summary: 'Mobile logout — sign the user out',
+    description:
+      '**Call this when the user taps "Log out".** Send the saved `refreshToken`; the server ' +
+      'revokes it so it can never be used again. Then delete both tokens from the phone\'s ' +
+      'storage. Always returns 204, even if the token was already gone — safe to call.',
+  })
+  @Consumers('nep-link', 'met-link')
+  @ApiBody({ type: MobileRefreshDto })
+  @ApiNoContentResponse({ description: 'Refresh token revoked' })
+  @Post('mobile/logout')
+  @HttpCode(204)
+  async mobileLogout(@Body() body: { refreshToken?: string }): Promise<void> {
+    if (body.refreshToken) await this.authService.logout(body.refreshToken);
+  }
+
   @ApiOperation({
     summary: 'Refresh access token using refresh token',
     description: 'Admin-panel only. Reads the raw token from the body, or falls back to the httpOnly `refreshToken` cookie.',
@@ -174,7 +289,14 @@ export class AuthController {
     this.clearRefreshCookie(res);
   }
 
-  @ApiOperation({ summary: 'Request a password reset email', description: 'Admin-panel only. Always 204 (in dev returns 200 with a devToken).' })
+  @ApiOperation({
+    summary: 'Request a password reset email',
+    description:
+      'Works for both admin and mobile users. Always returns 204 (in dev returns 200 with a `devToken`). ' +
+      'A reset link is emailed to the address if it is registered — the link opens a web page where ' +
+      'the user can enter a new password.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({ type: ForgotPasswordDto })
   @ApiNoContentResponse({ description: 'If the email exists, a reset link was sent' })
   @ApiErrors('badRequest')
@@ -208,7 +330,13 @@ export class AuthController {
     }
   }
 
-  @ApiOperation({ summary: 'Reset password using a valid token', description: 'Admin-panel only.' })
+  @ApiOperation({
+    summary: 'Reset password using a valid token',
+    description:
+      'Works for both admin and mobile users. Use the token from the reset email. All existing ' +
+      'refresh tokens for the account are revoked after a successful reset.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({ type: ResetPasswordDto })
   @ApiNoContentResponse({ description: 'Password reset' })
   @ApiErrors('badRequest')

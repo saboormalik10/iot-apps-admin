@@ -19,12 +19,16 @@ export interface WindDatum {
  * buckets and renders. Ships the shared table-view + export contract.
  */
 export function WindRose({
-  samples,
+  samples = [],
+  matrix: matrixProp,
   size = 320,
   title = 'Wind rose',
   exportName = 'wind-rose',
 }: {
-  samples: WindDatum[];
+  /** Raw samples (dashboard) — bucketed here. */
+  samples?: WindDatum[];
+  /** Pre-bucketed 16×bands counts (analytics aggregate endpoint) — used as-is. */
+  matrix?: number[][];
   size?: number;
   title?: string;
   exportName?: string;
@@ -32,18 +36,20 @@ export function WindRose({
   const [tableView, setTableView] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // 16 sectors × 5 bands matrix of counts.
+  // 16 sectors × 5 bands matrix of counts — either supplied pre-aggregated, or
+  // bucketed from raw samples.
   const { matrix, total, maxSector } = useMemo(() => {
-    const m: number[][] = Array.from({ length: 16 }, () => Array(WIND_SPEED_BANDS.length).fill(0));
-    let n = 0;
-    for (const s of samples) {
-      if (s.speedMs == null || s.dirDeg == null) continue;
-      m[sectorIndex(s.dirDeg)][windBandIndex(s.speedMs)] += 1;
-      n += 1;
+    const m: number[][] =
+      matrixProp ?? Array.from({ length: 16 }, () => Array(WIND_SPEED_BANDS.length).fill(0));
+    if (!matrixProp) {
+      for (const s of samples) {
+        if (s.speedMs == null || s.dirDeg == null) continue;
+        m[sectorIndex(s.dirDeg)][windBandIndex(s.speedMs)] += 1;
+      }
     }
     const totals = m.map((row) => row.reduce((a, b) => a + b, 0));
-    return { matrix: m, sectorTotals: totals, total: n, maxSector: Math.max(1, ...totals) };
-  }, [samples]);
+    return { matrix: m, total: totals.reduce((a, b) => a + b, 0), maxSector: Math.max(1, ...totals) };
+  }, [samples, matrixProp]);
 
   const cx = size / 2;
   const cy = size / 2;

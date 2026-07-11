@@ -5,6 +5,8 @@ export type NepFileType = 'map' | 'photo' | 'csv' | 'thumbnail';
 export interface INepFile extends Document {
   sessionId: string; // UUID v4
   organizationId: Types.ObjectId;
+  /** Mobile user who uploaded this file (null for legacy rows). */
+  userId: Types.ObjectId | null;
   fileType: NepFileType;
   storageKey: string;
   url: string | null;
@@ -20,6 +22,7 @@ const nepFileSchema = new Schema<INepFile>(
   {
     sessionId: { type: String, required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     fileType: { type: String, enum: ['map', 'photo', 'csv', 'thumbnail'], required: true },
     storageKey: { type: String, required: true },
     url: { type: String, default: null },

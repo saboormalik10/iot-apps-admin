@@ -56,7 +56,10 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Register a device push token',
     description:
-      'Used by NEP-LINK & MET-LINK apps. Idempotent by `token`. Notifications are delivered over WebSocket today; the token is stored so real FCM/APNs push can be enabled later with **no app change**.',
+      '**Call this once after login, with the push token your platform gives you** (FCM on Android, ' +
+      'APNs on iOS). Safe to call again with the same token — nothing is duplicated. Today alerts ' +
+      'are delivered to the admin dashboard; storing your token now means real push notifications ' +
+      'can be switched on later **without any app change**.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -76,7 +79,12 @@ export class NotificationsController {
     return { data: doc };
   }
 
-  @ApiOperation({ summary: 'Unregister a device push token' })
+  @ApiOperation({
+    summary: 'Unregister a device push token',
+    description:
+      '**Call this on logout** (before revoking the tokens) so the phone stops being a push target. ' +
+      'Send the same token you registered.',
+  })
   @Consumers('nep-link', 'met-link')
   @ApiBody({ type: UnregisterTokenDto })
   @ApiNoContentResponse({ description: 'Token removed' })
@@ -88,7 +96,14 @@ export class NotificationsController {
     await this.notifications.unregisterToken(user!.organizationId, body.token);
   }
 
-  @ApiOperation({ summary: 'List my notifications (feed)' })
+  @ApiOperation({
+    summary: 'List my notifications (feed)',
+    description:
+      '**Call this to show the user\'s alert / notification inbox.** Returns the latest alerts ' +
+      'for the logged-in user, newest first. Pass `unread=true` to filter to unread only. ' +
+      'Use `PATCH /:id/read` or `POST /read-all` to mark items read.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiQuery({ name: 'unread', required: false, description: 'true → only unread' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
@@ -98,7 +113,7 @@ export class NotificationsController {
   })
   @ApiErrors('unauthorized')
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async list(
     @Query('unread') unread: string,
     @Query('page') page: string,
@@ -123,21 +138,23 @@ export class NotificationsController {
   }
 
   @ApiOperation({ summary: 'Mark a notification read' })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiOkResponse({ description: 'Updated notification', schema: { example: { data: { ...NOTIFICATION_EXAMPLE, readAt: '2026-07-03T09:05:00.000Z' } } } })
   @ApiErrors('unauthorized', 'notFound')
   @Patch(':id/read')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async markRead(@Param('id') id: string, @CurrentUser() user: JWTPayload) {
     const doc = await this.notifications.markRead(user.organizationId, user.userId, id);
     return { data: doc };
   }
 
   @ApiOperation({ summary: 'Mark all my notifications read' })
+  @Consumers('nep-link', 'met-link', 'admin')
   @ApiOkResponse({ description: 'Count updated', schema: { example: { data: { updated: 3 } } } })
   @ApiErrors('unauthorized')
   @Post('read-all')
   @HttpCode(200)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtOrApiKeyGuard)
   async markAllRead(@CurrentUser() user: JWTPayload) {
     const res = await this.notifications.markAllRead(user.organizationId, user.userId);
     return { data: res };
