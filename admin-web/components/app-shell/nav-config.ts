@@ -4,6 +4,8 @@ import {
   Waves,
   FileText,
   BarChart3,
+  Droplets,
+  Activity,
   Bell,
   Users,
   Settings,
@@ -35,7 +37,9 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'map', href: '/map', labelKey: 'nav.map', icon: MapIcon, flag: 'maps' },
   { key: 'sessions', href: '/sessions', labelKey: 'nav.sessions', icon: Waves, flag: 'sessions' },
   { key: 'records', href: '/records', labelKey: 'nav.records', icon: FileText, flag: 'records' },
-  { key: 'analytics', href: '/analytics', labelKey: 'nav.analytics', icon: BarChart3, flag: 'analytics' },
+  { key: 'analytics', href: '/analytics', labelKey: 'nav.metAnalytics', icon: BarChart3, flag: 'analytics' },
+  { key: 'nepAnalytics', href: '/analytics/nep', labelKey: 'nav.nepAnalytics', icon: Droplets, flag: 'analytics' },
+  { key: 'fleet', href: '/fleet', labelKey: 'nav.fleet', icon: Activity, flag: 'analytics' },
   { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
   // The Organization page was retired from the nav — user management moved to
   // /users (MET / NEP / all people). The /org route itself still exists for

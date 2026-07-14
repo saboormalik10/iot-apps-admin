@@ -534,11 +534,11 @@ in Month 7 so live features can appear from Month 8 onward.
 
 | Deliverable | Status |
 |---|:--:|
-| 6 NEP analytics charts (per Section 6) | ⬜ |
-| NEP daily-summary (turbidity min–max bands + completeness calendar) — §10.7 prereq | ⬜ |
-| GPS density heatmap + turbidity-colored trails | ⬜ |
-| Sessions module (table/detail/samples/CSV/files) | ⬜ |
-| Org device-comparison + fleet-health dashboard | ⬜ |
+| 6 NEP analytics charts (per Section 6) | ✅ |
+| NEP daily-summary (turbidity min–max bands + completeness calendar) — §10.7 prereq | ✅ |
+| GPS density heatmap + turbidity-colored trails | ✅ |
+| Sessions module (table/detail/samples/CSV/files) | ✅ |
+| Org device-comparison + fleet-health dashboard | ✅ |
 
 ### Month 11 — Alerts, Notifications, Share & Realtime Polish
 **Theme:** close the alert→notify→share loop; harden live.

@@ -164,6 +164,8 @@ export interface MetLatest {
   pressureHpa: number | null;
   dewPointC: number | null;
   precipMm: number | null;
+  /** Precipitation intensity (mm/h). Returned by the API (dashboard.service.ts) but was missing here. */
+  precipRateMmHr: number | null;
   solarWm2: number | null;
   qnhHpa: number | null;
   qfeHpa: number | null;
@@ -570,4 +572,251 @@ export interface MetDailySummary {
   sampleCount: number;
   expectedSamples: number;
   completenessPercent: number;
+}
+
+// ═══ Month 10: NEP analytics, maps, sessions, org rollups ════════════════════
+
+/** GET /analytics/nep/turbidity-distribution — histogram over the 7 WHO/EPA classes. */
+export interface NepTurbidityBucket {
+  label: string;
+  minNtu: number;
+  maxNtu: number | null;
+  count: number;
+  pct: number;
+  waterQualityClass: string;
+  /** Backend advisory hex — NOT rendered (§10.9 colour-source rule); we map by class index. */
+  color: string;
+}
+export interface NepTurbidityDistribution {
+  probeRange: string | null;
+  totalSamples: number;
+  buckets: NepTurbidityBucket[];
+}
+
+/** GET /analytics/nep/session-comparison — overlay on an offset-from-start axis. */
+export interface NepComparisonSessionMeta {
+  id: string;
+  label: string;
+  /** Backend palette hex — the chart uses categorical roles by index instead. */
+  color: string;
+  probeRange: string | null;
+  startTimestamp: number;
+}
+export interface NepComparisonPoint {
+  offsetMs: number;
+  values: Record<string, number | null>;
+}
+export interface NepSessionComparison {
+  sessions: NepComparisonSessionMeta[];
+  timeSeries: NepComparisonPoint[];
+}
+
+/** GET /analytics/nep/water-quality-summary — the WHO/EPA badge tile. */
+export interface NepWaterQuality {
+  avgNtu: number | null;
+  maxNtu: number | null;
+  minNtu: number | null;
+  probeRange: string | null;
+  who: { compliant: boolean; threshold: number };
+  epa: { recreational: 'safe' | 'caution' | 'unsafe'; threshold: number };
+  isoLabel: string;
+  badgeColor: string;
+}
+
+/** GET /analytics/nep/probe-range-breakdown — daily R1/R2/R3 stacked bar. */
+export interface NepProbeBreakdownRow {
+  date: string;
+  r1Count: number;
+  r2Count: number;
+  r3Count: number;
+  r1Pct: number;
+  r2Pct: number;
+  r3Pct: number;
+  totalSamples: number;
+}
+export interface NepProbeBreakdown {
+  deviceId: string;
+  data: NepProbeBreakdownRow[];
+}
+
+/** GET /analytics/nep/turbidity-temperature-correlation — scatter + Pearson r. */
+export interface NepCorrelationPoint {
+  ntu: number;
+  tempC: number;
+}
+export interface NepCorrelation {
+  pearsonR: number | null;
+  rSquared: number | null;
+  trend: 'positive' | 'negative' | 'none';
+  significance: 'strong' | 'moderate' | 'weak' | 'none';
+  sampleCount: number;
+  interpretation: string;
+  scatterPoints: NepCorrelationPoint[];
+}
+
+/** GET /analytics/nep/session-events — turbidity-spike events within a session. */
+export interface NepSessionEvent {
+  eventStart: number;
+  eventEnd: number;
+  durationMin: number;
+  peakNtu: number;
+  peakAt: number;
+  meanNtu: number;
+  probeRange: string | null;
+  gpsCentroid: { lat: number; lng: number } | null;
+}
+export interface NepSessionEvents {
+  sessionId: string;
+  threshold: number;
+  eventGapMin: number;
+  events: NepSessionEvent[];
+}
+
+/** GET /analytics/nep/gps-density — grid-cell turbidity averages (map heatmap). */
+export interface NepGpsCell {
+  lat: number;
+  lng: number;
+  avgTurbidity: number | null;
+  maxTurbidity: number | null;
+  sampleCount: number;
+  dominantProbeRange: string | null;
+}
+export interface NepGpsDensity {
+  deviceId: string;
+  resolution: string;
+  cellMeters: number;
+  cells: NepGpsCell[];
+}
+
+/** GET /analytics/org/device-comparison — multi-device single-sensor overlay. */
+export interface DeviceComparisonSeries {
+  deviceId: string;
+  deviceName: string;
+  /** Backend palette hex — chart uses categorical roles by index. */
+  color: string;
+  values: { ts: number; value: number | null }[];
+}
+export interface OrgDeviceComparison {
+  sensor: string;
+  unit: string;
+  interval: string;
+  series: DeviceComparisonSeries[];
+}
+
+/** GET /analytics/org/fleet-health — one row per device with health metrics. */
+export interface FleetHealthRow {
+  deviceId: string;
+  deviceName: string;
+  type: DeviceType;
+  isOnline: boolean;
+  lastSeenAt: string | null;
+  batteryPct: number | null;
+  batteryCharging: boolean | null;
+  daysSinceFirst: number | null;
+  totalRecords: number;
+  totalSessions: number;
+  storageEstimateMb: number | null;
+}
+
+/** GET /analytics/nep/daily-summary (§10.7). */
+export interface NepDailySummary {
+  deviceId: string;
+  organizationId: string;
+  date: string;
+  dateMs: number;
+  turbidityAvg: number | null;
+  turbidityMax: number | null;
+  turbidityMin: number | null;
+  turbidityStdDev: number | null;
+  temperatureAvg: number | null;
+  temperatureMax: number | null;
+  temperatureMin: number | null;
+  sessionCount: number;
+  totalSamples: number;
+  dominantProbeRange: string | null;
+  r1SampleCount: number;
+  r2SampleCount: number;
+  r3SampleCount: number;
+  drinkingCompliant: boolean | null;
+  recreationalSafe: boolean | null;
+}
+
+/** GET /dashboard/nep/analytics — cross-session daily turbidity trend. */
+export interface NepCrossSessionTrendRow {
+  date: string;
+  avgTurbidity: number | null;
+  maxTurbidity: number | null;
+  minTurbidity: number | null;
+  sessionCount: number;
+  totalSamples: number;
+}
+export interface NepCrossSessionTrend {
+  deviceId: string;
+  data: NepCrossSessionTrendRow[];
+}
+
+// ── Sessions (NEP) module ────────────────────────────────────────────────────
+
+/** A NEP-LINK session (list row + detail header). */
+export interface NepSessionRow {
+  id: string;
+  organizationId: string;
+  deviceId: string;
+  deviceName: string;
+  startTimestamp: number;
+  endTimestamp: number | null;
+  timezoneName: string;
+  timezoneOffset: number;
+  probeRange: string | null;
+  comment: string;
+  sampleCount: number;
+  turbidityAvg: number | null;
+  turbidityMin: number | null;
+  turbidityMax: number | null;
+  temperatureAvg: number | null;
+  temperatureMin: number | null;
+  temperatureMax: number | null;
+  hasTempData: boolean;
+  hasGpsData: boolean;
+  isDemoMode: boolean;
+  syncedAt: string;
+  createdAt: string;
+}
+
+/** One sample row from GET /sessions/:id/samples. */
+export interface NepSampleRow {
+  _id?: string;
+  sessionId?: string;
+  timestamp: number;
+  turbidityValue: number | null;
+  temperatureValue: number | null;
+  probeRange: string | null;
+  locationLat: number | null;
+  locationLng: number | null;
+  batteryLevel: number | null;
+  _downsampled?: boolean;
+}
+
+/** GET /dashboard/nep/map — GPS points coloured by turbidity. */
+export interface NepMapPoint {
+  timestamp: number;
+  lat: number | null;
+  lng: number | null;
+  turbidityValue: number | null;
+  probeRange: string | null;
+}
+export interface NepMap {
+  sessionId: string;
+  points: NepMapPoint[];
+}
+
+/** GET /sessions/:id/files — an attached photo/map/thumbnail (Cloudinary). */
+export interface SessionFile {
+  _id: string;
+  fileType: 'map' | 'photo' | 'thumbnail';
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+  capturedAt?: string | null;
+  createdAt?: string;
 }

@@ -2,10 +2,8 @@
 
 import { KpiRow } from './kpi-row';
 import { DeviceStatusTable } from './device-status-table';
-import { MetLiveTiles } from './met-live-tiles';
+import { MetDeviceTabs } from './met-device-tabs';
 import { NepLiveTile } from './nep-live-tile';
-import { WindRosePanel } from './wind-rose-panel';
-import { MetHistoryPanel } from './met-history-panel';
 import { ActiveAlertsPanel } from './active-alerts-panel';
 import { FleetMapPanel } from '@/features/maps/fleet-map-panel';
 import { useScopedDevice, useEffectiveDeviceType } from './use-scoped-device';
@@ -35,12 +33,12 @@ export function DashboardHome() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          {showMet ? <MetLiveTiles deviceId={met.deviceId} isAuto={met.isAuto} /> : null}
-          {showMet ? <MetHistoryPanel deviceId={met.deviceId} /> : null}
+          {/* MET instrument dashboard — Live station grid (gauges/thermometers/
+              battery/compass + wind rose) and the per-sensor Graphs stack. */}
+          {showMet ? <MetDeviceTabs deviceId={met.deviceId} isAuto={met.isAuto} /> : null}
           {showNep ? <NepLiveTile deviceId={nep.deviceId} isAuto={nep.isAuto} /> : null}
         </div>
         <div className="space-y-4">
-          {showMet ? <WindRosePanel deviceId={met.deviceId} /> : null}
           <ActiveAlertsPanel />
         </div>
       </div>

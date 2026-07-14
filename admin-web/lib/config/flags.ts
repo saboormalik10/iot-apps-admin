@@ -23,7 +23,8 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   dashboardHome: true,
   devices: true,
   maps: true,
-  sessions: false,
+  // Month 10 lands the NEP sessions module (+ NEP analytics, GPS density, fleet rollups).
+  sessions: true,
   // Month 9 lands the MET analytics suite + the records module.
   records: true,
   analytics: true,

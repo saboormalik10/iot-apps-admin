@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import {
+  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -35,6 +36,7 @@ export function TimeSeriesChart<T extends Record<string, number | null>>({
   yFormatter = (v) => fmt(v, 2),
   height = 300,
   exportName = 'series',
+  brush = false,
 }: {
   data: T[];
   series: SeriesDef[];
@@ -45,6 +47,8 @@ export function TimeSeriesChart<T extends Record<string, number | null>>({
   yFormatter?: (v: number | null) => string;
   height?: number;
   exportName?: string;
+  /** Render a Recharts range navigator under the chart to zoom/pan a long series (plan §5.4). */
+  brush?: boolean;
 }) {
   const [tableView, setTableView] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -99,9 +103,9 @@ export function TimeSeriesChart<T extends Record<string, number | null>>({
           </table>
         </div>
       ) : (
-        <div ref={wrapRef} style={{ height }}>
+        <div ref={wrapRef} style={{ height: brush ? height + 28 : height }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+            <LineChart data={data} margin={{ top: 8, right: 12, bottom: brush ? 4 : 4, left: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis
                 dataKey={xKey}
@@ -135,6 +139,16 @@ export function TimeSeriesChart<T extends Record<string, number | null>>({
                   isAnimationActive={false}
                 />
               ))}
+              {brush ? (
+                <Brush
+                  dataKey={xKey}
+                  height={24}
+                  travellerWidth={8}
+                  stroke="hsl(var(--muted-foreground))"
+                  fill="hsl(var(--muted))"
+                  tickFormatter={(v) => xFormatter(v)}
+                />
+              ) : null}
             </LineChart>
           </ResponsiveContainer>
         </div>

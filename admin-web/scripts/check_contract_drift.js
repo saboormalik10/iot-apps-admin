@@ -142,6 +142,26 @@ const CLIENT_ENDPOINTS = [
   { method: 'get', path: '/devices/firmware-target' },
   { method: 'put', path: '/devices/firmware-target' },
   { method: 'get', path: '/devices/firmware-status' },
+  // ── Month 10: NEP analytics, maps, sessions, org rollups ──
+  { method: 'get', path: '/analytics/nep/turbidity-distribution' },
+  { method: 'get', path: '/analytics/nep/session-comparison' },
+  { method: 'get', path: '/analytics/nep/water-quality-summary' },
+  { method: 'get', path: '/analytics/nep/probe-range-breakdown' },
+  { method: 'get', path: '/analytics/nep/turbidity-temperature-correlation' },
+  { method: 'get', path: '/analytics/nep/session-events' },
+  { method: 'get', path: '/analytics/nep/gps-density' },
+  { method: 'get', path: '/analytics/nep/daily-summary' },
+  { method: 'get', path: '/analytics/org/device-comparison' },
+  { method: 'get', path: '/analytics/org/fleet-health' },
+  { method: 'get', path: '/dashboard/nep/sessions' },
+  { method: 'get', path: '/dashboard/nep/analytics' },
+  { method: 'get', path: '/dashboard/nep/map' },
+  { method: 'get', path: '/sessions/{id}' },
+  { method: 'patch', path: '/sessions/{id}' },
+  { method: 'get', path: '/sessions/{id}/samples' },
+  { method: 'get', path: '/sessions/{id}/export.csv' },
+  { method: 'get', path: '/sessions/{id}/files' },
+  { method: 'delete', path: '/sessions/{id}/files/{fileId}' },
 ];
 
 async function checkSwagger() {

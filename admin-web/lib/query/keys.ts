@@ -1,4 +1,4 @@
-import type { AuditQuery, DevicesQuery, RecordsQuery } from '../api/endpoints';
+import type { AuditQuery, DevicesQuery, RecordsQuery, SessionsQuery } from '../api/endpoints';
 
 /**
  * Central query-key factory. Realtime events invalidate by these keys (plan §3.1
@@ -51,7 +51,38 @@ export const queryKeys = {
       ['analytics', 'met', 'pressure-tendency', deviceId, hours] as const,
     metDaily: (deviceId: string, from: number, to: number) =>
       ['analytics', 'met', 'daily-summary', deviceId, from, to] as const,
+
+    // ── NEP analytics (Month 10) — device/session scoped, memoized window ──
+    nep: ['analytics', 'nep'] as const,
+    nepTurbidity: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'nep', 'turbidity-distribution', deviceId, from, to] as const,
+    nepProbe: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'nep', 'probe-range', deviceId, from, to] as const,
+    nepCorrelation: (deviceId: string, sessionId: string, from: number, to: number) =>
+      ['analytics', 'nep', 'correlation', deviceId, sessionId, from, to] as const,
+    nepGpsDensity: (deviceId: string, resolution: string, from: number, to: number) =>
+      ['analytics', 'nep', 'gps-density', deviceId, resolution, from, to] as const,
+    nepComparison: (sessionIds: string) => ['analytics', 'nep', 'session-comparison', sessionIds] as const,
+    nepWaterQuality: (sessionId: string) => ['analytics', 'nep', 'water-quality', sessionId] as const,
+    nepSessionEvents: (sessionId: string) => ['analytics', 'nep', 'session-events', sessionId] as const,
+    nepDaily: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'nep', 'daily-summary', deviceId, from, to] as const,
+    nepCrossTrend: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'nep', 'cross-session-trend', deviceId, from, to] as const,
+
+    // ── Org rollups (Month 10) ──
+    fleetHealth: ['analytics', 'org', 'fleet-health'] as const,
+    deviceComparison: (deviceIds: string, sensor: string, interval: string, from: number, to: number) =>
+      ['analytics', 'org', 'device-comparison', deviceIds, sensor, interval, from, to] as const,
   },
+
+  // ── Sessions (Month 10 — NEP sessions module) ──
+  sessions: (q: SessionsQuery) => ['sessions', q] as const,
+  nepSession: (id: string) => ['sessions', id] as const,
+  sessionSamples: (id: string, page: number, limit: number, downsample: boolean) =>
+    ['sessions', id, 'samples', page, limit, downsample] as const,
+  sessionTrail: (id: string) => ['sessions', id, 'trail'] as const,
+  sessionFiles: (id: string) => ['sessions', id, 'files'] as const,
 
   // ── Records (Month 9) ──
   records: (q: RecordsQuery) => ['records', q] as const,

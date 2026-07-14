@@ -156,3 +156,11 @@ export const deviceSettingsSchema = z.object({
   sensorLogPrefs: z.array(sensorPrefSchema).nullable().optional(),
 });
 export type DeviceSettingsInput = z.infer<typeof deviceSettingsSchema>;
+
+// ── Sessions (Month 10) ───────────────────────────────────────────────────────
+// The session PATCH only mutates the comment from the admin panel; the server DTO
+// carries no validation for it (§10.6), so the client bounds the length.
+export const sessionCommentSchema = z.object({
+  comment: z.string().max(2000, 'Comment is too long (max 2000 characters)'),
+});
+export type SessionCommentInput = z.infer<typeof sessionCommentSchema>;

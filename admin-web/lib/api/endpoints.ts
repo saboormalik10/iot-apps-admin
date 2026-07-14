@@ -30,10 +30,25 @@ import type {
   MetWindrose,
   MobileUser,
   NepLatest,
+  NepCorrelation,
+  NepCrossSessionTrend,
+  NepDailySummary,
+  NepGpsDensity,
+  NepMap,
+  NepProbeBreakdown,
+  NepSampleRow,
+  NepSessionComparison,
+  NepSessionEvents,
+  NepSessionRow,
+  NepTurbidityDistribution,
+  NepWaterQuality,
+  OrgDeviceComparison,
+  FleetHealthRow,
   Organization,
   OrgUser,
   Profile,
   Role,
+  SessionFile,
   SessionUser,
 } from './types';
 import type {
@@ -304,5 +319,144 @@ export const getRecordMeasures = async (
 
 /** Same-origin BFF URL for the CSV export (a plain download link; cookie rides along). */
 export const recordCsvHref = (id: string) => `/api/records/${id}/export.csv`;
+
+// ── NEP analytics (Month 10 — deep-dive) ────────────────────────────────────
+// Reuses the shared AnalyticsWindow + analyticsQs helpers above.
+
+export const getNepTurbidityDistribution = (w: AnalyticsWindow, signal?: AbortSignal) =>
+  http.get<NepTurbidityDistribution>(`/analytics/nep/turbidity-distribution?${analyticsQs(w)}`, signal);
+
+export const getNepProbeBreakdown = (w: AnalyticsWindow, signal?: AbortSignal) =>
+  // getRaw: the payload has a top-level `data` array the `{ data }` unwrapper would strip.
+  http.getRaw<NepProbeBreakdown>(`/analytics/nep/probe-range-breakdown?${analyticsQs(w)}`, signal);
+
+export const getNepCorrelation = (w: AnalyticsWindow, sessionId?: string, signal?: AbortSignal) =>
+  http.get<NepCorrelation>(`/analytics/nep/turbidity-temperature-correlation?${analyticsQs(w, { sessionId })}`, signal);
+
+export const getNepGpsDensity = (
+  w: AnalyticsWindow,
+  resolution: 'low' | 'medium' | 'high' = 'medium',
+  signal?: AbortSignal,
+) => http.get<NepGpsDensity>(`/analytics/nep/gps-density?${analyticsQs(w, { resolution })}`, signal);
+
+export const getNepSessionComparison = (sessionIds: string[], signal?: AbortSignal) => {
+  const qs = sessionIds.map((id) => `sessionIds[]=${encodeURIComponent(id)}`).join('&');
+  return http.get<NepSessionComparison>(`/analytics/nep/session-comparison?${qs}`, signal);
+};
+
+export const getNepWaterQuality = (sessionId: string, signal?: AbortSignal) =>
+  http.get<NepWaterQuality>(`/analytics/nep/water-quality-summary?sessionId=${encodeURIComponent(sessionId)}`, signal);
+
+export const getNepSessionEvents = (
+  sessionId: string,
+  opts: { minNtu?: number; eventGapMin?: number } = {},
+  signal?: AbortSignal,
+) => {
+  const p = new URLSearchParams({ sessionId });
+  if (opts.minNtu != null) p.set('minNtu', String(opts.minNtu));
+  if (opts.eventGapMin != null) p.set('eventGapMin', String(opts.eventGapMin));
+  return http.get<NepSessionEvents>(`/analytics/nep/session-events?${p.toString()}`, signal);
+};
+
+export const getNepDailySummary = (w: AnalyticsWindow, signal?: AbortSignal) =>
+  http.get<NepDailySummary[]>(`/analytics/nep/daily-summary?${analyticsQs(w)}`, signal);
+
+// Cross-session daily trend lives under /dashboard (not /analytics).
+export const getNepCrossSessionTrend = (
+  params: { deviceId: string; from?: number; to?: number },
+  signal?: AbortSignal,
+) => {
+  const p = new URLSearchParams({ deviceId: params.deviceId });
+  if (params.from != null) p.set('from', String(params.from));
+  if (params.to != null) p.set('to', String(params.to));
+  // getRaw: payload is { deviceId, from, to, data } — a top-level `data` field.
+  return http.getRaw<NepCrossSessionTrend>(`/dashboard/nep/analytics?${p.toString()}`, signal);
+};
+
+// ── Org rollups (Month 10) ──────────────────────────────────────────────────
+export const getOrgDeviceComparison = (
+  params: { deviceIds: string[]; sensor: string; from?: number; to?: number; interval?: string; includeDemo?: boolean },
+  signal?: AbortSignal,
+) => {
+  const p = new URLSearchParams({ sensor: params.sensor });
+  if (params.from != null) p.set('from', String(params.from));
+  if (params.to != null) p.set('to', String(params.to));
+  if (params.interval) p.set('interval', params.interval);
+  if (params.includeDemo) p.set('includeDemoMode', 'true');
+  const ids = params.deviceIds.map((id) => `deviceIds[]=${encodeURIComponent(id)}`).join('&');
+  return http.get<OrgDeviceComparison>(`/analytics/org/device-comparison?${p.toString()}&${ids}`, signal);
+};
+
+export const getFleetHealth = (signal?: AbortSignal) =>
+  http.get<FleetHealthRow[]>('/analytics/org/fleet-health', signal);
+
+// ── Sessions (Month 10 — NEP sessions module) ───────────────────────────────
+export interface SessionsQuery {
+  deviceId?: string;
+  from?: number;
+  to?: number;
+  probeRange?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export const listSessions = async (q: SessionsQuery = {}, signal?: AbortSignal): Promise<Page<NepSessionRow>> => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  const qs = params.toString();
+  // /dashboard/nep/sessions returns { total, page, limit, sessions } — a bespoke envelope.
+  const body = await http.getRaw<{ total: number; page: number; limit: number; sessions: NepSessionRow[] }>(
+    `/dashboard/nep/sessions${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  const rows = body.sessions ?? [];
+  const limit = body.limit ?? rows.length ?? 20;
+  const total = body.total ?? rows.length;
+  return { rows, page: body.page ?? 1, limit, total, pageCount: Math.max(1, Math.ceil(total / (limit || 1))) };
+};
+
+export const getNepSession = (id: string, signal?: AbortSignal) =>
+  http.get<NepSessionRow>(`/sessions/${id}`, signal);
+
+export const updateSessionComment = (id: string, comment: string) =>
+  http.patch<NepSessionRow>(`/sessions/${id}`, { comment });
+
+export const getSessionSamples = async (
+  id: string,
+  opts: { page?: number; limit?: number; downsample?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<Page<NepSampleRow> & { downsampled: boolean }> => {
+  const p = new URLSearchParams();
+  if (opts.page) p.set('page', String(opts.page));
+  if (opts.limit) p.set('limit', String(opts.limit));
+  if (opts.downsample) p.set('downsample', 'true');
+  const qs = p.toString();
+  const body = await http.getRaw<{
+    data: NepSampleRow[];
+    meta: { page: number; limit: number; total: number; pages: number; downsampled?: boolean };
+  }>(`/sessions/${id}/samples${qs ? `?${qs}` : ''}`, signal);
+  const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };
+  return {
+    rows: body.data ?? [],
+    page: m.page,
+    limit: m.limit,
+    total: m.total,
+    pageCount: m.pages,
+    downsampled: Boolean(m.downsampled),
+  };
+};
+
+export const getSessionTrail = (sessionId: string, signal?: AbortSignal) =>
+  http.get<NepMap>(`/dashboard/nep/map?sessionId=${encodeURIComponent(sessionId)}`, signal);
+
+export const listSessionFiles = (id: string, signal?: AbortSignal) =>
+  http.get<SessionFile[]>(`/sessions/${id}/files`, signal);
+
+export const deleteSessionFile = (sessionId: string, fileId: string) =>
+  http.delete<void>(`/sessions/${sessionId}/files/${fileId}`);
+
+/** Same-origin BFF URL for the session CSV export (plain download; cookie rides along). */
+export const sessionCsvHref = (id: string) => `/api/sessions/${id}/export.csv`;
 
 export type { Role };
