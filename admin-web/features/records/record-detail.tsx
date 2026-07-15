@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { MEASURE_FIELDS, measureFieldLabel } from './measure-fields';
 import { GpsTrackMap } from './gps-track-map';
+import { ShareButton } from '@/features/share/share-button';
 import { useRecord, useRecordMeasures } from './use-records';
 
 const VIZ_LIMIT = 2000; // cap the series/map/stats fetch; the table paginates separately
@@ -105,12 +106,15 @@ export function RecordDetail({ id }: { id: string }) {
           </p>
           {record.comment ? <p className="mt-1 text-sm">{record.comment}</p> : null}
         </div>
-        <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
-          <a href={recordCsvHref(id)} download>
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </a>
-        </Button>
+        <div className="flex items-center gap-2">
+          <ShareButton resourceType="metRecord" resourceId={record._id} resourceLabel={record.deviceName} />
+          <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
+            <a href={recordCsvHref(id)} download>
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </a>
+          </Button>
+        </div>
       </div>
 
       {record.urlMaps ? (

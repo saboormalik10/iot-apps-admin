@@ -8,9 +8,12 @@ import { NextResponse, type NextRequest } from 'next/server';
  *    authoritative check still happens server-side in the (dash) layout + BFF).
  */
 
-// Pages that are reachable without a session (auth group). Route groups like
-// (auth)/(dash) are NOT URL segments, so we gate by real pathname.
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/accept-invite'];
+// Pages that are reachable without a session (auth group + the public share view).
+// Route groups like (auth)/(dash)/(public) are NOT URL segments, so we gate by real
+// pathname. `/s/<token>` is the unauthenticated read-only shared snapshot (§Month 11);
+// it must not bounce anonymous viewers to /login. (`/s` matches only `/s` and `/s/…`,
+// never `/sessions` / `/settings` / `/share`.)
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/accept-invite', '/s'];
 const SESSION_COOKIE = 'obs_admin_session';
 
 function buildCsp(nonce: string): string {

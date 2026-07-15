@@ -8,6 +8,7 @@ import {
   Activity,
   Bell,
   Inbox,
+  Share2,
   Users,
   Settings,
   Map as MapIcon,
@@ -43,6 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'fleet', href: '/fleet', labelKey: 'nav.fleet', icon: Activity, flag: 'analytics' },
   { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
   { key: 'notifications', href: '/notifications', labelKey: 'nav.notifications', icon: Inbox, flag: 'notifications' },
+  { key: 'share', href: '/share', labelKey: 'nav.share', icon: Share2, capability: 'exportData', flag: 'share' },
   // The Organization page was retired from the nav — user management moved to
   // /users (MET / NEP / all people). The /org route itself still exists for
   // direct navigation (org settings + audit log).

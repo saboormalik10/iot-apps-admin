@@ -20,6 +20,7 @@ import { SessionGpsTrail } from './session-gps-trail';
 import { SessionEventsPanel } from './session-events-panel';
 import { SessionFiles } from './session-files';
 import { SessionComment } from './session-comment';
+import { ShareButton } from '@/features/share/share-button';
 import { useSession, useSessionSamples, useSessionTrail } from './use-sessions';
 
 const TABLE_LIMIT = 100;
@@ -102,12 +103,15 @@ export function SessionDetail({ id }: { id: string }) {
             {session.probeRange ? ` · Probe ${session.probeRange}` : ''}
           </p>
         </div>
-        <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
-          <a href={sessionCsvHref(id)} download>
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </a>
-        </Button>
+        <div className="flex items-center gap-2">
+          <ShareButton resourceType="nepSession" resourceId={session.id} resourceLabel={session.deviceName} />
+          <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
+            <a href={sessionCsvHref(id)} download>
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </a>
+          </Button>
+        </div>
       </div>
 
       {/* Average cards */}
