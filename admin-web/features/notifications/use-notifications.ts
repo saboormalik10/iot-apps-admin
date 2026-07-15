@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   listNotifications,
+  listNotificationsPage,
+  listPushTokens,
   markAllNotificationsRead,
   markNotificationRead,
   type NotificationsResult,
@@ -17,6 +19,23 @@ export function useNotifications() {
     queryFn: ({ signal }) => listNotifications(OPTS, signal),
     // The bell reflects near-real-time state; realtime events also invalidate it.
     staleTime: 15_000,
+  });
+}
+
+/** The full feed page (plan §Month 11) — filterable (all/unread) + server-paginated. */
+export function useNotificationsFeed(opts: { unread?: boolean; page?: number; limit?: number }) {
+  return useQuery<NotificationsResult>({
+    queryKey: queryKeys.notificationsFeed(opts),
+    queryFn: ({ signal }) => listNotificationsPage(opts, signal),
+    staleTime: 15_000,
+  });
+}
+
+/** Admin push-token registry (plan §6). */
+export function usePushTokens() {
+  return useQuery({
+    queryKey: queryKeys.pushTokens,
+    queryFn: ({ signal }) => listPushTokens(signal),
   });
 }
 

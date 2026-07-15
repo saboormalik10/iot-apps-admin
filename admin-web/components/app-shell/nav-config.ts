@@ -7,6 +7,7 @@ import {
   Droplets,
   Activity,
   Bell,
+  Inbox,
   Users,
   Settings,
   Map as MapIcon,
@@ -41,6 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'nepAnalytics', href: '/analytics/nep', labelKey: 'nav.nepAnalytics', icon: Droplets, flag: 'analytics' },
   { key: 'fleet', href: '/fleet', labelKey: 'nav.fleet', icon: Activity, flag: 'analytics' },
   { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
+  { key: 'notifications', href: '/notifications', labelKey: 'nav.notifications', icon: Inbox, flag: 'notifications' },
   // The Organization page was retired from the nav — user management moved to
   // /users (MET / NEP / all people). The /org route itself still exists for
   // direct navigation (org settings + audit log).
