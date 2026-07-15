@@ -109,6 +109,7 @@ const CLIENT_ENDPOINTS = [
   { method: 'post', path: '/auth/refresh' },
   { method: 'post', path: '/auth/logout' },
   { method: 'post', path: '/auth/forgot-password' },
+  { method: 'post', path: '/auth/verify-reset-code' },
   { method: 'post', path: '/auth/reset-password' },
   { method: 'post', path: '/auth/ws-ticket' },
   { method: 'post', path: '/organizations/accept-invite' },

@@ -14,10 +14,11 @@ function createTransporter() {
   });
 }
 
-export async function sendPasswordResetEmail(
+export async function sendPasswordResetCodeEmail(
   to: string,
   firstName: string,
-  resetUrl: string,
+  code: string,
+  expiryMinutes = 15,
 ): Promise<void> {
   const from = process.env.EMAIL_FROM ?? process.env.EMAIL_MAILER;
   const transporter = createTransporter();
@@ -25,15 +26,17 @@ export async function sendPasswordResetEmail(
   await transporter.sendMail({
     from,
     to,
-    subject: 'Reset your Observator password',
+    subject: `${code} is your Observator password reset code`,
     text: [
       `Hi ${firstName},`,
       '',
-      'You requested a password reset for your Observator account.',
+      'Use this code to reset your Observator password:',
       '',
-      `Reset link (expires in 1 hour): ${resetUrl}`,
+      `    ${code}`,
       '',
-      'If you did not request this, you can safely ignore this email.',
+      `The code expires in ${expiryMinutes} minutes. Enter it in the app to continue.`,
+      '',
+      'If you did not request this, you can safely ignore this email — your password stays unchanged.',
       '',
       '— Observator Team',
     ].join('\n'),
@@ -43,15 +46,16 @@ export async function sendPasswordResetEmail(
 <body style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#333">
   <h2 style="color:#1a1a2e">Reset your password</h2>
   <p>Hi ${firstName},</p>
-  <p>You requested a password reset for your <strong>Observator</strong> account.</p>
-  <p style="margin:32px 0">
-    <a href="${resetUrl}"
-       style="background:#4f46e5;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold">
-      Reset Password
-    </a>
+  <p>Use this code to reset your <strong>Observator</strong> password:</p>
+  <p style="margin:28px 0;text-align:center">
+    <span style="display:inline-block;background:#f4f4fb;color:#1a1a2e;font-size:32px;font-weight:bold;
+                 letter-spacing:10px;padding:16px 28px;border-radius:8px;font-family:monospace">
+      ${code}
+    </span>
   </p>
   <p style="color:#666;font-size:13px">
-    This link expires in <strong>1 hour</strong>. If you didn't request a reset, ignore this email.
+    This code expires in <strong>${expiryMinutes} minutes</strong>. If you didn't request a reset, ignore this
+    email — your password stays unchanged.
   </p>
   <hr style="border:none;border-top:1px solid #eee;margin:32px 0"/>
   <p style="color:#999;font-size:12px">Observator Instruments</p>

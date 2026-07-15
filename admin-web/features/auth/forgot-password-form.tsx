@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,10 +12,10 @@ import { authApi } from './auth-client';
 
 export function ForgotPasswordForm() {
   const t = useTranslations('auth');
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [errorKey, setErrorKey] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,20 +31,10 @@ export function ForgotPasswordForm() {
     } catch {
       // Stay neutral even on error — no user enumeration.
     } finally {
-      setLoading(false);
-      setSent(true); // always show the neutral confirmation
+      // Always advance to the code-entry screen (revealing nothing about whether
+      // the email exists). If it does, a 6-digit code is on its way.
+      router.push(`/reset-password?email=${encodeURIComponent(parsed.data.email)}`);
     }
-  }
-
-  if (sent) {
-    return (
-      <div className="space-y-4 text-center">
-        <p className="text-sm text-muted-foreground">{t('forgotSent')}</p>
-        <Link href="/login" className="text-sm text-primary hover:underline">
-          {t('backToLogin')}
-        </Link>
-      </div>
-    );
   }
 
   return (

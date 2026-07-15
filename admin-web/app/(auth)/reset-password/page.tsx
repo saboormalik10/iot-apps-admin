@@ -1,29 +1,29 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { SetPasswordForm } from '@/features/auth/set-password-form';
+import { ResetPasswordForm } from '@/features/auth/reset-password-form';
 
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ email?: string }>;
 }) {
   const t = await getTranslations('auth');
-  const { token } = await searchParams;
+  const { email } = await searchParams;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('resetTitle')}</CardTitle>
-        <CardDescription>{t('resetTitle')}</CardDescription>
+        <CardDescription>{email ? t('resetSubtitle', { email }) : t('noEmailBody')}</CardDescription>
       </CardHeader>
       <CardContent>
-        {token ? (
-          <SetPasswordForm mode="reset" token={token} />
+        {email ? (
+          <ResetPasswordForm email={email} />
         ) : (
           <div className="space-y-4 text-center">
-            <h2 className="text-base font-semibold">{t('linkExpiredTitle')}</h2>
-            <p className="text-sm text-muted-foreground">{t('linkExpiredBody')}</p>
+            <h2 className="text-base font-semibold">{t('noEmailTitle')}</h2>
+            <p className="text-sm text-muted-foreground">{t('noEmailBody')}</p>
             <Link href="/forgot-password" className="text-sm text-primary hover:underline">
               {t('requestNewLink')}
             </Link>

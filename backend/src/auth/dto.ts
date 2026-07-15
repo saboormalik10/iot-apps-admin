@@ -75,9 +75,17 @@ export class ForgotPasswordDto {
   email!: string;
 }
 
+export class VerifyResetCodeDto {
+  @ApiProperty({ example: 'admin@observator.com' })
+  email!: string;
+
+  @ApiProperty({ example: '123456', description: '6-digit code from the reset email' })
+  code!: string;
+}
+
 export class ResetPasswordDto {
-  @ApiProperty({ description: 'Raw reset token from the email link' })
-  token!: string;
+  @ApiProperty({ description: 'Single-use reset token returned by /auth/verify-reset-code' })
+  resetToken!: string;
 
   @ApiProperty({ minLength: 8, description: 'New password (min 8 chars)' })
   newPassword!: string;

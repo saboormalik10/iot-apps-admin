@@ -29,6 +29,24 @@ export const resetPasswordSchema = z
   });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
+// ── OTP password reset (6-digit code → verify → set new password) ──────────────
+const resetCode = z.string().regex(/^\d{6}$/, 'auth.errors.codeRequired');
+
+export const verifyResetCodeSchema = z.object({ email, code: resetCode });
+export type VerifyResetCodeInput = z.infer<typeof verifyResetCodeSchema>;
+
+export const otpResetPasswordSchema = z
+  .object({
+    code: resetCode,
+    newPassword: password,
+    confirmPassword: z.string().min(1),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    message: 'auth.errors.passwordsMismatch',
+    path: ['confirmPassword'],
+  });
+export type OtpResetPasswordInput = z.infer<typeof otpResetPasswordSchema>;
+
 export const acceptInviteSchema = z
   .object({
     token: z.string().min(1),

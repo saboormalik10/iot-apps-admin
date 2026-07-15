@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Types } from 'mongoose';
 import { Injectable } from '@nestjs/common';
-import { sendPasswordResetEmail } from '../utils/mailer';
+import { sendPasswordResetCodeEmail } from '../utils/mailer';
 import { Organization } from '../models/Organization';
 import { User, IUser } from '../models/User';
 import { RefreshToken } from '../models/RefreshToken';
@@ -13,7 +13,10 @@ import { slugify } from '../utils/slug';
 
 const BCRYPT_COST = 12;
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
-const RESET_TOKEN_EXPIRY_HOURS = 1;
+// Password-reset OTP: a 6-digit code, then a single-use reset token after verify.
+const RESET_CODE_EXPIRY_MINUTES = 15;
+const RESET_TOKEN_EXPIRY_MINUTES = 15;
+const MAX_VERIFY_ATTEMPTS = 5;
 
 export interface RegisterInput {
   orgName: string;
@@ -253,46 +256,95 @@ export class AuthService {
     await RefreshToken.findOneAndUpdate({ tokenHash }, { revokedAt: new Date() });
   }
 
-  async forgotPassword(email: string, ipAddress?: string): Promise<{ devToken?: string }> {
+  /**
+   * Step 1 — email a 6-digit reset code. Silent for unknown emails
+   * (anti-enumeration). In development the code is also returned as `devCode` so
+   * the flow can be tested without reading the inbox.
+   */
+  async forgotPassword(email: string, ipAddress?: string): Promise<{ devCode?: string }> {
     const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
     if (!user) return {};
 
+    // Only one active reset per user — a new request supersedes any prior code/token.
     await PasswordResetToken.deleteMany({ userId: user._id });
 
-    const rawToken = this.generateRawToken();
-    const tokenHash = this.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+    const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const expiresAt = new Date(Date.now() + RESET_CODE_EXPIRY_MINUTES * 60 * 1000);
 
     await PasswordResetToken.create({
       userId: user._id,
       email: user.email,
-      tokenHash,
+      codeHash: this.hashToken(code),
+      attempts: 0,
       expiresAt,
       ipAddress: ipAddress ?? null,
     });
 
-    // Points at the admin-web (frontend) origin — the reset-password PAGE lives
-    // there, not on the backend. `FRONTEND_URL` is the admin-web origin.
-    const resetUrl = `${(process.env.FRONTEND_URL ?? 'http://localhost:3001').replace(/\/$/, '')}/reset-password?token=${rawToken}`;
-
     try {
-      await sendPasswordResetEmail(user.email, user.firstName, resetUrl);
+      await sendPasswordResetCodeEmail(user.email, user.firstName, code, RESET_CODE_EXPIRY_MINUTES);
     } catch (err) {
-      console.error('[mailer] Failed to send reset email:', err);
+      console.error('[mailer] Failed to send reset code email:', err);
       if (process.env.NODE_ENV === 'development') throw err;
     }
 
     if (process.env.NODE_ENV === 'development') {
-      return { devToken: rawToken };
+      return { devCode: code };
     }
     return {};
   }
 
-  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
-    const tokenHash = this.hashToken(rawToken);
-    const record = await PasswordResetToken.findOne({ tokenHash });
+  /**
+   * Step 2 — verify the 6-digit code and, on success, issue a single-use reset
+   * token the client passes to `resetPassword`. Wrong codes are rate-limited by an
+   * attempt counter; the code is consumed on success so it can't be reused.
+   */
+  async verifyResetCode(email: string, code: string, ipAddress?: string): Promise<{ resetToken: string }> {
+    const invalid = () =>
+      Object.assign(new Error('Invalid or expired code'), { statusCode: 400, code: 'INVALID_RESET_CODE' });
 
-    if (!record) {
+    const record = await PasswordResetToken.findOne({
+      email: email.toLowerCase(),
+      codeHash: { $ne: null },
+      verifiedAt: null,
+    }).sort({ createdAt: -1 });
+
+    if (!record || record.expiresAt < new Date()) throw invalid();
+
+    if (record.codeHash !== this.hashToken(code)) {
+      record.attempts += 1;
+      if (record.attempts >= MAX_VERIFY_ATTEMPTS) {
+        await PasswordResetToken.deleteOne({ _id: record._id });
+        throw Object.assign(new Error('Too many attempts — request a new code'), {
+          statusCode: 400,
+          code: 'TOO_MANY_ATTEMPTS',
+        });
+      }
+      await record.save();
+      throw invalid();
+    }
+
+    // Correct code → exchange it for a single-use reset token (fresh 15-min window).
+    const resetToken = this.generateRawToken();
+    record.resetTokenHash = this.hashToken(resetToken);
+    record.codeHash = null;
+    record.verifiedAt = new Date();
+    record.attempts = 0;
+    record.expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+    if (ipAddress) record.ipAddress = ipAddress;
+    await record.save();
+
+    return { resetToken };
+  }
+
+  /**
+   * Step 3 — set the new password using the reset token from `verifyResetCode`.
+   * Revokes all of the account's refresh tokens.
+   */
+  async resetPassword(resetToken: string, newPassword: string): Promise<void> {
+    const resetTokenHash = this.hashToken(resetToken);
+    const record = await PasswordResetToken.findOne({ resetTokenHash });
+
+    if (!record || !record.verifiedAt) {
       throw Object.assign(new Error('Invalid or expired reset token'), { statusCode: 400, code: 'INVALID_RESET_TOKEN' });
     }
     if (record.usedAt) {

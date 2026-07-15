@@ -3,9 +3,9 @@ import { backendJson } from '@/lib/bff/backend';
 import { isCsrfSafe } from '@/lib/bff/csrf';
 
 /**
- * Reset-password: proxy POST /v1/auth/reset-password. Body: { token, newPassword }.
- * The backend returns 400/401 for a dead (expired/used) token → forwarded so the
- * page can show a "link expired" state.
+ * Reset-password: proxy POST /v1/auth/reset-password. Body: { resetToken, newPassword }
+ * (the resetToken comes from /auth/verify-reset-code). The backend returns 400/401
+ * for a dead (expired/used) token → forwarded so the page can show an error state.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!isCsrfSafe(request)) {

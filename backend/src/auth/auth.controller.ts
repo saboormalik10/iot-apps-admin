@@ -32,6 +32,7 @@ import {
   RefreshDto,
   LogoutDto,
   ForgotPasswordDto,
+  VerifyResetCodeDto,
   ResetPasswordDto,
 } from './dto';
 
@@ -290,15 +291,15 @@ export class AuthController {
   }
 
   @ApiOperation({
-    summary: 'Request a password reset email',
+    summary: 'Request a password-reset code (Step 1 of 3)',
     description:
-      'Works for both admin and mobile users. Always returns 204 (in dev returns 200 with a `devToken`). ' +
-      'A reset link is emailed to the address if it is registered — the link opens a web page where ' +
-      'the user can enter a new password.',
+      'Works for both admin and mobile users. Emails a **6-digit code** (valid 15 min) if the address is ' +
+      'registered. Always returns 204 to avoid revealing whether an email exists (in dev it returns 200 ' +
+      'with a `devCode` so the flow can be tested). Next: `POST /auth/verify-reset-code`.',
   })
   @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({ type: ForgotPasswordDto })
-  @ApiNoContentResponse({ description: 'If the email exists, a reset link was sent' })
+  @ApiNoContentResponse({ description: 'If the email exists, a reset code was sent' })
   @ApiErrors('badRequest')
   @Post('forgot-password')
   @HttpCode(204)
@@ -321,20 +322,57 @@ export class AuthController {
 
     const result = await this.authService.forgotPassword(body.email, ipAddress);
 
-    if (process.env.NODE_ENV === 'development' && result.devToken) {
+    // The reset code is emailed in every environment. In development we ALSO echo
+    // it back as `devCode` so the flow can be tested without opening the inbox.
+    if (process.env.NODE_ENV === 'development' && result.devCode) {
       res.status(200).json({
-        message: 'Reset token generated (DEV only — email not sent)',
-        devToken: result.devToken,
+        message: 'Reset code emailed (devCode included in development only)',
+        devCode: result.devCode,
       });
       return;
     }
   }
 
   @ApiOperation({
-    summary: 'Reset password using a valid token',
+    summary: 'Verify a password-reset code (Step 2 of 3)',
     description:
-      'Works for both admin and mobile users. Use the token from the reset email. All existing ' +
-      'refresh tokens for the account are revoked after a successful reset.',
+      'Works for both admin and mobile users. Checks the 6-digit code from the reset email and, on ' +
+      'success, returns a single-use `resetToken` to pass to `POST /auth/reset-password`. The code is ' +
+      'consumed here (cannot be reused) and is rate-limited — after 5 wrong attempts it is invalidated ' +
+      'and a new code must be requested.',
+  })
+  @Consumers('nep-link', 'met-link', 'admin')
+  @ApiBody({ type: VerifyResetCodeDto })
+  @ApiOkResponse({ description: 'Code valid — reset token issued', schema: { example: { data: { resetToken: 'a1b2c3…' } } } })
+  @ApiErrors('badRequest')
+  @Post('verify-reset-code')
+  @HttpCode(200)
+  async verifyResetCode(@Body() body: { email?: string; code?: string }, @Req() req: Request): Promise<{ data: { resetToken: string } }> {
+    if (!body.email || !body.code) {
+      const err = new Error('email and code are required') as NodeJS.ErrnoException & { statusCode: number; code: string };
+      err.statusCode = 400;
+      err.code = 'VALIDATION_ERROR';
+      throw err;
+    }
+    if (!/^\d{6}$/.test(body.code)) {
+      const err = new Error('code must be 6 digits') as NodeJS.ErrnoException & { statusCode: number; code: string };
+      err.statusCode = 400;
+      err.code = 'INVALID_RESET_CODE';
+      throw err;
+    }
+    const ipAddress =
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.socket.remoteAddress ??
+      '';
+    const result = await this.authService.verifyResetCode(body.email, body.code, ipAddress);
+    return { data: result };
+  }
+
+  @ApiOperation({
+    summary: 'Reset password with a verified reset token (Step 3 of 3)',
+    description:
+      'Works for both admin and mobile users. Use the `resetToken` returned by `POST /auth/verify-reset-code`. ' +
+      'All existing refresh tokens for the account are revoked after a successful reset.',
   })
   @Consumers('nep-link', 'met-link', 'admin')
   @ApiBody({ type: ResetPasswordDto })
@@ -343,10 +381,10 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(204)
   async resetPassword(
-    @Body() body: { token?: string; newPassword?: string },
+    @Body() body: { resetToken?: string; newPassword?: string },
   ): Promise<void> {
-    if (!body.token || !body.newPassword) {
-      const err = new Error('token and newPassword are required');
+    if (!body.resetToken || !body.newPassword) {
+      const err = new Error('resetToken and newPassword are required');
       (err as NodeJS.ErrnoException & { statusCode: number; code: string }).statusCode = 400;
       (err as NodeJS.ErrnoException & { statusCode: number; code: string }).code = 'VALIDATION_ERROR';
       throw err;
@@ -358,7 +396,7 @@ export class AuthController {
       throw err;
     }
 
-    await this.authService.resetPassword(body.token, body.newPassword);
+    await this.authService.resetPassword(body.resetToken, body.newPassword);
   }
 
   @ApiOperation({

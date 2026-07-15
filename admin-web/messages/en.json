@@ -50,12 +50,17 @@
     "signOut": "Sign out",
     "forgotPassword": "Forgot your password?",
     "forgotTitle": "Reset your password",
-    "forgotSubtitle": "Enter your email and we'll send you a reset link",
-    "forgotSubmit": "Send reset link",
-    "forgotSent": "If an account exists for that email, a reset link is on its way.",
-    "resetTitle": "Choose a new password",
+    "forgotSubtitle": "Enter your email and we'll send you a 6-digit reset code",
+    "forgotSubmit": "Send reset code",
+    "forgotSent": "If an account exists for that email, a reset code is on its way.",
+    "resetTitle": "Enter your reset code",
+    "resetSubtitle": "Enter the 6-digit code we emailed to {email} and choose a new password.",
+    "code": "6-digit code",
     "resetSubmit": "Reset password",
     "resetDone": "Your password has been reset. You can now sign in.",
+    "resendCode": "Didn't get a code? Send a new one",
+    "noEmailTitle": "Start your password reset",
+    "noEmailBody": "Enter your email to get a reset code.",
     "acceptInviteTitle": "Accept your invitation",
     "acceptInviteSubtitle": "Set a password to activate your account",
     "acceptInviteSubmit": "Activate account",
@@ -71,7 +76,9 @@
       "passwordRequired": "Password is required",
       "passwordMin": "Password must be at least 8 characters",
       "passwordsMismatch": "Passwords don't match",
-      "currentPasswordRequired": "Enter your current password to change it"
+      "currentPasswordRequired": "Enter your current password to change it",
+      "codeRequired": "Enter the 6-digit code",
+      "codeInvalid": "That code is invalid or has expired"
     }
   },
   "nav": {
