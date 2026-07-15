@@ -1,9 +1,11 @@
 import { http } from './http';
 import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
+  AlertRule,
   AppNotification,
   AuditEntry,
   DashboardDevice,
+  DashboardLayout,
   DashboardSummary,
   Device,
   DeviceHealth,
@@ -47,14 +49,22 @@ import type {
   Organization,
   OrgUser,
   Profile,
+  PublicSnapshot,
+  PushToken,
   Role,
   SessionFile,
   SessionUser,
+  ShareLink,
+  ShareResourceType,
+  ShareTokenRow,
 } from './types';
 import type {
+  AlertRuleInput,
   CreateDeviceInput,
+  CreateShareInput,
   DeviceSettingsInput,
   InviteUserInput,
+  UpdateAlertRuleInput,
   UpdateDeviceInput,
   UpdateOrgInput,
   UpdateUserInput,
@@ -458,5 +468,102 @@ export const deleteSessionFile = (sessionId: string, fileId: string) =>
 
 /** Same-origin BFF URL for the session CSV export (plain download; cookie rides along). */
 export const sessionCsvHref = (id: string) => `/api/sessions/${id}/export.csv`;
+
+// ── Alert rules (Month 11) ──────────────────────────────────────────────────
+export interface AlertRulesQuery {
+  deviceId?: string;
+  isActive?: boolean;
+  page?: number;
+  limit?: number;
+}
+export const listAlertRules = async (q: AlertRulesQuery = {}, signal?: AbortSignal): Promise<Page<AlertRule>> => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  const qs = params.toString();
+  // { data, pagination:{page,limit,total,totalPages} } — normalize via getRaw.
+  const body = await http.getRaw<{ data: AlertRule[]; pagination: unknown }>(
+    `/alert-rules${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  return normalizePage<AlertRule>(body as never);
+};
+export const getAlertRule = (id: string, signal?: AbortSignal) =>
+  http.get<AlertRule>(`/alert-rules/${id}`, signal);
+export const createAlertRule = (input: AlertRuleInput) => http.post<AlertRule>('/alert-rules', input);
+export const updateAlertRule = (id: string, input: UpdateAlertRuleInput) =>
+  http.patch<AlertRule>(`/alert-rules/${id}`, input);
+export const deleteAlertRule = (id: string) => http.delete<void>(`/alert-rules/${id}`);
+
+// ── Notifications feed + push-token registry (Month 11) ─────────────────────
+export const listNotificationsPage = async (
+  opts: { unread?: boolean; page?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<NotificationsResult> => {
+  const params = new URLSearchParams();
+  if (opts.unread) params.set('unread', 'true');
+  if (opts.page) params.set('page', String(opts.page));
+  if (opts.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const body = await http.getRaw<{ data: AppNotification[]; pagination: unknown; unreadCount: number }>(
+    `/notifications${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  return { page: normalizePage<AppNotification>(body as never), unreadCount: body.unreadCount ?? 0 };
+};
+/** Admin push-token registry — GET /notifications/tokens returns the full array. */
+export const listPushTokens = (signal?: AbortSignal) =>
+  http.get<PushToken[]>('/notifications/tokens', signal);
+
+// ── Share links (Month 11) ──────────────────────────────────────────────────
+export const createShare = (input: CreateShareInput) => http.post<ShareLink>('/share', input);
+export const listShares = async (
+  q: { page?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<Page<ShareTokenRow>> => {
+  const params = new URLSearchParams();
+  if (q.page) params.set('page', String(q.page));
+  if (q.limit) params.set('limit', String(q.limit));
+  const qs = params.toString();
+  const body = await http.getRaw<{ data: ShareTokenRow[]; pagination: unknown }>(
+    `/share${qs ? `?${qs}` : ''}`,
+    signal,
+  );
+  return normalizePage<ShareTokenRow>(body as never);
+};
+export const revokeShare = (id: string) => http.delete<void>(`/share/${id}`);
+export type { ShareResourceType };
+
+/** Unauthenticated public snapshot — hits the dedicated /api/public/:token BFF route (no session). */
+export const getPublicSnapshot = async (token: string, signal?: AbortSignal): Promise<PublicSnapshot> => {
+  const res = await fetch(`/api/public/${encodeURIComponent(token)}`, {
+    credentials: 'omit',
+    headers: { 'x-requested-with': 'fetch' },
+    signal,
+  });
+  if (!res.ok) {
+    const err = new Error('Shared link not found or has expired.') as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
+  const body = (await res.json()) as { data: PublicSnapshot } | PublicSnapshot;
+  return 'data' in (body as Record<string, unknown>) ? (body as { data: PublicSnapshot }).data : (body as PublicSnapshot);
+};
+
+// ── Dashboard presets (Month 11 — per-device saved layouts) ─────────────────
+export interface CreateLayoutInput {
+  deviceId: string;
+  name?: string;
+  tiles: DashboardLayout['tiles'];
+  isDefault?: boolean;
+}
+export const listDashboardLayouts = (deviceId?: string, signal?: AbortSignal) =>
+  http.get<DashboardLayout[]>(`/dashboard-layouts${deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''}`, signal);
+export const createDashboardLayout = (input: CreateLayoutInput) =>
+  http.post<DashboardLayout>('/dashboard-layouts', input);
+export const updateDashboardLayout = (id: string, input: { name?: string; tiles?: DashboardLayout['tiles'] }) =>
+  http.patch<DashboardLayout>(`/dashboard-layouts/${id}`, input);
+export const deleteDashboardLayout = (id: string) => http.delete<void>(`/dashboard-layouts/${id}`);
+export const setDefaultDashboardLayout = (id: string) =>
+  http.patch<DashboardLayout>(`/dashboard-layouts/${id}/set-default`, {});
 
 export type { Role };

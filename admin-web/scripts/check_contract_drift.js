@@ -162,6 +162,24 @@ const CLIENT_ENDPOINTS = [
   { method: 'get', path: '/sessions/{id}/export.csv' },
   { method: 'get', path: '/sessions/{id}/files' },
   { method: 'delete', path: '/sessions/{id}/files/{fileId}' },
+  // ── Month 11: alerts, notifications feed/tokens, share, public, presets ──
+  { method: 'get', path: '/alert-rules' },
+  { method: 'post', path: '/alert-rules' },
+  { method: 'get', path: '/alert-rules/{id}' },
+  { method: 'patch', path: '/alert-rules/{id}' },
+  { method: 'delete', path: '/alert-rules/{id}' },
+  { method: 'patch', path: '/notifications/{id}/read' },
+  { method: 'post', path: '/notifications/read-all' },
+  { method: 'get', path: '/notifications/tokens' },
+  { method: 'post', path: '/share' },
+  { method: 'get', path: '/share' },
+  { method: 'delete', path: '/share/{id}' },
+  { method: 'get', path: '/public/{token}' },
+  { method: 'get', path: '/dashboard-layouts' },
+  { method: 'post', path: '/dashboard-layouts' },
+  { method: 'patch', path: '/dashboard-layouts/{id}' },
+  { method: 'delete', path: '/dashboard-layouts/{id}' },
+  { method: 'patch', path: '/dashboard-layouts/{id}/set-default' },
 ];
 
 async function checkSwagger() {

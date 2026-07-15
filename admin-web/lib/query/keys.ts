@@ -1,4 +1,4 @@
-import type { AuditQuery, DevicesQuery, RecordsQuery, SessionsQuery } from '../api/endpoints';
+import type { AlertRulesQuery, AuditQuery, DevicesQuery, RecordsQuery, SessionsQuery } from '../api/endpoints';
 
 /**
  * Central query-key factory. Realtime events invalidate by these keys (plan §3.1
@@ -98,4 +98,13 @@ export const queryKeys = {
   deviceSettings: (id: string) => ['devices', id, 'settings'] as const,
   firmwareTargets: ['devices', 'firmware-target'] as const,
   firmwareStatus: (type?: string) => ['devices', 'firmware-status', type ?? 'all'] as const,
+
+  // ── Month 11: alerts, notifications feed, share, presets ──
+  alertRules: (q: AlertRulesQuery) => ['alert-rules', q] as const,
+  alertRule: (id: string) => ['alert-rules', id] as const,
+  notificationsFeed: (opts: { unread?: boolean; page?: number; limit?: number }) =>
+    ['notifications', 'feed', opts] as const,
+  pushTokens: ['notifications', 'tokens'] as const,
+  shares: (q: { page?: number; limit?: number }) => ['share', q] as const,
+  dashboardLayouts: (deviceId?: string) => ['dashboard-layouts', deviceId ?? 'all'] as const,
 };

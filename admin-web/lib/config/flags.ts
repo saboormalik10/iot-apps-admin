@@ -13,6 +13,8 @@ export type FeatureFlag =
   | 'records'
   | 'analytics'
   | 'alerts'
+  | 'notifications'
+  | 'share'
   | 'reports'
   | 'commandPalette'
   | 'maps';
@@ -28,7 +30,10 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   // Month 9 lands the MET analytics suite + the records module.
   records: true,
   analytics: true,
-  alerts: false,
+  // Month 11 lands alerts, the notifications feed + token registry, and share links.
+  alerts: true,
+  notifications: true,
+  share: true,
   reports: false,
   commandPalette: false,
 };

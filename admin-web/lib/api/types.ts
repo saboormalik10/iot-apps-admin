@@ -820,3 +820,135 @@ export interface SessionFile {
   capturedAt?: string | null;
   createdAt?: string;
 }
+
+// ═══ Month 11: Alerts, Notifications (tokens), Share, Dashboard presets ═══════
+
+/** Alert-rule app family — NOTE: 'MET'|'NEP', not the DeviceType 'MET-LINK'|'NEP-LINK'. */
+export type AlertAppType = 'MET' | 'NEP';
+export type AlertCondition = 'gt' | 'lt' | 'gte' | 'lte';
+
+/** One entry of a rule's rolling trigger log (server caps at 50). */
+export interface TriggerHistoryEntry {
+  triggeredAt: string;
+  sensorValue: number;
+  notifiedCount: number;
+}
+
+/** GET /alert-rules — a per-device+sensor threshold rule (list row + detail). */
+export interface AlertRule {
+  _id: string;
+  name: string;
+  deviceId: string;
+  appType: AlertAppType;
+  sensor: string;
+  condition: AlertCondition;
+  threshold: number;
+  unit: string;
+  isActive: boolean;
+  notifyUserIds: string[];
+  cooldownMinutes: number;
+  lastTriggeredAt: string | null;
+  triggerHistory: TriggerHistoryEntry[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** GET /notifications/tokens — a registered mobile push target (admin registry). */
+export interface PushToken {
+  _id: string;
+  platform: 'ios' | 'android';
+  appId: string;
+  deviceModel: string;
+  expiresAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** POST /share response — a created public link (+ the token to build the /s URL). */
+export interface ShareLink {
+  _id: string;
+  token: string;
+  /** Backend-built URL — points at the API `/public/:token`; the panel builds its own /s/ link. */
+  url: string;
+  resourceType: ShareResourceType;
+  resourceId: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** GET /share — a share-link row (lean ShareToken; carries viewCount + revoke state). */
+export interface ShareTokenRow {
+  _id: string;
+  token: string;
+  resourceType: ShareResourceType;
+  resourceId: string;
+  expiresAt: string | null;
+  viewCount: number;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export type ShareResourceType = 'nepSession' | 'metRecord';
+
+/** GET /public/:token — the unauthenticated read-only snapshot (static, no realtime). */
+export interface PublicSnapshotPhoto {
+  url: string;
+  filename: string;
+  type?: string;
+}
+export interface PublicNepSnapshot {
+  resourceType: 'nepSession';
+  sharedAt: string;
+  expiresAt: string | null;
+  session: {
+    id: string;
+    deviceName: string;
+    startTimestamp: number;
+    endTimestamp: number | null;
+    probeRange: string | null;
+    sampleCount: number;
+    turbidityAvg: number | null;
+    turbidityMin: number | null;
+    turbidityMax: number | null;
+    temperatureAvg: number | null;
+    comment: string;
+  };
+  trend: { t: number; turbidity: number | null; temperature: number | null }[];
+  photos: PublicSnapshotPhoto[];
+}
+export interface PublicMetSnapshot {
+  resourceType: 'metRecord';
+  sharedAt: string;
+  expiresAt: string | null;
+  record: {
+    id: string;
+    deviceName: string;
+    dateStart: string;
+    dateEnd: string | null;
+    measureCount: number;
+    comment: string;
+  };
+  photos: PublicSnapshotPhoto[];
+}
+export type PublicSnapshot = PublicNepSnapshot | PublicMetSnapshot;
+
+/** One tile of a saved dashboard preset (GET/POST /dashboard-layouts). Per-device. */
+export interface DashboardTile {
+  index: number;
+  nmea: string;
+  type: string;
+  unit: string;
+  desc: string;
+  label: string;
+}
+export interface DashboardLayout {
+  _id: string;
+  userId: string;
+  deviceId: string;
+  organizationId: string;
+  name: string;
+  isDefault: boolean;
+  tiles: DashboardTile[];
+  createdAt: string;
+  updatedAt: string;
+}

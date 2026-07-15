@@ -164,3 +164,67 @@ export const sessionCommentSchema = z.object({
   comment: z.string().max(2000, 'Comment is too long (max 2000 characters)'),
 });
 export type SessionCommentInput = z.infer<typeof sessionCommentSchema>;
+
+// ── Alert rules (Month 11) ────────────────────────────────────────────────────
+// Client Zod is the PRIMARY guard (§10.6): the CreateAlertRuleDto leaves `sensor`
+// a free string and puts NO @Min on threshold/cooldown. Crucially, we restrict
+// `sensor` to the keys the backend alert-evaluator can actually resolve (MET_/
+// NEP_SENSOR_MAP in alert-rules/evaluate.ts) — a rule on any other key would be
+// accepted by the API but could never fire, silently.
+export const MET_ALERT_SENSORS = ['wind_speed', 'wind_dir', 'temperature', 'humidity', 'pressure', 'dew_point'] as const;
+export const NEP_ALERT_SENSORS = ['turbidity', 'temperature'] as const;
+
+const alertConditionSchema = z.enum(['gt', 'lt', 'gte', 'lte']);
+const alertAppTypeSchema = z.enum(['MET', 'NEP']);
+/** A 24-hex Mongo ObjectId (deviceId / notifyUserIds — the DTO's only real check). */
+const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/, 'Invalid id');
+
+export const alertRuleSchema = z
+  .object({
+    name: z.string().min(1, 'Name is required').max(120),
+    deviceId: objectId.describe('Select a device'),
+    appType: alertAppTypeSchema,
+    sensor: z.string().min(1, 'Select a sensor'),
+    condition: alertConditionSchema,
+    threshold: z
+      .number({ invalid_type_error: 'Threshold must be a number' })
+      .finite('Threshold must be a number'),
+    unit: z.string().min(1, 'Unit is required').max(20),
+    cooldownMinutes: z
+      .number({ invalid_type_error: 'Cooldown must be a number' })
+      .int()
+      .min(0, 'Cooldown cannot be negative')
+      .max(10080, 'Cooldown is too large')
+      .default(60),
+    notifyUserIds: z.array(objectId).default([]),
+    isActive: z.boolean().default(true),
+  })
+  .superRefine((v, ctx) => {
+    const allowed: readonly string[] = v.appType === 'MET' ? MET_ALERT_SENSORS : NEP_ALERT_SENSORS;
+    if (!allowed.includes(v.sensor)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Not a valid ${v.appType} sensor`, path: ['sensor'] });
+    }
+  });
+export type AlertRuleInput = z.infer<typeof alertRuleSchema>;
+
+export const updateAlertRuleSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  sensor: z.string().min(1).optional(),
+  condition: alertConditionSchema.optional(),
+  threshold: z.number().finite().optional(),
+  unit: z.string().min(1).max(20).optional(),
+  cooldownMinutes: z.number().int().min(0).max(10080).optional(),
+  notifyUserIds: z.array(objectId).optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateAlertRuleInput = z.infer<typeof updateAlertRuleSchema>;
+
+// ── Share links (Month 11) ────────────────────────────────────────────────────
+// The share DTO DOES validate resourceType/expiresAt server-side; client mirrors it.
+export const createShareSchema = z.object({
+  resourceType: z.enum(['nepSession', 'metRecord']),
+  resourceId: z.string().min(1),
+  /** ISO date; omitted → backend defaults to +30 days. */
+  expiresAt: z.string().datetime().optional(),
+});
+export type CreateShareInput = z.infer<typeof createShareSchema>;
