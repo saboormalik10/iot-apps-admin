@@ -556,11 +556,11 @@ in Month 7 so live features can appear from Month 8 onward.
 
 | Deliverable | Status |
 |---|:--:|
-| Alert rules CRUD + rule builder + trigger history | ⬜ |
-| Notifications feed + live toasts + token registry | ⬜ |
-| Share links + public read-only view | ⬜ |
-| Dashboard presets (optional; fixed curated is the default) | ⬜ |
-| Realtime hardening pass | ⬜ |
+| Alert rules CRUD + rule builder + trigger history | ✅ |
+| Notifications feed + live toasts + token registry | ✅ |
+| Share links + public read-only view | ✅ |
+| Dashboard presets (optional; fixed curated is the default) | ✅ |
+| Realtime hardening pass | ✅ |
 
 ### Month 12 — Import/Export, Hardening, A11y & Launch
 **Theme:** finish the data lifecycle, make it bulletproof, ship it.
