@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/screen-states';
 import { useNotifications, useMarkAllRead, useMarkRead } from './use-notifications';
 import { notificationMeta, notificationLink } from './notification-meta';
 import { invalidateForNotification } from './notification-effects';
-import { useSocketEvent, useOnReconnect } from '@/lib/realtime/hooks';
+import { useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent, type NotificationPayload, type AlertTriggeredPayload } from '@/lib/realtime/events';
 import { toast } from '@/lib/hooks/use-toast';
 import { formatRelative } from '@/lib/time';
@@ -57,8 +57,9 @@ export function NotificationBell() {
     qc.invalidateQueries({ queryKey: ['alert-rules'] });
   });
 
-  // Reconnect after a drop → refetch (we may have missed events while offline).
-  useOnReconnect(invalidateFeed);
+  // Reconnect / tab-return catch-up is centralized in <RealtimeCatchup> — it
+  // refetches the ['notifications'] root (bell feed + full feed), so the bell
+  // no longer needs its own reconnect handler.
 
   const unread = data?.unreadCount ?? 0;
   const rows = data?.page.rows ?? [];

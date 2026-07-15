@@ -4,6 +4,7 @@ import { getSession, isSessionLive } from '@/lib/session';
 import { RbacProvider } from '@/lib/rbac/context';
 import { SocketProvider } from '@/lib/realtime/provider';
 import { AppShell } from '@/components/app-shell/app-shell';
+import { RealtimeCatchup } from '@/components/app-shell/realtime-catchup';
 
 /**
  * Authoritative auth gate (the middleware only did a fast cookie-presence check).
@@ -19,6 +20,7 @@ export default async function DashLayout({ children }: { children: ReactNode }) 
   return (
     <RbacProvider user={session.user}>
       <SocketProvider>
+        <RealtimeCatchup />
         <AppShell user={session.user}>{children}</AppShell>
       </SocketProvider>
     </RbacProvider>

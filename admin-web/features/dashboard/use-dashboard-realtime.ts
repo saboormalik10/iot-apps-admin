@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSocketEvent, useOnReconnect } from '@/lib/realtime/hooks';
+import { useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent } from '@/lib/realtime/events';
 import { queryKeys } from '@/lib/query/keys';
 
@@ -49,8 +49,9 @@ export function useDashboardRealtime(deviceIds: { met?: string; nep?: string }) 
   // (Month 7) already refetches the feed; here we also refresh the summary tiles.
   useSocketEvent(ClientEvent.ALERT_TRIGGERED, () => qc.invalidateQueries({ queryKey: queryKeys.summary }));
 
-  // After a reconnect, the truth is whatever the server returns now.
-  useOnReconnect(() => qc.invalidateQueries());
+  // Reconnect / tab-return catch-up is centralized in <RealtimeCatchup> (§Month 11
+  // hardening): it refetches the live query roots (incl. dashboard) — scoped, so a
+  // reconnect no longer nukes static caches, and it also covers backgrounded tabs.
 
   useEffect(() => () => clearTimeout(windroseTimer.current), []);
 }

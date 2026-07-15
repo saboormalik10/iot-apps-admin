@@ -1,7 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useSocketEvent, useOnReconnect } from '@/lib/realtime/hooks';
+import { useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent } from '@/lib/realtime/events';
 import { queryKeys } from '@/lib/query/keys';
 
@@ -20,5 +20,6 @@ export function useNepAnalyticsRealtime() {
 
   useSocketEvent(ClientEvent.NEP_SAMPLE, invalidateNep);
   useSocketEvent(ClientEvent.NEP_SESSION_CREATED, invalidateNep);
-  useOnReconnect(invalidateNep);
+  // Reconnect / tab-return catch-up is centralized in <RealtimeCatchup> (it
+  // refetches the ['analytics'] root, covering the NEP suite) — §Month 11 hardening.
 }
