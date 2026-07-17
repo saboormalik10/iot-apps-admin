@@ -26,6 +26,7 @@ export function DeviceSelect({
   allLabel = 'All devices',
   placeholder = 'Select device',
   className,
+  ariaLabel = 'Device',
 }: {
   value?: string;
   onChange: (deviceId: string | undefined) => void;
@@ -34,6 +35,9 @@ export function DeviceSelect({
   allLabel?: string;
   placeholder?: string;
   className?: string;
+  /** Accessible name. Override when more than one device picker is on a page —
+   *  two comboboxes both called "Device" are ambiguous to a screen reader. */
+  ariaLabel?: string;
 }) {
   const { data: devices = [] } = useDashboardDevices();
   const filtered = type ? devices.filter((d) => d.type === type) : devices;
@@ -43,7 +47,7 @@ export function DeviceSelect({
       value={value ?? (allowAll ? ALL : undefined)}
       onValueChange={(v) => onChange(v === ALL ? undefined : v)}
     >
-      <SelectTrigger className={className} aria-label="Device">
+      <SelectTrigger className={className} aria-label={ariaLabel}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

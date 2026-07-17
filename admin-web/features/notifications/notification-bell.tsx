@@ -73,7 +73,14 @@ export function NotificationBell() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('notifications')} className="relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          // The badge digits are visible text, so WCAG 2.5.3 requires them in
+          // the accessible name — and it reads better than a bare "Notifications".
+          aria-label={unread > 0 ? `${t('notifications')}: ${unread} unread` : t('notifications')}
+          className="relative"
+        >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-status-error px-1 text-[10px] font-semibold text-white">

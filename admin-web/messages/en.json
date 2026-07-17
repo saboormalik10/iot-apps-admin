@@ -94,11 +94,11 @@
     "alerts": "Alerts",
     "notifications": "Notifications",
     "share": "Share links",
+    "import": "Import data",
     "org": "Organization",
     "users": "Users",
     "audit": "Audit log",
-    "settings": "Settings",
-    "reports": "Reports"
+    "settings": "Settings"
   },
   "shell": {
     "toggleSidebar": "Toggle sidebar",
@@ -118,7 +118,27 @@
     "live": "Live",
     "connecting": "Connecting…",
     "offline": "Offline",
-    "reconnecting": "Reconnecting…"
+    "reconnecting": "Reconnecting…",
+    "searchOpen": "Search and jump to anything",
+    "searchPlaceholder": "Search…",
+    "searchHint": "Search for a device, session or record — or jump to a page.",
+    "searchEmpty": "No matches for “{query}”.",
+    "searching": "Searching…",
+    "searchResults": "Search results",
+    "searchDestinations": "Go to",
+    "searchDevices": "Devices",
+    "searchSessions": "Sessions",
+    "searchRecords": "Records",
+    "searchShort": "Search",
+    "searchLabel": "Search devices, sessions and records"
+  },
+  "a11y": {
+    "title": "Accessibility",
+    "subtitle": "How charts are drawn for you.",
+    "textureLabel": "Add texture to chart colours",
+    "textureHelp": "Draws a diagonal pattern over filled chart areas so series stay tellable apart without relying on colour. Printing and high-contrast mode turn this on automatically.",
+    "textureOn": "Chart texture on",
+    "textureOff": "Chart texture off"
   },
   "org": {
     "title": "Organization",

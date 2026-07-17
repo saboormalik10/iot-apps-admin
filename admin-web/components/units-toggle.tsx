@@ -13,7 +13,7 @@ export function UnitsToggle() {
   const { system, toggle } = useUnits();
   const t = useTranslations('shell');
   return (
-    <Button variant="ghost" size="sm" onClick={toggle} aria-label={t('units')} className="gap-1.5">
+    <Button variant="ghost" size="sm" onClick={toggle} aria-label={`${t('units')}: ${system === 'metric' ? t('unitsMetric') : t('unitsImperial')}`} className="gap-1.5">
       <Ruler className="h-4 w-4" />
       <span className="hidden text-xs sm:inline">
         {system === 'metric' ? t('unitsMetric') : t('unitsImperial')}

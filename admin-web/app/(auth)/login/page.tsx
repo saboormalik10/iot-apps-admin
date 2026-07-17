@@ -16,7 +16,8 @@ export default async function LoginPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('loginTitle')}</CardTitle>
+        {/* h2: the (auth) layout owns the h1 ("Observator Admin"). */}
+        <CardTitle as="h2">{t('loginTitle')}</CardTitle>
         <CardDescription>{t('loginSubtitle')}</CardDescription>
       </CardHeader>
       <CardContent>

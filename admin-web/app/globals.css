@@ -29,3 +29,37 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Texture channel (§Month 12) ──────────────────────────────────────────────
+ * Charts fill their marks with a pattern whose base is the flat role colour and
+ * whose ink sits at opacity 0 — so a chart is pixel-identical to the solid fill
+ * until one of these rules reveals the ink. Doing the trigger in CSS (not React)
+ * is what lets it work where JS never re-runs: the print dialog and forced-colors
+ * mode. See components/charts/chart-texture.tsx.
+ */
+.chart-texture-ink {
+  opacity: 0;
+}
+
+/* 1. Opt-in: the accessibility setting stamps <html data-texture="on">. */
+:root[data-texture='on'] .chart-texture-ink {
+  opacity: 1;
+}
+
+/* 2. Grayscale print — hue is gone on paper, so identity needs the texture. */
+@media print {
+  .chart-texture-ink {
+    opacity: 1;
+  }
+}
+
+/* 3. Forced-colors (Windows High Contrast): the OS replaces every fill with a
+ *    system colour, collapsing all series to one. `currentColor` on the ink is
+ *    substituted by the OS too, so the angle survives as the identity channel. */
+@media (forced-colors: active) {
+  .chart-texture-ink {
+    opacity: 1;
+    stroke: currentColor;
+    forced-color-adjust: none;
+  }
+}

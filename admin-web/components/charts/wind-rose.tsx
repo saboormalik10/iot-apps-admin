@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Group } from '@visx/group';
 import { Arc } from '@visx/shape';
 import { WIND_SPEED_BANDS, windBandIndex, cssVar } from '@/lib/api/scales';
+import { ChartTextureDefs, textureFill } from './chart-texture';
 import { COMPASS_16, sectorIndex, downloadCsv, downloadSvgPng } from './chart-utils';
 import { ChartFrame } from './chart-frame';
 
@@ -105,6 +106,7 @@ export function WindRose({
         <div className="flex flex-col items-center gap-3">
           <div ref={wrapRef}>
             <svg width={size} height={size} role="img" aria-label={`${title}: ${total} samples`}>
+              <ChartTextureDefs roles={WIND_SPEED_BANDS.map((b) => b.role)} />
               <Group>
                 {/* radial grid rings */}
                 {[0.25, 0.5, 0.75, 1].map((f) => (
@@ -139,7 +141,7 @@ export function WindRose({
                         innerRadius={inner}
                         outerRadius={outer}
                         padAngle={0.01}
-                        fill={cssVar(WIND_SPEED_BANDS[b].role)}
+                        fill={textureFill(WIND_SPEED_BANDS[b].role)}
                         transform={`translate(${cx},${cy})`}
                       />
                     );

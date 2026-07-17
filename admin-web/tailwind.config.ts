@@ -29,6 +29,8 @@ const config: Config = {
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+          /** For text on a primary tint (bg-primary/10) — see tokens.css. */
+          strong: 'hsl(var(--primary-strong))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -71,6 +73,12 @@ const config: Config = {
           error: 'hsl(var(--status-error))',
           info: 'hsl(var(--status-info))',
           offline: 'hsl(var(--status-offline))',
+          // Text steps for a status colour on a tint of itself — see tokens.css.
+          'ok-strong': 'hsl(var(--status-ok-strong))',
+          'warn-strong': 'hsl(var(--status-warn-strong))',
+          'error-strong': 'hsl(var(--status-error-strong))',
+          'info-strong': 'hsl(var(--status-info-strong))',
+          'offline-strong': 'hsl(var(--status-offline-strong))',
         },
       },
       borderRadius: {

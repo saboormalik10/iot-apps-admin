@@ -72,5 +72,6 @@ export function MapCanvas({
     );
   }
 
-  return <div ref={containerRef} className={className} aria-label="Fleet map" />;
+  // role="region": a bare div may not carry aria-label (axe: aria-prohibited-attr).
+  return <div ref={containerRef} className={className} role="region" aria-label="Fleet map" />;
 }

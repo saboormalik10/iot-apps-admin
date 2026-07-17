@@ -105,7 +105,7 @@ export function DeviceDetail({ id }: { id: string }) {
         <StatTile label="Firmware" value={device.firmwareVersion ?? '–'} />
         <Card className="flex flex-col justify-center gap-1 p-4">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Battery</span>
-          <Meter value={health.data?.batteryPct ?? device.lastBatteryPct} />
+          <Meter value={health.data?.batteryPct ?? device.lastBatteryPct} label="Battery" />
         </Card>
       </div>
 

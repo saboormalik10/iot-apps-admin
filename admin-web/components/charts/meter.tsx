@@ -15,7 +15,12 @@ export function Meter({
 }: {
   value: number | null;
   max?: number;
-  label?: string;
+  /**
+   * Required: `role="meter"` MUST have an accessible name, or a screen reader
+   * announces a bare number with no idea what it measures (axe: aria-meter-name).
+   * It was optional, and the three battery meters that omitted it were failing.
+   */
+  label: string;
   showValue?: boolean;
   unit?: string;
   className?: string;
@@ -26,19 +31,30 @@ export function Meter({
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
+      {/* `role="meter"` REQUIRES aria-valuenow (axe: aria-required-attr, critical).
+          A null reading has no value to report, so it isn't a meter at all — it
+          renders as an empty track and the "–" beside it carries the meaning. */}
       <div
         className="relative h-2 w-full min-w-[3rem] overflow-hidden rounded-full bg-muted"
-        role="meter"
-        aria-valuenow={value ?? undefined}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-label={label}
+        {...(value == null
+          ? { 'aria-hidden': true }
+          : {
+              role: 'meter',
+              'aria-valuenow': value,
+              'aria-valuemin': 0,
+              'aria-valuemax': max,
+              'aria-valuetext': `${Math.round(value)}${unit}`,
+              'aria-label': label,
+            })}
       >
         <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${pct}%` }} />
       </div>
       {showValue ? (
         <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-          {value == null ? '–' : `${Math.round(value)}${unit}`}
+          {value == null ? <>
+            <span aria-hidden>–</span>
+            <span className="sr-only">{label}: no reading</span>
+          </> : `${Math.round(value)}${unit}`}
         </span>
       ) : null}
     </div>

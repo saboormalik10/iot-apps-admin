@@ -59,7 +59,7 @@ export function DevicesList() {
       },
       {
         header: 'Battery',
-        cell: ({ row }) => <div className="w-28"><Meter value={row.original.lastBatteryPct} /></div>,
+        cell: ({ row }) => <div className="w-28"><Meter value={row.original.lastBatteryPct} label="Battery" /></div>,
       },
     ],
     [],

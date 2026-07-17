@@ -45,8 +45,20 @@ export function FleetMapPanel({ compact = false }: { compact?: boolean }) {
 
       const bounds = new maplibre.LngLatBounds();
       for (const p of pts) {
+        // The marker is a 24px transparent hit area with a 14px dot drawn inside
+        // it. The dot alone was a 14px target — under the 24px minimum (WCAG 2.5.8
+        // / Lighthouse target-size) — and pins this small are hard to hit on a
+        // touch screen regardless. The visual is unchanged.
         const el = document.createElement('div');
-        el.style.cssText = `width:14px;height:14px;border-radius:9999px;border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,.3);background:${markerColor(p)}`;
+        el.style.cssText =
+          'width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:transparent;cursor:pointer';
+        const dot = document.createElement('span');
+        dot.style.cssText = `width:14px;height:14px;border-radius:9999px;border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,.3);background:${markerColor(p)}`;
+        el.appendChild(dot);
+        // aria-label is PROHIBITED on a roleless generic div (axe:
+        // aria-prohibited-attr). The marker is focusable and opens a popup, so
+        // role=button is both valid and true.
+        el.setAttribute('role', 'button');
         el.setAttribute('aria-label', `${p.deviceName} — ${p.isOnline ? 'online' : 'offline'}`);
         const popup = new maplibre.Popup({ offset: 12, closeButton: false }).setText(
           `${p.deviceName} · ${p.type} · ${p.isOnline ? 'Online' : 'Offline'}`,

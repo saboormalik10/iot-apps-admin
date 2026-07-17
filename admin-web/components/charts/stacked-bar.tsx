@@ -2,8 +2,9 @@
 
 import { useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { cssVar, type PaletteRole } from '@/lib/api/scales';
+import { type PaletteRole } from '@/lib/api/scales';
 import { downloadCsv, downloadSvgPng, fmt } from './chart-utils';
+import { ChartTextureDefs, textureFill } from './chart-texture';
 import { ChartFrame } from './chart-frame';
 
 export interface StackSeries {
@@ -92,6 +93,7 @@ export function StackedBar<T extends Record<string, number | string>>({
         <div ref={wrapRef} style={{ height }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+              <ChartTextureDefs roles={series.map((s) => s.role)} />
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
               <XAxis dataKey={xKey} tickFormatter={(v) => xFormatter(v)} stroke="hsl(var(--muted-foreground))" fontSize={11} minTickGap={24} />
               <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} width={44} allowDecimals={false} />
@@ -108,7 +110,7 @@ export function StackedBar<T extends Record<string, number | string>>({
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {series.map((s) => (
-                <Bar key={s.key} dataKey={s.key} name={s.label} stackId="a" fill={cssVar(s.role)} isAnimationActive={false} />
+                <Bar key={s.key} dataKey={s.key} name={s.label} stackId="a" fill={textureFill(s.role)} isAnimationActive={false} />
               ))}
             </BarChart>
           </ResponsiveContainer>

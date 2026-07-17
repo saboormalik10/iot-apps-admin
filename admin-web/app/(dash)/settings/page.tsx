@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { ProfileForm } from '@/features/profile/profile-form';
+import { AccessibilityCard } from '@/features/profile/accessibility-card';
 
 export default async function SettingsPage() {
   const t = await getTranslations('profile');
@@ -10,6 +11,7 @@ export default async function SettingsPage() {
         <p className="mt-1 text-muted-foreground">{t('subtitle')}</p>
       </div>
       <ProfileForm />
+      <AccessibilityCard />
     </div>
   );
 }

@@ -19,11 +19,19 @@ const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
 );
 CardHeader.displayName = 'CardHeader';
 
-const CardTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('font-semibold leading-none tracking-tight', className)} {...props} />
-  ),
-);
+/**
+ * `as` lets a card title carry real heading semantics where it IS the heading of
+ * its region (a11y DoD) — a styled <div> is invisible to a screen reader's
+ * heading list. It stays a <div> by default on purpose: most cards sit under a
+ * page heading already, and promoting every one of them would invent heading
+ * levels and trip axe's heading-order rule. Set it deliberately, per card.
+ */
+const CardTitle = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement> & { as?: 'div' | 'h1' | 'h2' | 'h3' | 'h4' }
+>(({ className, as: Tag = 'div', ...props }, ref) => (
+  <Tag ref={ref} className={cn('font-semibold leading-none tracking-tight', className)} {...props} />
+));
 CardTitle.displayName = 'CardTitle';
 
 const CardDescription = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(

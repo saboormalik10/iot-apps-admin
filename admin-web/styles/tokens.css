@@ -16,8 +16,18 @@
   --card-foreground: 60 2% 12%;
   --popover: 0 0% 100%;
   --popover-foreground: 60 2% 12%;
-  --primary: 213 68% 50%;
+  /* L=48%, not 50%: at 50% this blue is 4.46:1 against white — under the 4.5 AA
+     floor for normal text, which fails BOTH ways round (white label on a primary
+     button, and `text-primary` links on a card). 48% gives 4.79:1 and is visually
+     indistinguishable. The palette validator did not catch this: it checks the
+     CHART hues at the 3:1 graphical-object threshold, not UI text at 4.5:1. */
+  --primary: 213 68% 48%;
   --primary-foreground: 0 0% 100%;
+  /* Primary ink for text sitting on a PRIMARY TINT (e.g. the active nav item's
+     `bg-primary/10`). --primary itself is only 4.13:1 on that tint; this step is
+     5.10:1. Light mode only needs it — the dark tint is dark enough that
+     --primary already clears AA on it (4.56:1). */
+  --primary-strong: 213 68% 42%;
   --secondary: 60 5% 96%;
   --secondary-foreground: 60 2% 20%;
   --muted: 60 5% 96%;
@@ -63,6 +73,28 @@
   --status-info: 213 68% 50%;
   --status-offline: 60 2% 53%;
 
+  /* Text steps for a status colour sitting on a 15% tint of ITSELF (StatusBadge).
+     The base steps are chosen to read as a mark against the surface; as TEXT on
+     their own tint every one of them was under 4.5:1 (warn was 1.64:1 — a yellow
+     label on pale yellow). These are the darkest-needed steps, computed per hue. */
+  --status-ok-strong: 120 86% 25%;
+  --status-warn-strong: 41 96% 29%;
+  --status-error-strong: 0 61% 46%;
+  --status-info-strong: 213 68% 43%;
+  --status-offline-strong: 60 2% 41%;
+
+  /* Texture-channel ink — tone-on-tone: a darker step of each fill's OWN hue, at
+     equal loudness across slots so texture never restates magnitude (§Month 12). */
+  --chart-ink: 60 6% 18%;
+  --chart-1-ink: 213 68% 22%;
+  --chart-2-ink: 159 73% 15%;
+  --chart-3-ink: 38 92% 18%;
+  --chart-4-ink: 120 55% 13%;
+  --chart-5-ink: 249 48% 22%;
+  --chart-6-ink: 0 72% 24%;
+  --chart-7-ink: 322 55% 22%;
+  --chart-8-ink: 22 82% 20%;
+
   /* Chart surface — what the palette validator checks contrast against */
   --chart-surface: 60 14% 99%;
 }
@@ -77,6 +109,7 @@
   --popover-foreground: 60 6% 92%;
   --primary: 213 74% 62%;
   --primary-foreground: 60 2% 10%;
+  --primary-strong: 213 74% 62%;
   --secondary: 60 2% 18%;
   --secondary-foreground: 60 6% 90%;
   --muted: 60 2% 18%;
@@ -113,6 +146,24 @@
   --status-info: 213 74% 62%;
   --status-offline: 60 2% 53%;
 
+  /* Dark: ok/warn already clear 4.5:1 on their tint; the other three don't. */
+  --status-ok-strong: 120 60% 55%;
+  --status-warn-strong: 41 90% 60%;
+  --status-error-strong: 0 70% 69%;
+  --status-info-strong: 213 74% 65%;
+  --status-offline-strong: 60 2% 60%;
+
+  /* Dark fills are lighter steps, so the ink stays dark and reads on top of them. */
+  --chart-ink: 60 2% 8%;
+  --chart-1-ink: 213 74% 18%;
+  --chart-2-ink: 159 66% 14%;
+  --chart-3-ink: 41 88% 16%;
+  --chart-4-ink: 104 56% 12%;
+  --chart-5-ink: 249 66% 24%;
+  --chart-6-ink: 0 78% 22%;
+  --chart-7-ink: 322 66% 22%;
+  --chart-8-ink: 22 86% 16%;
+
   --chart-surface: 60 2% 10%;
 }
 
@@ -127,6 +178,7 @@
     --popover-foreground: 60 6% 92%;
     --primary: 213 74% 62%;
     --primary-foreground: 60 2% 10%;
+    --primary-strong: 213 74% 62%;
     --secondary: 60 2% 18%;
     --secondary-foreground: 60 6% 90%;
     --muted: 60 2% 18%;
@@ -153,6 +205,24 @@
     --status-error: 0 70% 64%;
     --status-info: 213 74% 62%;
     --status-offline: 60 2% 53%;
+
+    --status-ok-strong: 120 60% 55%;
+    --status-warn-strong: 41 90% 60%;
+    --status-error-strong: 0 70% 69%;
+    --status-info-strong: 213 74% 65%;
+    --status-offline-strong: 60 2% 60%;
+
+    /* Must be repeated here: without them, a system-dark viewer who never touched
+       the theme toggle would inherit the LIGHT inks from :root. */
+    --chart-ink: 60 2% 8%;
+    --chart-1-ink: 213 74% 18%;
+    --chart-2-ink: 159 70% 14%;
+    --chart-3-ink: 41 90% 16%;
+    --chart-4-ink: 120 60% 12%;
+    --chart-5-ink: 249 64% 24%;
+    --chart-6-ink: 0 79% 22%;
+    --chart-7-ink: 322 68% 22%;
+    --chart-8-ink: 22 88% 16%;
 
     --chart-surface: 60 2% 10%;
   }

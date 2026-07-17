@@ -53,7 +53,7 @@ export function DeviceStatusTable() {
                   </td>
                   <td className="px-2 py-2 text-muted-foreground">{d.lastSeenAt ? formatRelative(d.lastSeenAt) : '–'}</td>
                   <td className="w-32 py-2 pl-2">
-                    <Meter value={d.lastBatteryPct} />
+                    <Meter value={d.lastBatteryPct} label="Battery" />
                   </td>
                 </tr>
               ))}
