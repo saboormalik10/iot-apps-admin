@@ -21,6 +21,24 @@ import { configureCloudinary } from './config/cloudinary';
 // process-wide as the general fix; the mailer also pins `family: 4` directly.
 dns.setDefaultResultOrder('ipv4first');
 
+// ── Swagger UI assets ──────────────────────────────────────────────────────────
+// The UI's CSS/JS normally come off disk from
+// node_modules/@nestjs/swagger/node_modules/swagger-ui-dist, served by
+// SwaggerModule's own static handler. That works anywhere the whole node_modules
+// tree is on disk (local, Docker/Render) but NOT on Vercel: its build only
+// deploys files its tracer sees `require`d, and those assets are read by path at
+// request time, so they are never traced and 404 in production — leaving an
+// unstyled, script-less blank page. (`swagger-ui-init.js` is the tell: it is the
+// only asset Nest generates in memory, and the only one that used to load.)
+//
+// Serving them from a version-pinned CDN sidesteps bundling entirely and works
+// identically on Vercel, Render and locally. The version MUST match the
+// swagger-ui-dist that @nestjs/swagger generates swagger-ui-init.js for, or the
+// init script and the bundle disagree — keep it in step on upgrades.
+const SWAGGER_CDN_ORIGIN = 'https://cdn.jsdelivr.net';
+const SWAGGER_UI_VERSION = '5.17.14'; // = @nestjs/swagger 7.4.2's swagger-ui-dist
+const SWAGGER_CDN = `${SWAGGER_CDN_ORIGIN}/npm/swagger-ui-dist@${SWAGGER_UI_VERSION}`;
+
 // ── Audience-filtered OpenAPI specs ────────────────────────────────────────────
 type Audience = 'nep-link' | 'met-link' | 'admin';
 const HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace'];
@@ -129,6 +147,26 @@ async function bootstrap(): Promise<void> {
           scriptSrc: ["'self'", "'unsafe-inline'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+      hsts: { maxAge: 15552000, includeSubDomains: true },
+    }),
+  );
+
+  // The docs page — and ONLY the docs page — loads the Swagger UI bundle from the
+  // CDN, so it needs script/style-src to allow that origin. Scoped to /api so the
+  // rest of the API keeps the strict `default-src 'self'` above; this runs after
+  // the global helmet and overwrites the CSP header for these routes only.
+  app.use(
+    ['/api', '/api.json'],
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", SWAGGER_CDN_ORIGIN],
+          styleSrc: ["'self'", "'unsafe-inline'", SWAGGER_CDN_ORIGIN],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          fontSrc: ["'self'", 'data:', SWAGGER_CDN_ORIGIN],
         },
       },
       hsts: { maxAge: 15552000, includeSubDomains: true },
@@ -249,9 +287,27 @@ async function bootstrap(): Promise<void> {
     res.send(fullDoc);
   });
 
+  // Swagger UI's static assets → the pinned CDN. SwaggerModule serves these from
+  // node_modules/@nestjs/swagger/node_modules/swagger-ui-dist, which Vercel never
+  // deploys (nothing `require`s them, so its file tracer can't see them) — they
+  // 404 there and the docs render as a blank page. Redirecting keeps the UI's own
+  // template untouched, so the scripts still execute in the order it expects.
+  // Registered BEFORE SwaggerModule.setup so they win over its static handler.
+  for (const asset of ['swagger-ui.css', 'swagger-ui-bundle.js', 'swagger-ui-standalone-preset.js']) {
+    httpAdapter.get(`/api/${asset}`, (_req: express.Request, res: express.Response) => {
+      res.redirect(302, `${SWAGGER_CDN}/${asset}`);
+    });
+  }
+
   SwaggerModule.setup('api', app, fullDoc, {
     explorer: true,
     customSiteTitle: 'Observator API Docs',
+    // NB: do NOT use customCssUrl/customJs to point at the CDN. They APPEND to
+    // the template instead of replacing it, so the local <script> tags survive
+    // and swagger-ui-init.js still runs BEFORE the appended CDN bundle — calling
+    // SwaggerUIBundle() before it exists. The asset routes above redirect
+    // instead, which keeps the template's original order intact.
+    customfavIcon: `${SWAGGER_CDN}/favicon-32x32.png`,
     swaggerOptions: {
       persistAuthorization: true,
       urls: [
