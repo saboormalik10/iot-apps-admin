@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import dns from 'dns';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule, OpenAPIObject } from '@nestjs/swagger';
@@ -13,6 +14,12 @@ import mongoose from 'mongoose';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { configureCloudinary } from './config/cloudinary';
+
+// Some hosts (e.g. Render) advertise IPv6 but outbound IPv6 isn't actually
+// routable — Node's DNS lookups then return an IPv6 address that connects fail
+// against with ENETUNREACH (hit this against Gmail SMTP). Prefer IPv4 results
+// process-wide as the general fix; the mailer also pins `family: 4` directly.
+dns.setDefaultResultOrder('ipv4first');
 
 // ── Audience-filtered OpenAPI specs ────────────────────────────────────────────
 type Audience = 'nep-link' | 'met-link' | 'admin';
