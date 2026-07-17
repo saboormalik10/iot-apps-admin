@@ -578,11 +578,26 @@ in Month 7 so live features can appear from Month 8 onward.
 
 | Deliverable | Status |
 |---|:--:|
-| Import wizard (validate/dry-run/report) + ZIP export | ⬜ |
-| Full a11y pass (axe, keyboard, texture channel) | ⬜ |
-| Performance + Lighthouse budget met | ⬜ |
-| Visual-regression + E2E journeys green in CI | ⬜ |
-| Production launch + monitoring + delivery report | ⬜ |
+| Import wizard (validate/dry-run/report) + ZIP export | ✅ |
+| Full a11y pass (axe, keyboard, texture channel) | ✅ |
+| Performance + Lighthouse budget met | ✅ ¹ |
+| Visual-regression + E2E journeys green in CI | ⚠ ² |
+| Production launch + monitoring + delivery report | ✅ ³ |
+| Global command palette + search (§13) | ✅ |
+
+¹ Enforced on the *authenticated* routes. One documented carve-out: dashboard CLS is a `warn` (0.12 vs 0.1)
+  — cause measured and follow-up written up in `admin-web/LIGHTHOUSE.md`.
+² **E2E journeys green (11/11, incl. axe)**. **Visual regression not delivered** — the Storybook build is
+  broken on the current dependency set (`@storybook/nextjs` + webpack 5.108); pre-existing and latent, since
+  CI never built Storybook. Follow-up: move Storybook to the Vite builder. See the Month-12 delivery report.
+³ Deploy-ready + runbook (§17 scope); the production `vercel --prod` is an account-owner action.
+
+**Two corrective backend changes** were required this month — both pre-existing production bugs that made
+MET CSV import unusable, found by driving the real endpoints against Atlas: the export→import timestamp
+round-trip silently restamped every row to `Date.now()` *and reported success*; and a `unique + sparse`
+index on `MetRecord` allowed only one null-`localRecordId` record per org, so every MET import after the
+first died with `E11000`. Both fixed, migrated (`npm run migrate:metrecord-index`), regression-tested and
+verified live. Details in `deliveryreport-month12/MONTH_12_DELIVERY_REPORT.md`.
 
 ---
 
