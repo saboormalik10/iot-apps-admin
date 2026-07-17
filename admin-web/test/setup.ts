@@ -18,6 +18,11 @@ if (typeof globalThis !== 'undefined' && !('ResizeObserver' in globalThis)) {
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
 }
 
+// jsdom lacks scrollIntoView (used to keep the command-palette cursor in view).
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // jsdom lacks matchMedia (used by next-themes / responsive hooks).
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) =>

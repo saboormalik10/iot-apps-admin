@@ -11,6 +11,7 @@ import {
   Share2,
   Users,
   Settings,
+  Upload,
   Map as MapIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,6 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
   { key: 'notifications', href: '/notifications', labelKey: 'nav.notifications', icon: Inbox, flag: 'notifications' },
   { key: 'share', href: '/share', labelKey: 'nav.share', icon: Share2, capability: 'exportData', flag: 'share' },
+  { key: 'import', href: '/import', labelKey: 'nav.import', icon: Upload, capability: 'importData', flag: 'importExport' },
   // The Organization page was retired from the nav — user management moved to
   // /users (MET / NEP / all people). The /org route itself still exists for
   // direct navigation (org settings + audit log).

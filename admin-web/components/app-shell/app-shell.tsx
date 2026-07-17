@@ -12,6 +12,8 @@ import { UnitsToggle } from '@/components/units-toggle';
 import { LiveIndicator } from '@/components/live-indicator';
 import { NotificationBell } from '@/features/notifications/notification-bell';
 import { ScopeBar } from '@/components/scope/scope-bar';
+import { CommandPalette } from './command-palette';
+import { isFeatureEnabled } from '@/lib/config/flags';
 import type { SessionUser } from '@/lib/api/types';
 
 /**
@@ -49,6 +51,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           >
             <Menu className="h-5 w-5" />
           </Button>
+          {isFeatureEnabled('commandPalette') && <CommandPalette />}
           <div className="flex-1" />
           <LiveIndicator />
           <UnitsToggle />

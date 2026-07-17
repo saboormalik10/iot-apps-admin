@@ -15,7 +15,7 @@ export type FeatureFlag =
   | 'alerts'
   | 'notifications'
   | 'share'
-  | 'reports'
+  | 'importExport'
   | 'commandPalette'
   | 'maps';
 
@@ -34,8 +34,9 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   alerts: true,
   notifications: true,
   share: true,
-  reports: false,
-  commandPalette: false,
+  // Month 12 lands the import wizard + batch export and the global command palette.
+  importExport: true,
+  commandPalette: true,
 };
 
 function forcedFlags(): Set<string> {
