@@ -5,7 +5,7 @@ import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { AuditLog } from '../models/AuditLog';
 import { SyncService, SyncUploadPayload } from '../sync/sync.service';
-import { parseTimestampMs } from '../utils/measure-parser.util';
+import { parseImportTimestampMs } from './parse-import-timestamp';
 
 type Actor = { userId: string; email: string };
 
@@ -62,10 +62,10 @@ export class ImportService {
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
       const sessionId = r[idx.sessionId];
-      const ts = num(r[idx.ts]);
-      if (!sessionId || ts === null) {
+      const ts = parseImportTimestampMs(r[idx.ts]);
+      if (!sessionId || !Number.isFinite(ts)) {
         skipped++;
-        if (errors.length < 50) errors.push(`Row ${i + 1}: missing SessionId/Timestamp`);
+        if (errors.length < 50) errors.push(`Row ${i + 1}: missing or unparseable SessionId/Timestamp`);
         continue;
       }
       const arr = bySession.get(sessionId) ?? [];
@@ -134,7 +134,7 @@ export class ImportService {
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
       const tsStr = r[iTs];
-      const tsMs = tsStr ? parseTimestampMs(tsStr) : NaN;
+      const tsMs = parseImportTimestampMs(tsStr);
       if (!tsStr || !Number.isFinite(tsMs)) {
         skipped++;
         if (errors.length < 50) errors.push(`Row ${i + 1}: bad Timestamp`);

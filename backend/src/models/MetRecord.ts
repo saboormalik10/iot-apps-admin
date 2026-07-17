@@ -46,9 +46,18 @@ const metRecordSchema = new Schema<IMetRecord>(
 
 metRecordSchema.index({ organizationId: 1, dateStartMs: -1 });
 metRecordSchema.index({ deviceId: 1, dateStartMs: -1 });
+// De-duplicates mobile records by the id the device assigned them. It must be a
+// PARTIAL index, not a sparse one: `sparse` only skips documents where the field
+// is ABSENT, and `localRecordId` defaults to null, so every record without a
+// device-assigned id still landed in the index — letting exactly ONE such record
+// exist per organization. Every later CSV import or null-id sync then failed with
+// E11000. `$type: 'number'` excludes the nulls properly, so uniqueness applies to
+// real device ids only.
+// Changing these options requires dropping the old index — see
+// scripts/migrate-metrecord-index.ts.
 metRecordSchema.index(
   { organizationId: 1, localRecordId: 1 },
-  { unique: true, sparse: true },
+  { unique: true, partialFilterExpression: { localRecordId: { $type: 'number' } } },
 );
 metRecordSchema.index({ organizationId: 1, isDemoMode: 1 }, { sparse: true });
 metRecordSchema.index({ organizationId: 1, userId: 1 }, { sparse: true });
