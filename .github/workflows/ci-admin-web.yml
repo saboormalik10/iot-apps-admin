@@ -142,9 +142,19 @@ jobs:
       - name: Playwright + axe
         run: yarn test:e2e
 
-      - name: Lighthouse (Web-Vitals budget, non-blocking now)
-        run: yarn lighthouse || true
-        continue-on-error: true
+      # Month 12: the budget is enforced, and it measures the authenticated
+      # routes (dashboard/devices/sessions) rather than only /login — those are
+      # the pages with the charts in them.
+      - name: Lighthouse (Web-Vitals budget, enforced)
+        run: yarn lighthouse:auth
+
+      - name: Upload Lighthouse report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: admin-web/.lighthouseci
+          retention-days: 7
 
       - name: Upload Playwright report
         if: always()

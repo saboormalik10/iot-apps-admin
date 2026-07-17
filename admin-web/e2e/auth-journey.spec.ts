@@ -18,8 +18,10 @@ test('admin signs in, reaches the shell, and opens the org module', async ({ pag
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: /fleet status/i })).toBeVisible();
 
-  // Navigate to Organization → People.
-  await page.getByRole('link', { name: /organization/i }).click();
+  // Navigate to Organization → People. `/org` was retired from the nav in Month 9
+  // (people moved to /users), but the route still owns org settings + the audit
+  // log, so this journey navigates to it directly rather than via a dead link.
+  await page.goto('/org');
   await expect(page).toHaveURL(/\/org/);
   await page.getByRole('tab', { name: /people/i }).click();
   await expect(page.getByText(ADMIN_EMAIL).first()).toBeVisible();

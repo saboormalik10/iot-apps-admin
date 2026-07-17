@@ -22,7 +22,8 @@
     "validate-palette": "node scripts/validate_palette.js --mode light && node scripts/validate_palette.js --mode dark",
     "check-contract": "node scripts/check_contract_drift.js",
     "lighthouse": "npx --yes @lhci/cli@0.14.0 autorun",
-    "simulator": "node simulator/run.mjs"
+    "simulator": "node simulator/run.mjs",
+    "lighthouse:auth": "node scripts/lighthouse-run.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.2",

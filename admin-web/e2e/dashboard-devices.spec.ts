@@ -49,5 +49,7 @@ test('devices module: list → detail, with admin actions and settings link', as
   await page.getByRole('row').nth(1).click();
   await expect(page).toHaveURL(/\/devices\/[a-f0-9]+/i);
   await expect(page.getByRole('link', { name: /settings/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: /firmware history/i })).toBeVisible();
+  // `exact` matters: the empty state's own "No firmware history" heading also
+  // matches a loose /firmware history/i and trips strict mode.
+  await expect(page.getByRole('heading', { name: 'Firmware history', exact: true })).toBeVisible();
 });
