@@ -181,6 +181,10 @@ const CLIENT_ENDPOINTS = [
   { method: 'patch', path: '/dashboard-layouts/{id}' },
   { method: 'delete', path: '/dashboard-layouts/{id}' },
   { method: 'patch', path: '/dashboard-layouts/{id}/set-default' },
+  // ── Month 12: import wizard + batch export ──
+  { method: 'post', path: '/import/nep' },
+  { method: 'post', path: '/import/met' },
+  { method: 'get', path: '/export/sessions.zip' },
 ];
 
 async function checkSwagger() {

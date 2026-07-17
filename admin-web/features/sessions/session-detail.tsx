@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import type { NepSampleRow } from '@/lib/api/types';
-import { sessionCsvHref } from '@/lib/api/endpoints';
+import { sessionCsvHref, sessionsZipHref } from '@/lib/api/endpoints';
 import { StatTile } from '@/components/charts/stat-tile';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
@@ -20,6 +20,7 @@ import { SessionGpsTrail } from './session-gps-trail';
 import { SessionEventsPanel } from './session-events-panel';
 import { SessionFiles } from './session-files';
 import { SessionComment } from './session-comment';
+import { ExportMenu } from '@/components/data/export-menu';
 import { ShareButton } from '@/features/share/share-button';
 import { useSession, useSessionSamples, useSessionTrail } from './use-sessions';
 
@@ -105,12 +106,24 @@ export function SessionDetail({ id }: { id: string }) {
         </div>
         <div className="flex items-center gap-2">
           <ShareButton resourceType="nepSession" resourceId={session.id} resourceLabel={session.deviceName} />
-          <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
-            <a href={sessionCsvHref(id)} download>
-              <Download className="h-3.5 w-3.5" />
-              Export CSV
-            </a>
-          </Button>
+          <ExportMenu
+            options={[
+              {
+                key: 'session-csv',
+                label: 'This session (CSV)',
+                icon: 'csv',
+                href: sessionCsvHref(id),
+                hint: `${session.sampleCount.toLocaleString()} samples.`,
+              },
+              {
+                key: 'device-zip',
+                label: 'All sessions for this device (ZIP)',
+                icon: 'zip',
+                href: sessionsZipHref({ deviceId: session.deviceId }),
+                hint: 'One CSV per session, plus a photo manifest.',
+              },
+            ]}
+          />
         </div>
       </div>
 

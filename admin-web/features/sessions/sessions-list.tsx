@@ -7,6 +7,8 @@ import { Waves } from 'lucide-react';
 import type { NepSessionRow } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
 import { DataTable } from '@/components/data/data-table';
+import { ExportMenu } from '@/components/data/export-menu';
+import { sessionsZipHref } from '@/lib/api/endpoints';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -102,7 +104,7 @@ export function SessionsList() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="h-9 w-[140px]">
+          <SelectTrigger className="h-9 w-[140px]" aria-label="Probe range">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -113,6 +115,26 @@ export function SessionsList() {
             ))}
           </SelectContent>
         </Select>
+
+        <div className="ml-auto">
+          <ExportMenu
+            options={[
+              {
+                key: 'sessions-zip',
+                label: 'All sessions (ZIP)',
+                icon: 'zip',
+                href: scope.deviceId
+                  ? sessionsZipHref({ deviceId: scope.deviceId, from: window.from, to: window.to })
+                  : '',
+                hint: 'One CSV per session, plus a manifest of photo URLs.',
+                // The backend requires a deviceId — there is no fleet-wide export
+                // (§17: default-device + comparison instead of fleet aggregate).
+                disabled: !scope.deviceId,
+                disabledReason: 'Pick a single device in the scope bar first.',
+              },
+            ]}
+          />
+        </div>
       </div>
 
       <DataTable

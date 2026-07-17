@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Download, Paperclip } from 'lucide-react';
+import { ArrowLeft, Paperclip } from 'lucide-react';
 import type { MetMeasureRow } from '@/lib/api/types';
 import { recordCsvHref } from '@/lib/api/endpoints';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { MEASURE_FIELDS, measureFieldLabel } from './measure-fields';
 import { GpsTrackMap } from './gps-track-map';
+import { ExportMenu } from '@/components/data/export-menu';
 import { ShareButton } from '@/features/share/share-button';
 import { useRecord, useRecordMeasures } from './use-records';
 
@@ -108,12 +109,17 @@ export function RecordDetail({ id }: { id: string }) {
         </div>
         <div className="flex items-center gap-2">
           <ShareButton resourceType="metRecord" resourceId={record._id} resourceLabel={record.deviceName} />
-          <Button asChild variant="outline" size="sm" className="h-8 gap-1 text-xs">
-            <a href={recordCsvHref(id)} download>
-              <Download className="h-3.5 w-3.5" />
-              Export CSV
-            </a>
-          </Button>
+          <ExportMenu
+            options={[
+              {
+                key: 'record-csv',
+                label: 'This record (CSV)',
+                icon: 'csv',
+                href: recordCsvHref(id),
+                hint: `${record.measureCount.toLocaleString()} measures. Re-importable.`,
+              },
+            ]}
+          />
         </div>
       </div>
 

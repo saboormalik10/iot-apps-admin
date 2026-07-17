@@ -1,4 +1,5 @@
 import { http } from './http';
+import { uploadWithProgress } from './upload';
 import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
   AlertRule,
@@ -17,6 +18,7 @@ import type {
   FirmwareStatusRow,
   FirmwareTarget,
   FleetMapPoint,
+  ImportSummary,
   MetComfort,
   MetDailySummary,
   MetFogRisk,
@@ -567,3 +569,36 @@ export const setDefaultDashboardLayout = (id: string) =>
   http.patch<DashboardLayout>(`/dashboard-layouts/${id}/set-default`, {});
 
 export type { Role };
+
+// ── Import + batch export (Month 12) ────────────────────────────────────────
+
+/**
+ * `POST /import/{nep,met}` — multipart (`file` + `deviceId`), admin-only. There is
+ * no server dry-run: the wizard predicts the outcome client-side (see
+ * features/import/csv-contract.ts) and this call always commits. NEP is
+ * idempotent per SessionId; MET creates one MetRecord per file.
+ * Rides the XHR uploader so the wizard can show real upload progress.
+ */
+export const importCsv = (
+  kind: 'nep' | 'met',
+  file: File,
+  deviceId: string,
+  opts?: { onProgress?: (fraction: number) => void; signal?: AbortSignal },
+) => {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('deviceId', deviceId);
+  return uploadWithProgress<ImportSummary>(`/import/${kind}`, form, opts ?? {});
+};
+
+/**
+ * Same-origin BFF URL for the batch ZIP export (a plain download link; the BFF
+ * streams the archive and forwards content-disposition). `deviceId` is required —
+ * the backend has no fleet-wide export (§17: default-device + comparison instead).
+ */
+export const sessionsZipHref = (q: { deviceId: string; from?: number; to?: number }) => {
+  const p = new URLSearchParams({ deviceId: q.deviceId });
+  if (q.from !== undefined) p.set('from', String(q.from));
+  if (q.to !== undefined) p.set('to', String(q.to));
+  return `/api/export/sessions.zip?${p.toString()}`;
+};

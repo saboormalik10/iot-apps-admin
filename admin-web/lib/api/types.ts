@@ -952,3 +952,14 @@ export interface DashboardLayout {
   createdAt: string;
   updatedAt: string;
 }
+
+/** POST /import/{nep,met} — the backend's import summary (plan §6). */
+export interface ImportSummary {
+  /** NEP: samples written. MET: measures written. */
+  inserted: number;
+  /** NEP: sessions upserted. MET: always 1 (one MetRecord per file). */
+  upserted: number;
+  skipped: number;
+  /** Row-level messages; the backend stops collecting after 50. */
+  errors: string[];
+}
