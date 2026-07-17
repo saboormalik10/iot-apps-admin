@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(yarn typecheck *)",
+      "Bash(yarn lint *)",
+      "Bash(yarn test *)",
+      "Bash(yarn build *)",
+      "Bash(node tmp-drop-reset.cjs)",
+      "Bash(node /tmp/claude-1000/-home-saboor-malik-Documents-work-iot-apps-admin/d0ac6502-b909-4a55-8db7-b75cba7bcb46/scratchpad/verify-otp.mjs)",
+      "Bash(break)"
+    ]
+  }
+}
