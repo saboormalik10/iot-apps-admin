@@ -283,8 +283,10 @@ export class AuthService {
     try {
       await sendPasswordResetCodeEmail(user.email, user.firstName, code, RESET_CODE_EXPIRY_MINUTES);
     } catch (err) {
+      // A mail-delivery failure must never break the endpoint or reveal that the
+      // address exists — log it and still return the normal (204 / dev devCode)
+      // response so the API contract and anti-enumeration guarantee hold.
       console.error('[mailer] Failed to send reset code email:', err);
-      if (process.env.NODE_ENV === 'development') throw err;
     }
 
     if (process.env.NODE_ENV === 'development') {

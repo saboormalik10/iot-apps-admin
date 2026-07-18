@@ -2,15 +2,24 @@ import nodemailer from 'nodemailer';
 
 function createTransporter() {
   const user = process.env.EMAIL_MAILER;
-  const pass = process.env.EMAIL_PASSWORD;
+  // Gmail App Passwords are displayed in 4-char groups ("xxxx xxxx xxxx xxxx");
+  // strip the whitespace so a copy-pasted value with spaces still authenticates.
+  const pass = process.env.EMAIL_PASSWORD?.replace(/\s+/g, '');
 
   if (!user || !pass) {
     throw new Error('EMAIL_MAILER and EMAIL_PASSWORD must be set in .env');
   }
 
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: { user, pass },
+    // Serverless (Vercel) can stall on outbound SMTP; fail fast and let the caller
+    // handle it rather than hanging until the platform function timeout.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
 }
 
