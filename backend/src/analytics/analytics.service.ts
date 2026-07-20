@@ -106,7 +106,9 @@ export class AnalyticsService {
 
   private parseWindow(from?: string, to?: string): { fromMs: number; toMs: number } {
     const toMs = to ? parseInt(to, 10) : Date.now();
-    const fromMs = from ? parseInt(from, 10) : toMs - 24 * 3600_000;
+    // A missing `from` means "no lower bound" (the Scope Bar's "All time" preset
+    // sends no `from`) — NOT "last 24h", which would silently truncate All time.
+    const fromMs = from ? parseInt(from, 10) : 0;
     if (isNaN(fromMs) || isNaN(toMs)) throw new BadRequestException('Invalid from/to (Unix ms expected)');
     return { fromMs, toMs };
   }

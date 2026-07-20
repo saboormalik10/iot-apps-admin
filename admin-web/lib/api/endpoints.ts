@@ -253,7 +253,9 @@ export interface AnalyticsWindow {
 
 function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefined> = {}): string {
   const p = new URLSearchParams({ deviceId: w.deviceId });
-  if (w.from != null) p.set('from', String(w.from));
+  // Always send `from` (default 0 = no lower bound). Omitting it makes the backend
+  // fall back to "last 24h", which silently truncates the "All time" preset.
+  p.set('from', String(w.from ?? 0));
   if (w.to != null) p.set('to', String(w.to));
   if (w.includeDemo) p.set('includeDemoMode', 'true');
   for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') p.set(k, v);

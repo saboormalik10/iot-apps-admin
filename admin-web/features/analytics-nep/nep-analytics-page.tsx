@@ -33,7 +33,7 @@ export function NepAnalyticsPage() {
     return (
       <EmptyState
         title="No NEP-LINK device"
-        body="The NEP analytics suite needs a NEP-LINK device. Pair one from the mobile app, or adjust the Scope Bar."
+        body="The NEP analytics suite needs a NEP-LINK device. Pair one from the mobile app, or pick one from the device filter above."
       />
     );
   }
@@ -44,8 +44,8 @@ export function NepAnalyticsPage() {
       <div className="flex items-center justify-between gap-2">
         {nep.isAuto ? (
           <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            Showing <span className="font-medium text-foreground">{nep.device.name}</span> (auto-selected). Use the Scope
-            Bar to choose a device.
+            Showing <span className="font-medium text-foreground">{nep.device.name}</span> (auto-selected). Use the device
+            filter above to choose a device.
           </p>
         ) : (
           <span />

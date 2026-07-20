@@ -28,7 +28,7 @@ export function AnalyticsPage() {
     return (
       <EmptyState
         title="No MET-LINK device"
-        body="The MET analytics suite needs a MET-LINK device. Pair one from the mobile app, or adjust the Scope Bar."
+        body="The MET analytics suite needs a MET-LINK device. Pair one from the mobile app, or pick one from the device filter above."
       />
     );
   }
@@ -39,8 +39,8 @@ export function AnalyticsPage() {
       <div className="flex items-center justify-between gap-2">
         {met.isAuto ? (
           <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            Showing <span className="font-medium text-foreground">{met.device.name}</span> (auto-selected). Use the Scope
-            Bar to choose a device.
+            Showing <span className="font-medium text-foreground">{met.device.name}</span> (auto-selected). Use the device
+            filter above to choose a device.
           </p>
         ) : (
           <span />

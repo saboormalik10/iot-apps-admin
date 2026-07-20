@@ -53,7 +53,9 @@ function SensorPanel({
   const params = {
     deviceId,
     sensor,
-    from: window.from ?? window.to - 6 * 3_600_000,
+    // "All time" has no lower bound (window.from undefined) → 0, not "last 6h",
+    // so the graph honours the range picker instead of silently showing 6h.
+    from: window.from ?? 0,
     to: window.to,
     includeDemo: scope.includeDemo,
   };

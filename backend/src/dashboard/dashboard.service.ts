@@ -34,6 +34,10 @@ function downsample<T>(arr: T[], maxPoints: number): T[] {
   const step = arr.length / maxPoints;
   return Array.from({ length: maxPoints }, (_, i) => arr[Math.floor(i * step)]);
 }
+
+/** Max points returned per MET history series (dashboard graph stack). ~30d of
+ *  1-min buckets is ~40k points × 8 sensor charts — capped so the browser copes. */
+const MET_HISTORY_MAX_POINTS = 1500;
 import { Device } from '../models/Device';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
@@ -413,7 +417,11 @@ export class DashboardService {
       },
     ];
 
-    const data = await MetMeasure.aggregate(pipeline);
+    // Cap the series so wide windows (30d / All time) don't ship ~40k 1-min
+    // buckets per sensor — the dashboard renders 8 sensor charts at once, so the
+    // uncapped payload froze the browser. Downsampling (even decimation) keeps the
+    // overview shape; narrower ranges stay under the cap at full 1-min resolution.
+    const data = downsample(await MetMeasure.aggregate(pipeline), MET_HISTORY_MAX_POINTS);
     const result = { sensor, unit: SENSOR_UNIT_MAP[sensor], data };
     return toCache(cacheKey, result);
   }
@@ -637,7 +645,9 @@ export class DashboardService {
 
   async getNepAnalytics(organizationId: string, deviceId: string, fromMs?: number, toMs?: number) {
     const to = toMs ?? Date.now();
-    const from = fromMs ?? to - 30 * 86_400_000;
+    // Missing `from` = "no lower bound" (matches the Scope Bar "All time" preset),
+    // consistent with the analytics endpoints' parseWindow.
+    const from = fromMs ?? 0;
     const cacheKey = `nep:analytics:${organizationId}:${deviceId}:${from}:${to}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;

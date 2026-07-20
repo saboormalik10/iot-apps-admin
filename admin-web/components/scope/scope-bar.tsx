@@ -24,8 +24,10 @@ const ALL_TYPES = '__all_types__';
  * Routes that are not "data pages" — the Scope Bar hides itself here (plan §3.6).
  * `/import` belongs on this list: the wizard picks its own target device, and a
  * scope row above it would imply the import honours the device/date filter.
+ * `/analytics` renders its own reduced, type-scoped bar (AnalyticsScopeBar) — no
+ * device-type select and no demo toggle — so the global bar steps aside there.
  */
-const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import'];
+const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import', '/analytics'];
 
 /**
  * ScopeBar — the persistent, URL-synced filter row inherited by every data page
