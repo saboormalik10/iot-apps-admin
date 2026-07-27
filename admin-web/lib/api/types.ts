@@ -177,23 +177,23 @@ export interface MetLatest {
   gpsAltM: number | null;
 }
 
-/** One raw wind sample from GET /dashboard/met/windrose. */
-export interface WindSample {
-  speedMs: number | null;
-  speedKmh: number | null;
-  dirTrueDeg: number | null;
-  dirRelDeg: number | null;
-  timestampMs: number;
-}
+/** GET /dashboard/met/windrose — pre-binned 16-sector × speed-band count matrices.
+ *  Binning now happens server-side (§ graph-data contract): the browser receives
+ *  one small matrix per orientation × period instead of up to 600 raw samples. */
+export type WindMatrix = number[][];
 export interface MetWindrose {
-  recordId: string;
-  /** ≈10 min of samples. */
-  last600: WindSample[];
-  /** ≈2 min of samples. */
-  last120: WindSample[];
+  recordId: string | null;
+  /** Timestamp (ms) of the freshest sample the matrices were built from. */
+  newestTsMs: number | null;
+  /** Speed-band labels for the matrix columns (server SPEED_BANDS order). */
+  bands: string[];
+  matrices: {
+    true: { '10m': WindMatrix; '2m': WindMatrix };
+    relative: { '10m': WindMatrix; '2m': WindMatrix };
+  };
 }
 
-/** GET /dashboard/met/history — 1-min bucketed series for one sensor. */
+/** GET /dashboard/met/history — adaptive-bucket min/avg/max series for one sensor. */
 export interface MetHistoryPoint {
   timestampMs: number;
   min: number;
@@ -205,6 +205,21 @@ export interface MetHistory {
   sensor: string;
   unit: string;
   data: MetHistoryPoint[];
+  /** Bucket width (ms) the backend chose for this window. */
+  bucketMs?: number;
+}
+
+/** GET /dashboard/met/history-multi — every requested sensor in one payload,
+ *  so the dashboard graph stack loads all charts with a single request. */
+export interface MetHistorySeries {
+  unit: string;
+  data: MetHistoryPoint[];
+}
+export interface MetHistoryMulti {
+  from: number;
+  to: number;
+  bucketMs: number;
+  series: Record<string, MetHistorySeries>;
 }
 
 /** GET /dashboard/nep/latest. */

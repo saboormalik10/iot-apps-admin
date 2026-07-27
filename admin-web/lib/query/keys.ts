@@ -28,6 +28,8 @@ export const queryKeys = {
   metWindrose: (deviceId: string) => ['dashboard', 'met', 'windrose', deviceId] as const,
   metHistory: (deviceId: string, sensor: string, from: number, to: number) =>
     ['dashboard', 'met', 'history', deviceId, sensor, from, to] as const,
+  metHistoryMulti: (deviceId: string, sensors: string, from: number, to: number) =>
+    ['dashboard', 'met', 'history-multi', deviceId, sensors, from, to] as const,
   nepLatest: (deviceId: string) => ['dashboard', 'nep', 'latest', deviceId] as const,
   orgDeviceMap: ['dashboard', 'org', 'device-map'] as const,
 

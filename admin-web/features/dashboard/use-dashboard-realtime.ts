@@ -19,7 +19,10 @@ export function useDashboardRealtime(deviceIds: { met?: string; nep?: string }) 
   useSocketEvent(ClientEvent.MET_LATEST, () => {
     if (deviceIds.met) {
       qc.invalidateQueries({ queryKey: queryKeys.metLatest(deviceIds.met) });
+      // Both the single-sensor 'history' key and the graph stack's 'history-multi'
+      // key (the two are sibling prefixes, so neither matches the other).
       qc.invalidateQueries({ queryKey: ['dashboard', 'met', 'history'] });
+      qc.invalidateQueries({ queryKey: ['dashboard', 'met', 'history-multi'] });
     }
   });
 

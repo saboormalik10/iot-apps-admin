@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { Types, PipelineStage } from 'mongoose';
+import { downsample, downsampleEnvelope } from '../utils/cache.util';
+import { sectorIndex, speedBandIndex, SPEED_BANDS } from '../analytics/analytics.util';
 
 // ─── Sensor → DB field map ─────────────────────────────────────────────────
 
@@ -27,17 +29,63 @@ const SENSOR_UNIT_MAP: Record<string, string> = {
   voltage: 'V',
 };
 
-// ─── Downsample utility ────────────────────────────────────────────────────
+// ─── Adaptive time-bucketing for the MET history graphs ─────────────────────
+// (`downsample`/`downsampleEnvelope` now live in ../utils/cache.util so the
+//  analytics module and the dashboard share one implementation.)
 
-function downsample<T>(arr: T[], maxPoints: number): T[] {
-  if (arr.length <= maxPoints) return arr;
-  const step = arr.length / maxPoints;
-  return Array.from({ length: maxPoints }, (_, i) => arr[Math.floor(i * step)]);
+/** Hard cap on points returned per MET history series. Adaptive bucketing (below)
+ *  already targets ~this many buckets; the peak-preserving `downsampleEnvelope`
+ *  is a safety net that keeps the min/max band intact if a series still overshoots.
+ *  Was 1500 + naive decimation — lowered now that the envelope preserves spikes. */
+const MET_HISTORY_MAX_POINTS = 500;
+
+/** How many buckets the DB aggregation aims to return, regardless of window width.
+ *  ~500 points is more than a chart has pixels, so the graph looks identical. */
+const MET_HISTORY_TARGET_BUCKETS = 500;
+
+/** Bucket-size ladder (ms), coarsest-last. `pickBucketMs` selects the smallest
+ *  bucket that keeps the series under the target for the window — but never finer
+ *  than 1 minute (the native sample cadence), so we never invent resolution. */
+const BUCKET_LADDER_MS = [
+  60_000, // 1 min
+  5 * 60_000, // 5 min
+  15 * 60_000, // 15 min
+  30 * 60_000, // 30 min
+  60 * 60_000, // 1 h
+  3 * 60 * 60_000, // 3 h
+  6 * 60 * 60_000, // 6 h
+  12 * 60 * 60_000, // 12 h
+  24 * 60 * 60_000, // 1 day
+];
+
+export function pickBucketMs(spanMs: number, targetBuckets = MET_HISTORY_TARGET_BUCKETS): number {
+  const raw = spanMs / Math.max(1, targetBuckets);
+  return BUCKET_LADDER_MS.find((v) => v >= raw) ?? BUCKET_LADDER_MS[BUCKET_LADDER_MS.length - 1];
 }
 
-/** Max points returned per MET history series (dashboard graph stack). ~30d of
- *  1-min buckets is ~40k points × 8 sensor charts — capped so the browser copes. */
-const MET_HISTORY_MAX_POINTS = 1500;
+/** Bucket size for a MET history query. Bases granularity on the ACTUAL data
+ *  span (clamped to the records that overlap the window), NOT the raw `from`/`to`
+ *  — the frontend sends `from=0` for "All time", and sizing off epoch would
+ *  collapse everything into a handful of day-wide buckets. */
+function metBucketMs(
+  records: Array<{ dateStartMs?: number | null; dateEndMs?: number | null }>,
+  fromMs: number,
+  toMs: number,
+): number {
+  const now = Date.now();
+  // reduce (not Math.min(...spread)) — a device can accumulate a lot of records
+  // and spreading a huge array into Math.min risks a call-stack overflow.
+  let minStart = Infinity;
+  let maxEnd = -Infinity;
+  for (const r of records) {
+    if (typeof r.dateStartMs === 'number' && r.dateStartMs < minStart) minStart = r.dateStartMs;
+    const end = typeof r.dateEndMs === 'number' ? r.dateEndMs : now;
+    if (end > maxEnd) maxEnd = end;
+  }
+  const effFrom = Math.max(fromMs, Number.isFinite(minStart) ? minStart : fromMs);
+  const effTo = Math.min(toMs, Number.isFinite(maxEnd) ? maxEnd : toMs);
+  return pickBucketMs(Math.max(60_000, effTo - effFrom));
+}
 import { Device } from '../models/Device';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
@@ -309,7 +357,20 @@ export class DashboardService {
       .select('_id')
       .lean();
 
-    if (!latestRecord) return toCache(cacheKey, { last600: [], last120: [] });
+    const emptyMatrix = () => Array.from({ length: 16 }, () => Array(SPEED_BANDS.length).fill(0));
+    const bands = SPEED_BANDS.map((b) => b.label);
+
+    if (!latestRecord) {
+      return toCache(cacheKey, {
+        recordId: null,
+        newestTsMs: null,
+        bands,
+        matrices: {
+          true: { '10m': emptyMatrix(), '2m': emptyMatrix() },
+          relative: { '10m': emptyMatrix(), '2m': emptyMatrix() },
+        },
+      });
+    }
 
     // Last 600 measures (≈10 min at 1/sec)
     const last600 = await MetMeasure.find({
@@ -320,24 +381,44 @@ export class DashboardService {
     })
       .sort({ timestampMs: -1 })
       .limit(600)
-      .select('windSpeedMs windSpeedKmh windDirTrueDeg windDirRelDeg timestampMs')
+      .select('windSpeedMs windDirTrueDeg windDirRelDeg timestampMs')
       .lean();
 
     // Last 120 measures (≈2 min)
     const last120 = last600.slice(0, 120);
 
-    const mapWind = (m: typeof last600[0]) => ({
-      speedMs: m.windSpeedMs,
-      speedKmh: m.windSpeedKmh,
-      dirTrueDeg: m.windDirTrueDeg,
-      dirRelDeg: m.windDirRelDeg,
-      timestampMs: m.timestampMs,
-    });
+    // Bin server-side into the 16-sector × speed-band matrix the WindRose chart
+    // renders — so the browser receives a ~640-number matrix instead of up to 600
+    // raw samples and does zero client-side bucketing (§ graph-data contract).
+    const buildMatrix = (
+      samples: typeof last600,
+      dirField: 'windDirTrueDeg' | 'windDirRelDeg',
+    ): number[][] => {
+      const m = emptyMatrix();
+      for (const s of samples) {
+        const dir = s[dirField];
+        const spd = s.windSpeedMs;
+        if (dir == null || spd == null) continue;
+        m[sectorIndex(dir)][speedBandIndex(spd)] += 1;
+      }
+      return m;
+    };
 
     const result = {
       recordId: latestRecord._id,
-      last600: last600.map(mapWind),
-      last120: last120.map(mapWind),
+      // Arrays are sorted newest-first, so element 0 is the freshest sample.
+      newestTsMs: last600[0]?.timestampMs ?? null,
+      bands,
+      matrices: {
+        true: {
+          '10m': buildMatrix(last600, 'windDirTrueDeg'),
+          '2m': buildMatrix(last120, 'windDirTrueDeg'),
+        },
+        relative: {
+          '10m': buildMatrix(last600, 'windDirRelDeg'),
+          '2m': buildMatrix(last120, 'windDirRelDeg'),
+        },
+      },
     };
 
     return toCache(cacheKey, result);
@@ -376,16 +457,21 @@ export class DashboardService {
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
       ...(includeDemo ? {} : { isDemoMode: false }),
     })
-      .select('_id')
+      .select('_id dateStartMs dateEndMs')
       .lean();
 
     if (!records.length) {
-      return toCache(cacheKey, { sensor, unit: SENSOR_UNIT_MAP[sensor], data: [] });
+      return toCache(cacheKey, { sensor, unit: SENSOR_UNIT_MAP[sensor], data: [], bucketMs: 60_000 });
     }
 
     const recordIds = records.map((r) => r._id);
 
-    // 1-minute bucket aggregation
+    // Adaptive bucket size: keep the returned series ~MET_HISTORY_TARGET_BUCKETS
+    // points wide whatever the window, instead of always bucketing at 1 minute
+    // (which yields ~40k buckets for a 30-day window that then have to be thrown
+    // away). Narrow windows stay at full 1-minute resolution.
+    const bucketMs = metBucketMs(records, fromMs, toMs);
+
     const pipeline = [
       {
         $match: {
@@ -397,7 +483,7 @@ export class DashboardService {
       },
       {
         $group: {
-          _id: { $subtract: ['$timestampMs', { $mod: ['$timestampMs', 60_000] }] },
+          _id: { $subtract: ['$timestampMs', { $mod: ['$timestampMs', bucketMs] }] },
           min: { $min: `$${field}` },
           max: { $max: `$${field}` },
           avg: { $avg: `$${field}` },
@@ -417,13 +503,123 @@ export class DashboardService {
       },
     ];
 
-    // Cap the series so wide windows (30d / All time) don't ship ~40k 1-min
-    // buckets per sensor — the dashboard renders 8 sensor charts at once, so the
-    // uncapped payload froze the browser. Downsampling (even decimation) keeps the
-    // overview shape; narrower ranges stay under the cap at full 1-min resolution.
-    const data = downsample(await MetMeasure.aggregate(pipeline), MET_HISTORY_MAX_POINTS);
-    const result = { sensor, unit: SENSOR_UNIT_MAP[sensor], data };
+    // Safety net: even after adaptive bucketing, cap the series — but with the
+    // peak-preserving envelope so gusts/extremes survive the reduction.
+    const data = downsampleEnvelope(await MetMeasure.aggregate(pipeline), MET_HISTORY_MAX_POINTS);
+    const result = { sensor, unit: SENSOR_UNIT_MAP[sensor], data, bucketMs };
     return toCache(cacheKey, result);
+  }
+
+  // ── GET /dashboard/met/history-multi ──────────────────────────────────────
+
+  /**
+   * Multi-sensor variant of `getMetHistory`: aggregates every requested sensor's
+   * min/avg/max per adaptive bucket in ONE round-trip (a `$facet` sub-pipeline
+   * per sensor), so the dashboard graph stack fetches all 8 charts with a single
+   * request + payload instead of 8. Each sub-pipeline keeps its own `$ne: null`
+   * filter so per-sensor extremes are correct even where other sensors are null.
+   */
+  async getMetHistoryMulti(
+    organizationId: string,
+    deviceId: string,
+    sensors: string[],
+    fromMs: number,
+    toMs: number,
+    includeDemo = false,
+  ) {
+    if (!sensors.length) {
+      throw new BadRequestException('sensors is required (comma-separated list)');
+    }
+    const fields = sensors.map((sensor) => {
+      const field = SENSOR_FIELD_MAP[sensor];
+      if (!field) {
+        throw new BadRequestException(
+          `Unknown sensor "${sensor}". Valid values: ${Object.keys(SENSOR_FIELD_MAP).join(', ')}`,
+        );
+      }
+      return { sensor, field };
+    });
+
+    const cacheKey = `met:history-multi:${organizationId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}:${includeDemo}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    const records = await MetRecord.find({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+      dateStartMs: { $lte: toMs },
+      $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
+      ...(includeDemo ? {} : { isDemoMode: false }),
+    })
+      .select('_id dateStartMs dateEndMs')
+      .lean();
+
+    const emptySeries = () =>
+      Object.fromEntries(fields.map(({ sensor }) => [sensor, { unit: SENSOR_UNIT_MAP[sensor], data: [] }]));
+
+    if (!records.length) {
+      return toCache(cacheKey, { from: fromMs, to: toMs, bucketMs: 60_000, series: emptySeries() });
+    }
+
+    const recordIds = records.map((r) => r._id);
+    const bucketMs = metBucketMs(records, fromMs, toMs);
+
+    // One `$facet` per sensor — MongoDB scans the windowed rows once, then runs
+    // each sensor's group/project against that shared input.
+    const facet: Record<string, unknown[]> = {};
+    for (const { sensor, field } of fields) {
+      facet[sensor] = [
+        { $match: { [field]: { $ne: null } } },
+        {
+          $group: {
+            _id: { $subtract: ['$timestampMs', { $mod: ['$timestampMs', bucketMs] }] },
+            min: { $min: `$${field}` },
+            max: { $max: `$${field}` },
+            avg: { $avg: `$${field}` },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+        {
+          $project: {
+            _id: 0,
+            timestampMs: '$_id',
+            min: { $round: ['$min', 2] },
+            max: { $round: ['$max', 2] },
+            avg: { $round: ['$avg', 2] },
+            count: 1,
+          },
+        },
+      ];
+    }
+
+    const pipeline = [
+      {
+        $match: {
+          recordId: { $in: recordIds },
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+        },
+      },
+      { $facet: facet },
+    ] as unknown as PipelineStage[];
+
+    const [facetResult] = (await MetMeasure.aggregate(pipeline)) as Array<Record<string, unknown[]>>;
+    const series = Object.fromEntries(
+      fields.map(({ sensor }) => [
+        sensor,
+        {
+          unit: SENSOR_UNIT_MAP[sensor],
+          data: downsampleEnvelope((facetResult?.[sensor] ?? []) as never[], MET_HISTORY_MAX_POINTS),
+        },
+      ]),
+    );
+
+    return toCache(cacheKey, { from: fromMs, to: toMs, bucketMs, series });
   }
 
   // ── GET /dashboard/nep/sessions ───────────────────────────────────────────

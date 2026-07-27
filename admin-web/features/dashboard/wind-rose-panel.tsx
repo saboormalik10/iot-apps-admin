@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { WindRose, type WindDatum } from '@/components/charts/wind-rose';
+import { WindRose } from '@/components/charts/wind-rose';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { DataFreshness } from './data-freshness';
 import { useMetWindrose } from './use-dashboard';
@@ -12,25 +12,22 @@ import { useMetWindrose } from './use-dashboard';
  * Wind rose panel (plan §6) — the signature chart with a true/relative orientation
  * toggle and a 10-min / 2-min period selection (mirrors the device's windRoseOrient /
  * windRosePeriod). Refreshes live via the debounced `met:windrose` handler.
+ *
+ * The 16-sector × speed-band matrices are pre-binned server-side (§ graph-data
+ * contract): we just pick the matrix for the current orientation × period and hand
+ * it straight to the shared WindRose primitive — no client-side bucketing.
  */
 export function WindRosePanel({ deviceId }: { deviceId?: string }) {
   const { data, isLoading } = useMetWindrose(deviceId);
   const [orient, setOrient] = useState<'true' | 'relative'>('true');
   const [period, setPeriod] = useState<'10m' | '2m'>('10m');
 
-  const samples: WindDatum[] = useMemo(() => {
-    if (!data) return [];
-    const raw = period === '10m' ? data.last600 : data.last120;
-    return raw.map((s) => ({ speedMs: s.speedMs, dirDeg: orient === 'true' ? s.dirTrueDeg : s.dirRelDeg }));
-  }, [data, period, orient]);
-
   if (!deviceId) return null;
   if (isLoading) return <Card className="p-4"><LoadingState label="Loading wind rose…" /></Card>;
   if (!data) return <Card className="p-4"><EmptyState title="No wind data" /></Card>;
 
-  // Newest sample in the payload (arrays are sorted newest-first). The rose shows
-  // "the last 10 min OF THIS data" — which may itself be old, so stamp its age.
-  const newestTsMs = data.last600[0]?.timestampMs ?? data.last120[0]?.timestampMs ?? null;
+  const matrix = data.matrices[orient][period];
+  const total = matrix.reduce((sum, row) => sum + row.reduce((a, b) => a + b, 0), 0);
 
   return (
     <div className="space-y-2">
@@ -41,10 +38,16 @@ export function WindRosePanel({ deviceId }: { deviceId?: string }) {
         <Toggle active={period === '10m'} onClick={() => setPeriod('10m')}>10 min</Toggle>
         <Toggle active={period === '2m'} onClick={() => setPeriod('2m')}>2 min</Toggle>
         <span className="ml-auto">
-          <DataFreshness tsMs={newestTsMs} />
+          {/* The rose shows "the last 10 min OF THIS data" — which may itself be
+              old, so stamp the freshest sample's age. */}
+          <DataFreshness tsMs={data.newestTsMs} />
         </span>
       </div>
-      <WindRose samples={samples} title={`Wind rose · ${orient} · ${period === '10m' ? '10 min' : '2 min'}`} />
+      {total === 0 ? (
+        <Card className="p-4"><EmptyState title="No wind data in this window" /></Card>
+      ) : (
+        <WindRose matrix={matrix} title={`Wind rose · ${orient} · ${period === '10m' ? '10 min' : '2 min'}`} />
+      )}
     </div>
   );
 }

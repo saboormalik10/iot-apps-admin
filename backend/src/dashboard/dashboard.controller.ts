@@ -115,6 +115,46 @@ export class DashboardController {
     );
   }
 
+  @ApiOperation({ summary: 'MET-LINK adaptive-bucket history for many sensors in one request' })
+  @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
+  @ApiQuery({
+    name: 'sensors',
+    required: true,
+    description:
+      'Comma-separated sensor keys: wind_speed,temperature,humidity,pressure,dew_point,solar,precipitation,voltage',
+  })
+  @ApiQuery({ name: 'from', required: true, description: 'Start time (Unix ms)' })
+  @ApiQuery({ name: 'to', required: true, description: 'End time (Unix ms)' })
+  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiOkResponse({
+    description:
+      'Adaptive buckets for every requested sensor in one payload: ' +
+      '{ from, to, bucketMs, series: { [sensor]: { unit, data: [{timestampMs, min, max, avg, count}] } } }',
+  })
+  @Get('met/history-multi')
+  @UseGuards(JwtAuthGuard)
+  async getMetHistoryMulti(
+    @Query('deviceId') deviceId: string,
+    @Query('sensors') sensors: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('includeDemoMode') demo: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    const list = (sensors ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return this.dashboardService.getMetHistoryMulti(
+      user.organizationId,
+      deviceId,
+      list,
+      parseInt(from, 10),
+      parseInt(to, 10),
+      demo === 'true',
+    );
+  }
+
   @ApiOperation({ summary: 'NEP-LINK sessions list (filter/search by date, device, probe range)' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
   @ApiQuery({ name: 'from', required: false, description: 'startTimestamp lower bound (Unix ms)' })

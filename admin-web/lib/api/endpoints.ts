@@ -23,6 +23,7 @@ import type {
   MetDailySummary,
   MetFogRisk,
   MetHistory,
+  MetHistoryMulti,
   MetLatest,
   MetMeasureRow,
   MetMultiSensor,
@@ -189,6 +190,19 @@ export const getMetHistory = (
   // getRaw (NOT get): the payload itself has a top-level `data` array, which the
   // `{ data }`-envelope unwrapper in http.get would wrongly strip to just the array.
   return http.getRaw<MetHistory>(`/dashboard/met/history?${qs.toString()}`, signal);
+};
+export const getMetHistoryMulti = (
+  params: { deviceId: string; sensors: string[]; from: number; to: number; includeDemo?: boolean },
+  signal?: AbortSignal,
+) => {
+  const qs = new URLSearchParams({
+    deviceId: params.deviceId,
+    sensors: params.sensors.join(','),
+    from: String(params.from),
+    to: String(params.to),
+  });
+  if (params.includeDemo) qs.set('includeDemoMode', 'true');
+  return http.getRaw<MetHistoryMulti>(`/dashboard/met/history-multi?${qs.toString()}`, signal);
 };
 export const getNepLatest = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
   http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);

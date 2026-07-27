@@ -7,6 +7,7 @@ import {
   getMetLatest,
   getMetWindrose,
   getMetHistory,
+  getMetHistoryMulti,
   getNepLatest,
   getOrgDeviceMap,
 } from '@/lib/api/endpoints';
@@ -61,6 +62,30 @@ export function useMetHistory(params?: { deviceId: string; sensor: string; from:
       ? ([...queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to), params.includeDemo ?? false] as const)
       : (['met-history', 'idle'] as const),
     queryFn: ({ signal }) => getMetHistory(params!, signal),
+    enabled: Boolean(params?.deviceId),
+  });
+}
+
+/**
+ * One request for the whole sensor graph stack (min/avg/max per adaptive bucket
+ * for every sensor at once) — replaces the 8-way fan-out of `useMetHistory`, so
+ * the dashboard makes a single call with a single, display-sized payload.
+ */
+export function useMetHistoryMulti(params?: {
+  deviceId: string;
+  sensors: string[];
+  from: number;
+  to: number;
+  includeDemo?: boolean;
+}) {
+  return useQuery({
+    queryKey: params
+      ? ([
+          ...queryKeys.metHistoryMulti(params.deviceId, params.sensors.join(','), params.from, params.to),
+          params.includeDemo ?? false,
+        ] as const)
+      : (['met-history-multi', 'idle'] as const),
+    queryFn: ({ signal }) => getMetHistoryMulti(params!, signal),
     enabled: Boolean(params?.deviceId),
   });
 }

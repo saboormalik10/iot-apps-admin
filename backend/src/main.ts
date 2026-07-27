@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule, OpenAPIObject } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import compression from 'compression';
 import * as express from 'express';
 import * as path from 'path';
 import * as Sentry from '@sentry/node';
@@ -134,6 +135,14 @@ async function bootstrap(): Promise<void> {
   }
 
   const app = await NestFactory.create(AppModule);
+
+  // ── Response Compression ───────────────────────────────────────────────────
+  // gzip every compressible response (JSON/text) above ~1 KB. The dashboard's
+  // frontend sits behind Vercel's edge (which already compresses), but the
+  // backend is also hit DIRECTLY by the mobile apps and by the BFF server-to-
+  // server — neither of which gets Vercel's compression, so a fat aggregated
+  // payload (e.g. met/history-multi) would otherwise travel uncompressed there.
+  app.use(compression());
 
   // ── Security Middleware ────────────────────────────────────────────────────
   // CSP keeps 'self' + 'unsafe-inline' so the Swagger UI (and its /api/json/*

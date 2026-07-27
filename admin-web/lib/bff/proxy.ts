@@ -1,10 +1,19 @@
 import 'server-only';
+import { gzip } from 'zlib';
+import { promisify } from 'util';
 import { NextResponse, type NextRequest } from 'next/server';
 import { backendFetch } from './backend';
 import { refreshAccessToken, RefreshFailedError } from './refresh';
 import { isCsrfSafe } from './csrf';
 import { getSession, isSessionLive, touchSession, type SessionData } from '../session';
 import type { IronSession } from 'iron-session';
+
+const gzipAsync = promisify(gzip);
+
+/** Content types worth gzipping (text-like). Binary/already-compressed types skip. */
+const COMPRESSIBLE = /^(application\/json|application\/javascript|text\/|image\/svg\+xml)/i;
+/** Don't bother compressing tiny bodies — the header overhead isn't worth it. */
+const MIN_COMPRESS_BYTES = 1024;
 
 const HOP_BY_HOP = new Set([
   'host',
@@ -25,14 +34,39 @@ function forwardHeaders(src: Headers): Headers {
   return out;
 }
 
-/** Pass a backend Response back to the browser, streaming the body unchanged. */
-function passThrough(res: Response): NextResponse {
+/**
+ * Pass a backend Response back to the browser.
+ *
+ * For compressible JSON/text we gzip here so the browser→BFF hop is compressed on
+ * EVERY deployment (local dev, self-hosted, Vercel) and is visible in DevTools as
+ * `content-encoding: gzip`. The backend already gzips its hop, but the BFF's fetch
+ * (undici) decodes that transparently, so this re-compresses the decoded body.
+ * File downloads (content-disposition) and small/binary bodies stream unchanged.
+ */
+async function passThrough(res: Response, acceptEncoding: string): Promise<NextResponse> {
   const headers = new Headers();
   const ct = res.headers.get('content-type');
   if (ct) headers.set('content-type', ct);
   const cd = res.headers.get('content-disposition');
   if (cd) headers.set('content-disposition', cd); // exports / file downloads
   headers.set('cache-control', 'no-store');
+
+  const wantsGzip = /\bgzip\b/.test(acceptEncoding);
+  const compressible = !cd && !!ct && COMPRESSIBLE.test(ct);
+  if (wantsGzip && compressible) {
+    // Buffering is fine here: these are API JSON payloads, not large file streams
+    // (those carry content-disposition and are excluded above).
+    const raw = Buffer.from(await res.arrayBuffer());
+    if (raw.length >= MIN_COMPRESS_BYTES) {
+      const gz = await gzipAsync(raw);
+      headers.set('content-encoding', 'gzip');
+      headers.set('vary', 'accept-encoding');
+      headers.set('content-length', String(gz.length));
+      return new NextResponse(gz, { status: res.status, headers });
+    }
+    return new NextResponse(raw, { status: res.status, headers });
+  }
+
   return new NextResponse(res.body, { status: res.status, headers });
 }
 
@@ -99,7 +133,7 @@ export async function forwardToBackend(request: NextRequest, backendPath: string
     }
   }
 
-  return passThrough(res);
+  return passThrough(res, request.headers.get('accept-encoding') ?? '');
 }
 
 /** Convenience for explicit auth routes that need the raw session. */
