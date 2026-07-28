@@ -5,6 +5,7 @@ Simple summary of the admin panel work completed so far.
 ## Month 7 — Foundation
 - Set up the Next.js admin panel project with the locked stack.
 - Built the design system: colors, typography, chart color rules, dark/light theme.
+
 - Built the app shell: sidebar, top bar, user menu, notifications bell.
 - Built login, logout, forgot/reset password, and invite-accept screens.
 - Added role-based access (admin / operator / viewer) across pages and nav.
