@@ -60,6 +60,25 @@ If you also connect the Git integration later, set Root Directory to
 3. Devices map renders tiles (CSP tile origins are handled in
    `middleware.ts`).
 
+## "Nothing is deploying" — check these three, in order
+
+Deployments for this project are *deliberately* skipped when a push doesn't
+touch `admin-web/`, so "no build ran" is usually correct behaviour rather than a
+fault. Open the project → **Deployments** and match the symptom:
+
+| What you see | Cause | Fix |
+| --- | --- | --- |
+| Deployments listed as **Skipped** | The push changed only backend/docs/mobile | Working as designed. To force one, touch any file under `admin-web/`, or use the ADMIN deploy hook |
+| **No deployment at all** since the push | Vercel is watching a different branch than the one you pushed | Settings → Git → **Production Branch** — set it to the branch you actually work on, or merge that branch into it |
+| Build **fails immediately** | Root Directory not set | Settings → General → **Root Directory** = `admin-web`. There is no `package.json` at the repo root, so a root-level build cannot work |
+
+Verify the skip rule locally before blaming Vercel — this is the same comparison
+it makes, `0` means skip and `1` means build:
+
+```bash
+cd admin-web && git diff --quiet HEAD^ HEAD -- . ; echo $?
+```
+
 ## Notes / gotchas
 
 - **Render free-tier cold starts**: the first request after idle can take
@@ -70,3 +89,8 @@ If you also connect the Git integration later, set Root Directory to
   work unchanged on Vercel.
 - If you ever set `CORS_ORIGIN` on the Render backend, include your Vercel
   domain (e.g. `https://<project>.vercel.app`) in the comma-separated list.
+- The skip rule compares against `VERCEL_GIT_PREVIOUS_SHA` (the last deployed
+  commit), **not** `HEAD^`. With `HEAD^`, pushing several commits at once only
+  examines the newest one — so an `admin-web` change followed by two backend
+  commits in the same push would be skipped and never deploy. It falls back to
+  building whenever it cannot tell (shallow clone, missing SHA, first deploy).
