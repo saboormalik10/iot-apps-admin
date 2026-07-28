@@ -29,7 +29,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { SessionsService, CreateSessionInput, BulkSampleInput, UpdateSessionInput } from './sessions.service';
+import { SessionsService } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 
 const SESSION_EXAMPLE = {
@@ -115,7 +115,7 @@ export class SessionsController {
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
-  async createSession(@Body() body: CreateSessionInput, @CurrentUser() user?: JWTPayload) {
+  async createSession(@Body() body: CreateSessionDto, @CurrentUser() user?: JWTPayload) {
     const session = await this.sessionsService.createSession(user!.organizationId, body, user!.userId);
     return { data: session };
   }
@@ -158,7 +158,7 @@ export class SessionsController {
   @UseGuards(JwtOrApiKeyGuard)
   async updateSession(
     @Param('id') id: string,
-    @Body() body: UpdateSessionInput,
+    @Body() body: UpdateSessionDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const session = await this.sessionsService.updateSession(user!.organizationId, id, body);
@@ -208,7 +208,7 @@ export class SessionsController {
   @UseGuards(JwtOrApiKeyGuard)
   async bulkInsertSamples(
     @Param('id') id: string,
-    @Body() body: { samples: BulkSampleInput[] },
+    @Body() body: BulkSamplesDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const result = await this.sessionsService.bulkInsertSamples(

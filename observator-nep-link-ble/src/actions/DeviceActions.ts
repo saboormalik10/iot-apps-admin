@@ -1,4 +1,5 @@
 import { Dispatch } from 'redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BLUETOOTH_DEVICE_NAME_REGEX } from '../constants/constants';
 import { getDBConnection } from '../utils/db';
 
@@ -74,6 +75,21 @@ interface AddBleDeviceFoundAction {
   payload: { newBleDevice: BleDevice };
 }
 
+interface SetDiscoveredDevicesAction {
+  type: 'DEVICE_SET_DISCOVERED_DEVICES';
+  payload: { discoveredDevices: any[] };
+}
+
+interface SetBondedDevicesAction {
+  type: 'DEVICE_SET_BONDED_DEVICES';
+  payload: { bondedDevices: any[] };
+}
+
+interface AddBondedDeviceAction {
+  type: 'DEVICE_ADD_BONDED_DEVICE';
+  payload: { newBondedDevice: any };
+}
+
 interface AddKnownDevicesAction {
   type: 'DEVICE_ADD_KNOWN_DEVICES';
   payload: { knownDevices: KnownDevice[] };
@@ -128,6 +144,9 @@ export type DeviceAction =
   | SetSensorErrorAction
   | SetBleDiscoveredDevicesAction
   | AddBleDeviceFoundAction
+  | SetDiscoveredDevicesAction
+  | SetBondedDevicesAction
+  | AddBondedDeviceAction
   | AddKnownDevicesAction
   | FetchKnownDevicesAction
   | SaveDeviceNameAction
@@ -168,7 +187,6 @@ export const setDeviceDisconnected = (deviceDataObj: DeviceDataObject) => {
 };
 
 export const clearConnectedDevice = () => {
-  console.log('🔴 Running clearConnectedDevice');
   return (dispatch: Dispatch<DeviceAction>) => {
     dispatch({ type: 'DEVICE_CLEAR_CONNECTED_DEVICE' });
   };
@@ -195,7 +213,76 @@ export const setSensorError = (sensorError: boolean) => {
   };
 };
 
+// Classic Bluetooth - Discovered Devices
+export const setDiscoveredDevices = (discoveredDevices: any[]) => {
+  return async (dispatch: Dispatch<DeviceAction>) => {
+    try {
+      const filteredDiscoveredDevices = discoveredDevices.filter(
+        ({ name }) => name //?.match(BLUETOOTH_DEVICE_NAME_REGEX)
+      );
+      dispatch({
+        type: 'DEVICE_SET_DISCOVERED_DEVICES',
+        payload: { discoveredDevices: filteredDiscoveredDevices },
+      });
+    } catch (e) {
+      console.log('Error in setDiscoveredDevices', e);
+    }
+  };
+};
 
+// Classic Bluetooth - Bonded Devices
+export const setBondedDevices = (bondedDevices: any[]) => {
+  return async (dispatch: Dispatch<DeviceAction>) => {
+    try {
+      dispatch({
+        type: 'DEVICE_SET_BONDED_DEVICES',
+        payload: { bondedDevices },
+      });
+    } catch (e) {
+      console.log('Error in setBondedDevices', e);
+    }
+  };
+};
+
+// Classic Bluetooth - Add Bonded Device
+export const addBondedDevice = (newBondedDevice: any) => {
+  return async (dispatch: Dispatch<DeviceAction>) => {
+    try {
+      const deviceToAdd = { ...newBondedDevice };
+      delete deviceToAdd.customName;
+      delete deviceToAdd.oldCustomName;
+
+      dispatch({
+        type: 'DEVICE_ADD_BONDED_DEVICE',
+        payload: { newBondedDevice: deviceToAdd },
+      });
+
+      const knownDevicesJson = await AsyncStorage.getItem('knownDevices');
+      const knownDevices = knownDevicesJson ? JSON.parse(knownDevicesJson) : [];
+
+      const filteredKnownDevices = knownDevices.filter(
+        ({ name, address }: any) =>
+          //name?.match(BLUETOOTH_DEVICE_NAME_REGEX) &&
+          address !== deviceToAdd.address
+      );
+
+      filteredKnownDevices.push(deviceToAdd);
+
+      const sortedFilteredKnownDevices = filteredKnownDevices.sort((a: any, b: any) =>
+        a.name > b.name ? 1 : -1
+      );
+
+      await AsyncStorage.setItem(
+        'knownDevices',
+        JSON.stringify(sortedFilteredKnownDevices)
+      );
+    } catch (e) {
+      console.log('Error in addBondedDevice', e);
+    }
+  };
+};
+
+// BLE - Set BLE Devices Found
 export const setBleDevicesFound = (bleDevicesFound: BleDevice[]) => {
   return async (dispatch: Dispatch<DeviceAction>, getState: any) => {
     try {
@@ -236,6 +323,7 @@ export const setBleDevicesFound = (bleDevicesFound: BleDevice[]) => {
   };
 };
 
+// BLE - Add BLE Device
 export const addBleDevice = (newBleDevice: BleDevice) => {
   return async (dispatch: Dispatch<DeviceAction>) => {
     try {
@@ -251,51 +339,52 @@ export const addBleDevice = (newBleDevice: BleDevice) => {
   };
 };
 
-export const addKnownDevices = (devices: BleDevice[]) => {
-  return async (dispatch: Dispatch<DeviceAction>, getState: any) => {
+// Add Known Devices (works for both BLE and Classic Bluetooth)
+export const addKnownDevices = (devices: any[]) => {
+  return async (dispatch: Dispatch<DeviceAction>) => {
     try {
-      const db = await getDBConnection();
-      for (const device of devices) {
-        await db.executeSql(
-          'REPLACE INTO knownDevices (id, name, address) VALUES (?, ?, ?)',
-          [device.id, device.name, device.id]
-        );
-      }
+      const knownDevicesJson = await AsyncStorage.getItem('knownDevices');
+      let knownDevices = knownDevicesJson ? JSON.parse(knownDevicesJson) : [];
 
-      const [results] = await db.executeSql('SELECT * FROM knownDevices');
-      const knownDevices: KnownDevice[] = [];
-      for (let i = 0; i < results.rows.length; i++) {
-        knownDevices.push(results.rows.item(i));
-      }
+      devices.forEach((newDevice: any) => {
+        const existingDevice = knownDevices.find(({ id }: any) => newDevice.id === id);
+        if (!existingDevice) {
+          knownDevices.push(newDevice);
+        }
+      });
 
-      const {
-        devices: { knownDevices: currentKnownDevices },
-      } = getState();
+      // Remove duplicates
+      const newKnownDevices: any[] = [];
+      knownDevices.forEach((device: any) => {
+        const existingDevice = newKnownDevices.find(({ id }: any) => device.id === id);
+        if (!existingDevice) {
+          newKnownDevices.push(device);
+        }
+      });
 
-      const isSame =
-        knownDevices.length === currentKnownDevices.length &&
-        knownDevices.every(
-          (d, i) =>
-            d.id === currentKnownDevices[i]?.id &&
-            d.name === currentKnownDevices[i]?.name
-        );
+      const sortedFilteredKnownDevices = newKnownDevices
+        .filter(({ name }: any) => name) //?.match(BLUETOOTH_DEVICE_NAME_REGEX))
+        .sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
 
-      dispatch({ type: 'DEVICE_ADD_KNOWN_DEVICES', payload: { knownDevices } });
+      await AsyncStorage.setItem('knownDevices', JSON.stringify(sortedFilteredKnownDevices));
+
+      dispatch({
+        type: 'DEVICE_ADD_KNOWN_DEVICES',
+        payload: { knownDevices: sortedFilteredKnownDevices },
+      });
     } catch (e) {
       console.log('Error in addKnownDevices', e);
     }
   };
 };
 
+// Fetch Known Devices
 export const fetchKnownDevices = () => {
   return async (dispatch: Dispatch<DeviceAction>) => {
     try {
-      const db = await getDBConnection();
-      const [results] = await db.executeSql('SELECT * FROM knownDevices');
-      const knownDevices: KnownDevice[] = [];
-      for (let i = 0; i < results.rows.length; i++) {
-        knownDevices.push(results.rows.item(i));
-      }
+      const knownDevicesJson = await AsyncStorage.getItem('knownDevices');
+      const knownDevices = knownDevicesJson ? JSON.parse(knownDevicesJson) : [];
+
       dispatch({ type: 'DEVICE_FETCH_KNOWN_DEVICES', payload: { knownDevices } });
     } catch (e) {
       console.log('Error in fetchKnownDevices', e);
@@ -303,22 +392,25 @@ export const fetchKnownDevices = () => {
   };
 };
 
+// Save Device Name
 export const saveDeviceName = (deviceId: string, deviceName: string) => {
   return async (dispatch: Dispatch<DeviceAction>) => {
     try {
-      const db = await getDBConnection();
-      await db.executeSql('UPDATE knownDevices SET customName = ? WHERE id = ?', [
-        deviceName,
-        deviceId,
-      ]);
+      const knownDevicesJson = await AsyncStorage.getItem('knownDevices');
+      const knownDevices = knownDevicesJson ? JSON.parse(knownDevicesJson) : [];
 
-      const [results] = await db.executeSql('SELECT * FROM knownDevices');
-      const knownDevices: KnownDevice[] = [];
-      for (let i = 0; i < results.rows.length; i++) {
-        knownDevices.push(results.rows.item(i));
+      const deviceToEdit = knownDevices.find(({ id }: any) => deviceId === id);
+      if (deviceToEdit) {
+        deviceToEdit.customName = deviceName;
       }
 
-      dispatch({ type: 'DEVICE_SAVE_DEVICE_NAME', payload: { knownDevices } });
+      const sortedKnownDevices = knownDevices.sort((a: any, b: any) =>
+        a.name > b.name ? 1 : -1
+      );
+
+      await AsyncStorage.setItem('knownDevices', JSON.stringify(sortedKnownDevices));
+
+      dispatch({ type: 'DEVICE_SAVE_DEVICE_NAME', payload: { knownDevices: sortedKnownDevices } });
     } catch (e) {
       console.log('Error in saveDeviceName', e);
     }

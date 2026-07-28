@@ -51,13 +51,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#CCC',
     borderRadius: 4,
-    paddingHorizontal: 8,
   },
   input: {
     fontSize: 14,
     height: 80,
     backgroundColor: '#EEE',
     textAlignVertical: 'top',
+    paddingHorizontal: 8,
   },
   buttonContainer: {
     flexDirection: 'row',

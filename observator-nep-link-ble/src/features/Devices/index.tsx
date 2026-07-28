@@ -1,24 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SafeAreaView, View, PermissionsAndroid, Platform,  NativeEventEmitter, NativeModules } from 'react-native';
+import { View, PermissionsAndroid, Platform } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { CommonActions, useNavigation } from '@react-navigation/native';
+import RNBluetoothClassic, { BluetoothDevice, BluetoothDeviceEvent } from 'react-native-bluetooth-classic';
 import Geolocation from '@react-native-community/geolocation';
 import { DateTime } from 'luxon';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import BleService from '../../services/BleService';
-import { setDemoModeEnabled } from '../../actions/DemoActions';
 import {
+  setDeviceConnecting,
   setDeviceConnected,
+  setDeviceDisconnecting,
   setDeviceDisconnected,
   clearConnectedDevice,
   setWiping,
   setSensorDataReceived,
   setSensorError,
-  setBleDevicesFound,
+  setDiscoveredDevices,
+  setBondedDevices,
   addKnownDevices,
 } from '../../actions/DeviceActions';
 import { updateValues, resetValues, updateBatteryStatus } from '../../actions/SensorDataActions';
 import { addDataToLoggingSession } from '../../actions/LoggingActions';
+import { setDemoModeEnabled } from '../../actions/DemoActions';
 import NepLinkHeader from './NepLinkHeader';
 import BluetoothDisabledError from './BluetoothDisabledError';
 import DevicesList from './DevicesList';
@@ -37,9 +41,9 @@ interface DeviceState {
   connectedDevice: any | null;
   locationLat: number | null;
   locationLng: number | null;
-  lastSaveLoggingSessionSamplesCount: number;
   attemptingConnection: boolean;
   demoModeEnabled: boolean;
+  isDiscovering: boolean;
 }
 
 interface RootState {
@@ -47,8 +51,8 @@ interface RootState {
     demoModeEnabled: boolean;
   };
   devices: {
-    bleDevicesFoundRaw: any[];
-    bleDevicesFoundFormatted: any[];
+    bondedDevicesRaw: any[];
+    bondedDevicesFormatted: any[];
     connectedDevice: any | null;
     status: string;
     wiping: boolean;
@@ -62,7 +66,7 @@ interface RootState {
   };
   sensorData: {
     batteryLevel: number;
-    batteryRawVoltage: number;
+    batteryVoltage: number;
   };
 }
 
@@ -88,10 +92,9 @@ const Devices: React.FC = () => {
     connectedDevice: null,
     locationLat: null,
     locationLng: null,
-    lastSaveLoggingSessionSamplesCount: 0,
     attemptingConnection: false,
     demoModeEnabled: false,
-    isScanning: false, // ADD THIS
+    isDiscovering: false, // ADD THIS
   });
 
   // Refs
@@ -104,65 +107,52 @@ const Devices: React.FC = () => {
   const sensorDataRef = useRef(sensorData);
   const loggingRef = useRef(logging);
   const devicesRef = useRef(devices);
-
-  // Add ref for state
   const stateRef = useRef(state);
+  const onDataReceivedSubscriptionRef = useRef<any>(null);
+  const disconnectSubscriptionRef = useRef<any>(null);
+  const bluetoothEnabledSubscriptionRef = useRef<any>(null);
+  const bluetoothDisabledSubscriptionRef = useRef<any>(null);
+  const isDiscoveringRef = useRef(false);
+  const userCancelledConnectionRef = useRef(false);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sensorErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Keep ref updated
+  // Timeout refs for discovery
+  const discoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const discoveryRestartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep refs updated
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
-  // Keep logging ref updated
   useEffect(() => {
     loggingRef.current = logging;
   }, [logging]);
 
-  // Keep sensorData ref updated
   useEffect(() => {
     sensorDataRef.current = sensorData;
   }, [sensorData]);
 
-  // Keep devices ref updated
   useEffect(() => {
     devicesRef.current = devices;
   }, [devices]);
 
-  // Start Bluetooth scan
-  const startScan = useCallback(() => {
-    // Prevent multiple simultaneous scans
-    if (stateRef.current.isScanning) {
-      console.log('Scan already in progress, skipping...');
-      return;
-    }
-
-    console.log('Starting BLE scan...');
-    setState(prev => ({ ...prev, isScanning: true }));
-
-    BleService.startScan(
-      () => {
-        console.log('Scan stopped');
-        setState(prev => ({ ...prev, isScanning: false }));
-      },
-      (bleDevicesFound: any[]) => {
-        dispatch(setBleDevicesFound(bleDevicesFound));
-        dispatch(addKnownDevices(bleDevicesFound));
-      }
-    );
-  }, [dispatch]);
-  // Get Bluetooth permissions
-
-  // Stop Bluetooth scan
-  const stopScan = useCallback(() => {
-    if (stateRef.current.isScanning) {
-      console.log('Stopping BLE scan...');
-      BleService.stopScan();
-      setState(prev => ({ ...prev, isScanning: false }));
-    }
-  }, []);
-
   // Get Bluetooth permissions
   const getBluetoothPermissionsAndStartBluetoothProcesses = useCallback(async () => {
+    const isBluetoothAvailable = await RNBluetoothClassic.isBluetoothAvailable().catch(() => {
+      console.log("Can't run isBluetoothAvailable");
+      return false;
+    });
+
+    if (!isBluetoothAvailable) {
+      setState(prev => ({ ...prev, bluetoothAvailable: false }));
+      return;
+    } else {
+      setState(prev => ({ ...prev, bluetoothAvailable: true }));
+    }
+
     let fineLocationPermission = true;
     let bluetoothScanPermission = true;
     let bluetoothConnectPermission = true;
@@ -170,11 +160,13 @@ const Devices: React.FC = () => {
     if (Platform.OS === 'android') {
       if (Platform.Version < 31) {
         try {
-          fineLocationPermission = await PermissionsAndroid.request(
+          const result = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-          ) === PermissionsAndroid.RESULTS.GRANTED;
+          );
+          fineLocationPermission = result === PermissionsAndroid.RESULTS.GRANTED;
         } catch (error) {
           console.log("Can't request ACCESS_FINE_LOCATION permission", error);
+          fineLocationPermission = false;
         }
       } else {
         const requestMultiplePermissionsResult = await PermissionsAndroid.requestMultiple([
@@ -197,16 +189,224 @@ const Devices: React.FC = () => {
 
     if (bluetoothScanPermission && bluetoothConnectPermission && fineLocationPermission) {
       setState(prev => ({ ...prev, bluetoothPermissions: true }));
-
-      // Add a small delay to ensure Bluetooth is ready before scanning
-      setTimeout(() => {
-        startScan();
-      }, 500);
     } else {
       setState(prev => ({ ...prev, bluetoothPermissions: false }));
       return false;
     }
-  }, [startScan]);
+
+    await RNBluetoothClassic.requestBluetoothEnabled().catch(() => {
+      console.log("Can't run requestBluetoothEnabled");
+    });
+
+    const isBluetoothEnabled = await RNBluetoothClassic.isBluetoothEnabled().catch(() => {
+      console.log("Can't run isBluetoothEnabled");
+      return false;
+    });
+
+    if (!isBluetoothEnabled) {
+      setState(prev => ({ ...prev, bluetoothEnabled: false }));
+    } else {
+      setState(prev => ({ ...prev, bluetoothEnabled: true }));
+    }
+
+    getBondedDevices();
+    startDiscovery();
+  }, []);
+
+  // Get bonded devices
+  const getBondedDevices = useCallback(async () => {
+    await RNBluetoothClassic.requestBluetoothEnabled().catch(() => {
+      console.log("Can't run requestBluetoothEnabled");
+    });
+
+    const isBluetoothEnabled = await RNBluetoothClassic.isBluetoothEnabled();
+
+    if (!isBluetoothEnabled) {
+      setState(prev => ({ ...prev, bluetoothEnabled: false }));
+      return;
+    }
+
+    try {
+      console.log('RNBluetoothClassic.getBondedDevices running');
+      const bonded = await RNBluetoothClassic.getBondedDevices();
+
+      // Check connection status for each device
+      const bondedWithStatus = await Promise.all(
+        bonded.map(async (device) => {
+          try {
+            const isConnected = await device.isConnected();
+            console.log(`XXX device ${device.name} connected`, isConnected);
+            return {
+              ...device,
+              isConnected,
+            };
+          } catch (error) {
+            console.log(`Error checking connection status for ${device.name}:`, error);
+            return {
+              ...device,
+              isConnected: false,
+            };
+          }
+        })
+      );
+
+      console.log('Bonded devices with connection status:', bondedWithStatus);
+      dispatch(setBondedDevices(bondedWithStatus));
+      dispatch(addKnownDevices(bondedWithStatus));
+
+      setTimeout(() => {
+        getBondedDevices();
+      }, 10000);
+    } catch (error) {
+      console.log('RNBluetoothClassic.getBondedDevices error', error);
+      setTimeout(() => {
+        getBondedDevices();
+      }, 2000);
+    }
+  }, [dispatch]);
+
+  // Periodically check connection status and clean up disconnected devices
+  const checkConnectionStatus = useCallback(async () => {
+    const currentDevices = devicesRef.current;
+    const currentState = stateRef.current;
+
+    // If we think we have a connected device, verify it's still connected
+    if (currentDevices.connectedDevice || currentState.connectedDevice) {
+      try {
+        const connectedDevices = await RNBluetoothClassic.getConnectedDevices();
+        console.log('XXX checkConnectionStatus: currently connected devices:', connectedDevices.length);
+
+        // If no devices are connected, clean up
+        if (connectedDevices.length === 0) {
+          console.log('XXX checkConnectionStatus: No devices connected, cleaning up');
+
+          // Remove data subscription if it exists
+          if (onDataReceivedSubscriptionRef.current) {
+            onDataReceivedSubscriptionRef.current.remove();
+            onDataReceivedSubscriptionRef.current = null;
+          }
+
+          // Clear Redux state
+          console.log("XXX clearConnectedDevice 2 (from checkConnectionStatus)");
+          dispatch(clearConnectedDevice());
+          // console.log("XXX resetting 1");
+          // dispatch(resetValues());
+
+          // Clear local state
+          setState(prev => ({
+            ...prev,
+            connectedDevice: null,
+            connectingDevice: null,
+          }));
+        } else {
+          // Verify our connected device is in the list
+          const deviceStillConnected = connectedDevices.some(
+            (device: any) =>
+              device.address === currentDevices.connectedDevice?.address ||
+              device.address === currentState.connectedDevice?.address
+          );
+
+          if (!deviceStillConnected) {
+            console.log('XXX checkConnectionStatus: Our device is no longer connected, cleaning up');
+
+            // Remove data subscription if it exists
+            if (onDataReceivedSubscriptionRef.current) {
+              onDataReceivedSubscriptionRef.current.remove();
+              onDataReceivedSubscriptionRef.current = null;
+            }
+
+            // Clear Redux state
+            console.log("XXX clearConnectedDevice 3 (from checkConnectionStatus)");
+            dispatch(clearConnectedDevice());
+            console.log("XXX resetting 2");
+            dispatch(resetValues());
+
+            // Clear local state
+            setState(prev => ({
+              ...prev,
+              connectedDevice: null,
+              connectingDevice: null,
+            }));
+          }
+        }
+      } catch (error) {
+        console.log('XXX checkConnectionStatus error:', error);
+      }
+    }
+  }, [dispatch]);
+
+  // Start discovery
+  const startDiscovery = useCallback(async () => {
+    // Prevent multiple simultaneous discoveries
+    if (isDiscoveringRef.current) {
+      console.log('Discovery already in progress, skipping...');
+      return;
+    }
+
+    console.log('XXX Starting discovery...');
+    isDiscoveringRef.current = true;
+    setState(prev => ({ ...prev, isDiscovering: true }));
+
+    RNBluetoothClassic.startDiscovery()
+      .then(discoveredDevices => {
+        console.log('xxx startDiscovery', discoveredDevices);
+        dispatch(setDiscoveredDevices(discoveredDevices));
+
+        // Cancel discovery after 30 seconds
+        discoveryTimeoutRef.current = setTimeout(() => {
+          RNBluetoothClassic.cancelDiscovery()
+            .then(() => {
+              console.log('Discovery cancelled 1');
+              isDiscoveringRef.current = false;
+              setState(prev => ({ ...prev, isDiscovering: false }));
+
+              // Wait 5 seconds before starting next discovery
+              discoveryRestartTimeoutRef.current = setTimeout(() => {
+                startDiscovery();
+              }, 5000);
+            })
+            .catch((error) => {
+              console.log('cancelDiscovery error 1', error);
+              isDiscoveringRef.current = false;
+              setState(prev => ({ ...prev, isDiscovering: false }));
+
+              // Retry after error
+              discoveryRestartTimeoutRef.current = setTimeout(() => {
+                startDiscovery();
+              }, 5000);
+            });
+        }, 10000);
+      })
+      .catch(error => {
+        console.error("Can't start discovery XXX", error);
+        isDiscoveringRef.current = false;
+        setState(prev => ({ ...prev, isDiscovering: false }));
+
+        // Retry after error
+        RNBluetoothClassic.cancelDiscovery()
+          .then(() => {
+            console.log('Discovery cancelled 2');
+            isDiscoveringRef.current = false;
+            setState(prev => ({ ...prev, isDiscovering: false }));
+
+            // Wait 5 seconds before starting next discovery
+            discoveryRestartTimeoutRef.current = setTimeout(() => {
+              startDiscovery();
+            }, 5000);
+          })
+          .catch((error) => {
+            console.log('cancelDiscovery error 2', error);
+            isDiscoveringRef.current = false;
+            setState(prev => ({ ...prev, isDiscovering: false }));
+
+            // Retry after error
+            discoveryRestartTimeoutRef.current = setTimeout(() => {
+              startDiscovery();
+            }, 5000);
+          });
+
+      });
+  }, [dispatch]);
 
   // Location permission request
   const requestLocationPermission = async (): Promise<boolean> => {
@@ -247,9 +447,9 @@ const Devices: React.FC = () => {
           reject(error);
         },
         {
-          enableHighAccuracy: false, // CHANGED: Use false on first attempt for faster result
-          timeout: 15000, // CHANGED: Shorter timeout
-          maximumAge: 0, // CHANGED: Don't use cached location on first call
+          enableHighAccuracy: false,
+          timeout: 15000,
+          maximumAge: 0,
         }
       );
     });
@@ -269,12 +469,11 @@ const Devices: React.FC = () => {
     }
   }, []);
 
-  // Start fallback location updates - FIXED: Uses stateRef instead of state
+  // Start fallback location updates
   const startFallbackLocationUpdates = useCallback(() => {
     console.log('Starting fallback location updates...');
 
     locationUpdateIdRef.current = setInterval(async () => {
-      // FIXED: Use stateRef to get current location values
       const currentState = stateRef.current;
       if (currentState.locationLat && currentState.locationLng) {
         stopLocationUpdates();
@@ -295,7 +494,7 @@ const Devices: React.FC = () => {
         setState(prev => ({ ...prev, locationEnabled: false }));
       }
     }, 30000);
-  }, [stopLocationUpdates]); // FIXED: Removed state dependencies
+  }, [stopLocationUpdates]);
 
   // Start location updates
   const startLocationUpdates = useCallback(async () => {
@@ -400,77 +599,15 @@ const Devices: React.FC = () => {
     }
   }, [stopLocationUpdates, startFallbackLocationUpdates]);
 
-  // Mount effect
-  useEffect(() => {
-    BleService.init();
-    getBluetoothPermissionsAndStartBluetoothProcesses();
-    startLocationUpdates(); // CHANGED: Call directly instead of through locationUpdate
+  // Handle data received from device
+  const onDataReceived = useCallback((event: any) => {
+    console.log('event.data', event.data);
 
-    let stateSubscription: any = null;
-
-    const checkBluetoothState = async () => {
-      try {
-        const isEnabled = await BleService.isBluetoothEnabled();
-        setState(prev => ({ ...prev, bluetoothEnabled: isEnabled }));
-      } catch (error) {
-        console.log('Error checking Bluetooth state:', error);
-        setState(prev => ({ ...prev, bluetoothEnabled: false }));
-      }
-    };
-
-    // Initialize Bluetooth monitoring after BLE service is ready
-    const initBluetoothMonitoring = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      await checkBluetoothState();
-
-      stateSubscription = BleService.onStateChange((bleState: string) => {
-        console.log('Bluetooth state changed:', bleState);
-        // Include 'Unsupported' for iOS simulator
-        const isEnabled = ['PoweredOn', 'Unsupported'].includes(bleState);
-        setState(prev => ({ ...prev, bluetoothEnabled: isEnabled }));
-      });
-    };
-
-    initBluetoothMonitoring();
-
-    return () => {
-      if (stateSubscription) {
-        stateSubscription.remove();
-      }
-      dispatch(resetValues());
-      stopLocationUpdates();
-    };
-  }, [getBluetoothPermissionsAndStartBluetoothProcesses, startLocationUpdates, dispatch, stopLocationUpdates]); // CHANGED: Added startLocationUpdates dependency
-  // Update bonded devices - REMOVED: Function was redundant with startScan callback
-
-  // Handle battery data
-  const onBatteryDataReceived = useCallback((batteryDataObj: any) => {
-    const batteryPercentage = !isNaN(batteryDataObj.percentage)
-      ? parseInt(batteryDataObj.percentage)
-      : 0;
-    const batteryRawVoltage = !isNaN(batteryDataObj.rawVoltage)
-      ? parseInt(batteryDataObj.rawVoltage)
-      : 0;
-    const batteryLevel = batteryPercentage > 0 ? batteryPercentage : 0;
-    const batteryCharging = batteryDataObj.isCharging === 1;
-
-    dispatch(
-      updateBatteryStatus({
-        batteryLevel,
-        batteryCharging,
-        batteryRawVoltage,
-      })
-    );
-  }, [dispatch]);
-
-  // Handle sensor data - FIXED: Uses refs consistently
-  const onSensorDataReceived = useCallback((responseStr: string) => {
-    const probeDataMatch = responseStr.match(/(R\d),(\d+\.\d+),?(\d+\.\d+)?/);
-    const statsMatch = responseStr.match(/~,stats,(\d+),(\d)/);
+    const probeDataMatch = event.data.match(/(R\d),(\d+\.\d+),?(\d+\.\d+)?/);
+    const statsMatch = event.data.match(/~,stats,(\d+),(\d)/);
 
     if (!probeDataMatch && !statsMatch) {
-      console.log('UNMATCHED responseStr:', responseStr);
+      console.log('UNMATCHED event.data', event.data);
       return;
     }
 
@@ -486,12 +623,10 @@ const Devices: React.FC = () => {
       const turbidityValue = turbidityEnabled ? parseFloat(probeDataMatch[2]) : null;
 
       const temperatureEnabled =
-        !!probeDataMatch[3] &&
-        parseFloat(probeDataMatch[3]) !== 0.0 &&
-        parseFloat(probeDataMatch[3]) > -100;
+        !!probeDataMatch[3] && parseFloat(probeDataMatch[3]) > 0;
       const temperatureValue = temperatureEnabled ? parseFloat(probeDataMatch[3]) : null;
 
-      const sampleDateObj = DateTime.now();
+      const sampleDateObj = DateTime.fromMillis(Date.parse(event.timestamp));
       const tzOffsetStr = sampleDateObj.toFormat('Z');
       const tzOffsetMs = parseInt(tzOffsetStr) * 1000 * 60 * 60;
       const dataObjTimestamp = parseInt(sampleDateObj.toFormat('x')) - tzOffsetMs;
@@ -513,7 +648,6 @@ const Devices: React.FC = () => {
         })
       );
 
-      // FIXED: Use loggingRef and sensorDataRef
       const currentLogging = loggingRef.current;
       const currentSensorData = sensorDataRef.current;
 
@@ -531,18 +665,322 @@ const Devices: React.FC = () => {
         dispatch(addDataToLoggingSession(currentLogging.loggingSessionId, dataObj));
       }
 
-      // FIXED: Use devicesRef
       const currentDevices = devicesRef.current;
       if (currentDevices.wiping) dispatch(setWiping(false));
       if (currentDevices.sensorError) dispatch(setSensorError(false));
-      if (!currentDevices.sensorDataReceived) dispatch(setSensorDataReceived(true));
+      if (!currentDevices.sensorDataReceived) {
+        dispatch(setSensorDataReceived(true));
+        if (sensorErrorTimeoutRef.current) {
+          clearTimeout(sensorErrorTimeoutRef.current);
+          sensorErrorTimeoutRef.current = null;
+          console.log('Sensor error timeout cleared');
+        }
+      }
     } else if (statsMatch) {
       console.log('statsMatch', statsMatch);
       const batteryLevel = parseFloat(statsMatch[1]);
+      const batteryRawVoltage = 0;
       const batteryCharging = statsMatch[2] === '1';
-      dispatch(updateBatteryStatus({ batteryLevel, batteryCharging }));
+      dispatch(updateBatteryStatus({ batteryLevel, batteryRawVoltage, batteryCharging }));
     }
-  }, [dispatch]); // FIXED: Removed state dependencies, using refs
+  }, [dispatch]);
+
+  // Handle device disconnection
+  const onDeviceDisconnected = useCallback((event: BluetoothDeviceEvent) => {
+    console.log('XXX Devices index onDeviceDisconnected');
+    const currentState = stateRef.current;
+    const currentDevices = devicesRef.current;
+
+    if (onDataReceivedSubscriptionRef.current) {
+      onDataReceivedSubscriptionRef.current.remove();
+      onDataReceivedSubscriptionRef.current = null;
+    }
+
+    if (currentState.connectedDevice) {
+      const deviceDataObj = currentDevices.bondedDevicesFormatted.find(
+        (o: any) => o.address === currentState.connectedDevice.address
+      );
+      console.log("XXX setDeviceDisconnected 1")
+      dispatch(setDeviceDisconnected(deviceDataObj));
+    } else {
+      console.log("XXX clearConnectedDevice 1")
+      dispatch(clearConnectedDevice());
+    }
+    //console.log("XXX resetting 1")
+    // dispatch(resetValues());
+
+    // if (navigation.canGoBack()) {
+    //   navigation.goBack();
+    // }
+  }, [dispatch, navigation]);
+
+  // Bluetooth state change handler
+  const onBluetoothStateChange = useCallback((event: any) => {
+    console.log('onBluetoothStateChange', event.enabled);
+    setState(prev => ({ ...prev, bluetoothEnabled: event.enabled }));
+  }, []);
+
+  // Update the connectToDevice function
+  const connectToDevice = useCallback(async (id: string) => {
+    // Reset cancellation flag when starting a new connection
+    userCancelledConnectionRef.current = false;
+
+    const currentDevices = devicesRef.current;
+    const deviceDataObj = currentDevices.bondedDevicesFormatted.find((o: any) => o.id === id);
+
+    if (!deviceDataObj) {
+      console.log('Device data not found');
+      return;
+    }
+
+    console.log('Attempting to connect to device:', deviceDataObj.name);
+    setState(prev => ({ ...prev, awaitingDevice: true, connectingDevice: null, connectedDevice: null }));
+
+    try {
+      // Get fresh device list from RNBluetoothClassic
+      const bondedDevices = await RNBluetoothClassic.getBondedDevices();
+      const deviceToConnect = bondedDevices.find((device: any) => device.id === id);
+
+      if (!deviceToConnect) {
+        // Check if user cancelled before retrying
+        if (userCancelledConnectionRef.current) {
+          console.log('Connection cancelled by user, not retrying');
+          setState(prev => ({ ...prev, awaitingDevice: false }));
+          return;
+        }
+
+        console.log('Device not found in bonded devices, waiting and retrying...');
+        // Keep awaitingDevice: true
+
+        // Store the timeout ID so we can cancel it later
+        retryTimeoutRef.current = setTimeout(() => {
+          connectToDevice(id);
+        }, 1000);
+        return;
+      }
+
+      // Device found in bonded list, but check if it's actually connectable
+      console.log('Device found in bonded list, checking if connectable...');
+
+      // Check if device has the isConnected method (meaning it's a real device object)
+      if (!deviceToConnect.isConnected) {
+        console.log('Device object not ready (no isConnected method), retrying...');
+
+        // Check if user cancelled before retrying
+        if (userCancelledConnectionRef.current) {
+          console.log('Connection cancelled by user, not retrying');
+          setState(prev => ({ ...prev, awaitingDevice: false }));
+          return;
+        }
+
+        // Keep awaitingDevice: true and retry
+        retryTimeoutRef.current = setTimeout(() => {
+          connectToDevice(id);
+        }, 1000);
+        return;
+      }
+
+      // Device object is ready, now proceed with connection
+      console.log('Device ready, checking connection status...');
+      setState(prev => ({ ...prev, connectingDevice: deviceToConnect }));
+
+      const connection = await deviceToConnect.isConnected();
+
+      // Check if user cancelled
+      if (userCancelledConnectionRef.current) {
+        console.log('Connection cancelled by user');
+        setState(prev => ({ ...prev, awaitingDevice: false, connectingDevice: null }));
+        return;
+      }
+
+      console.log('isConnected check result:', connection);
+
+      if (!connection) {
+        // Device is not currently connected
+        // Check if device is in range using the formatted device data
+        const deviceInfo = currentDevices.bondedDevicesFormatted.find((o: any) => o.id === id);
+
+        if (!deviceInfo || !deviceInfo.inRange) {
+          console.log('Device not in range, waiting and retrying...');
+
+          // Check if user cancelled before retrying
+          if (userCancelledConnectionRef.current) {
+            console.log('Connection cancelled by user');
+            setState(prev => ({ ...prev, awaitingDevice: false, connectingDevice: null }));
+            return;
+          }
+
+          // Keep awaitingDevice: true and retry
+          retryTimeoutRef.current = setTimeout(() => {
+            connectToDevice(id);
+          }, 1000);
+          return;
+        }
+
+        // Device is in range! Now we can proceed with connection
+        console.log('Device is in range, proceeding with connection...');
+        setState(prev => ({ ...prev, awaitingDevice: false, connectionAttemptStarted: true }));
+        dispatch(setDeviceConnecting(deviceDataObj));
+
+        if (onDataReceivedSubscriptionRef.current) {
+          onDataReceivedSubscriptionRef.current.remove();
+        }
+
+        try {
+          console.log('Attempting to connect...');
+          await deviceToConnect.connect();
+
+          // Check if user cancelled during connection
+          if (userCancelledConnectionRef.current) {
+            console.log('Connection cancelled by user, disconnecting');
+            await deviceToConnect.disconnect();
+            setState(prev => ({ ...prev, awaitingDevice: false, connectionAttemptStarted: false }));
+            return;
+          }
+
+          console.log('Connection established');
+          console.log("XXX resetting 3");
+          dispatch(resetValues());
+          dispatch(setDeviceConnected(deviceDataObj));
+
+          setTimeout(() => {
+            if (!devicesRef.current.sensorDataReceived) {
+              dispatch(setWiping(true));
+              setTimeout(() => {
+                if (devicesRef.current.wiping) {
+                  dispatch(setWiping(false));
+                }
+              }, 8000);
+            }
+          }, 2000);
+
+          // Clear any existing timeout first
+          if (sensorErrorTimeoutRef.current) {
+            clearTimeout(sensorErrorTimeoutRef.current);
+          }
+
+          sensorErrorTimeoutRef.current = setTimeout(() => {
+            if (!devicesRef.current.sensorDataReceived) {
+              dispatch(setSensorError(true));
+            }
+          }, 40000);
+
+          onDataReceivedSubscriptionRef.current = deviceToConnect.onDataReceived((event: any) => {
+            onDataReceived(event);
+          });
+
+          setState(prev => ({
+            ...prev,
+            connectingDevice: null,
+            connectedDevice: deviceToConnect,
+            connectionAttemptStarted: false,
+          }));
+
+          const routeToDeviceView = CommonActions.navigate({
+            name: 'DeviceView',
+            params: {
+              deviceDataObj,
+              deviceName: deviceDataObj.name,
+            },
+          });
+          navigation.dispatch(routeToDeviceView);
+        } catch (error) {
+          console.log("Connection failed:", error);
+          dispatch(setDeviceDisconnecting(deviceDataObj));
+
+          try {
+            await deviceToConnect.disconnect();
+            console.log('Disconnected after failed connection');
+            console.log("XXX setDeviceDisconnected 2")
+            dispatch(setDeviceDisconnected(deviceDataObj));
+            console.log("XXX resetting 4");
+            dispatch(resetValues());
+            setState(prev => ({ ...prev, awaitingDevice: false, connectionAttemptStarted: false }));
+          } catch (disconnectError) {
+            console.log("Couldn't disconnect", disconnectError);
+            console.log("XXX setDeviceDisconnected 3")
+            dispatch(setDeviceDisconnected(deviceDataObj));
+            console.log("XXX resetting 5");
+            dispatch(resetValues());
+            setState(prev => ({ ...prev, awaitingDevice: false, connectionAttemptStarted: false }));
+          }
+        }
+      } else {
+        console.log('Device already connected, navigating to DeviceView');
+        setState(prev => ({ ...prev, awaitingDevice: false }));
+        const routeToDeviceView = CommonActions.navigate({
+          name: 'DeviceView',
+          params: {
+            deviceDataObj,
+            deviceName: deviceDataObj.name,
+          },
+        });
+        navigation.dispatch(routeToDeviceView);
+      }
+    } catch (error) {
+      console.log('Error in connectToDevice:', error);
+
+      // Check if user cancelled
+      if (userCancelledConnectionRef.current) {
+        console.log('Connection cancelled by user after error');
+        setState(prev => ({ ...prev, awaitingDevice: false }));
+        return;
+      }
+
+      // Retry on error
+      console.log('Retrying after error...');
+      retryTimeoutRef.current = setTimeout(() => {
+        connectToDevice(id);
+      }, 1000);
+    }
+  }, [dispatch, navigation, onDataReceived]);
+
+  // Update the cancelConnectToDevice function
+  const cancelConnectToDevice = useCallback(() => {
+    console.log('User cancelled connection');
+
+    // Set the cancellation flag
+    userCancelledConnectionRef.current = true;
+
+    // Clear any pending retry timeout
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+      console.log('Cleared pending retry timeout');
+    }
+
+    setState(prev => ({
+      ...prev,
+      connectingDevice: null,
+      connectedDevice: null,
+      connectionAttemptStarted: false,
+      awaitingDevice: false,
+    }));
+  }, []);
+
+  // Enter demo mode
+  const enterDemoModeButtonPress = useCallback(() => {
+    dispatch(setDemoModeEnabled(true));
+    setState(prev => ({ ...prev, demoModeEnabled: true }));
+
+    const routeToDeviceView = CommonActions.navigate({
+      name: 'DeviceView',
+      params: {
+        deviceDataObj: null,
+        demoModeEnabled: true,
+        deviceName: 'DEMO',
+      },
+    });
+    navigation.dispatch(routeToDeviceView);
+  }, [dispatch, navigation]);
+
+  // Navigate to Add/Edit Devices
+  const addEditDevicesButtonPress = useCallback(() => {
+    const routeToAddEditDevicesList = CommonActions.navigate({
+      name: 'AddEditDevices',
+    });
+    navigation.dispatch(routeToAddEditDevicesList);
+  }, [navigation]);
 
   // Create demo data reading
   const createDemoDataReading = useCallback(() => {
@@ -635,13 +1073,21 @@ const Devices: React.FC = () => {
         batteryRawVoltage: currentSensorData.batteryRawVoltage,
         demoModeEnabled: currentState.demoModeEnabled,
       };
+      console.log("XXX addDataToLoggingSession", { loggingSessionId: currentLogging.loggingSessionId, dataObj })
       dispatch(addDataToLoggingSession(currentLogging.loggingSessionId, dataObj));
     }
 
     // FIXED: Use devicesRef
     const currentDevices = devicesRef.current;
     if (currentDevices.wiping) dispatch(setWiping(false));
-    if (!currentDevices.sensorDataReceived) dispatch(setSensorDataReceived(true));
+    if (!currentDevices.sensorDataReceived) {
+      dispatch(setSensorDataReceived(true));
+      if (sensorErrorTimeoutRef.current) {
+        clearTimeout(sensorErrorTimeoutRef.current);
+        sensorErrorTimeoutRef.current = null;
+        console.log('Sensor error timeout cleared');
+      }
+    }
 
     // Battery management - use ref to get current battery level
     const currentTime = Date.now();
@@ -663,146 +1109,75 @@ const Devices: React.FC = () => {
     }
   }, [dispatch]); // FIXED: Only dispatch in dependencies, using refs for all state
 
-  // Device callbacks
-  const onConnected = useCallback(() => {
-    dispatch(setWiping(true));
-    setTimeout(() => {
-      dispatch(setWiping(false));
-    }, 10000);
-  }, [dispatch]);
-
-  // FIXED: Use refs to avoid stale closures
-  const onDeviceDisconnected = useCallback(() => {
-    console.log("XXXX onDeviceDisconnected");
-    const currentState = stateRef.current;
-    const currentDevices = devicesRef.current;
-
-    if (currentState.connectedDevice) {
-      const deviceDataObj = currentDevices.bleDevicesFoundFormatted.find(
-        (o: any) => o.address === currentState.connectedDevice.address
-      );
-      dispatch(setDeviceDisconnected(deviceDataObj));
-    } else {
-      dispatch(clearConnectedDevice());
-    }
-    startScan();
-  }, [dispatch, navigation]); // FIXED: Removed state/devices dependencies
-
-  // Connect to device - FIXED: Use devicesRef
-  const connectToDevice = useCallback((device: any) => {
-    stopScan(); // CHANGED: Stop scan before connecting
-
-    const currentDevices = devicesRef.current;
-    const deviceToConnect = currentDevices.bleDevicesFoundRaw.find((o: any) => o.bleDevice.id === device.id);
-    const deviceDataObj = currentDevices.bleDevicesFoundFormatted.find((o: any) => o.id === device.id);
-
-    setState(prev => ({ ...prev, awaitingDevice: true, connectingDevice: null, connectedDevice: null }));
-
-    if (!deviceToConnect) {
-      setTimeout(() => {
-        console.log('Retrying connection...');
-        connectToDevice(device);
-      }, 1000);
-      return;
-    }
-
-    dispatch(resetValues());
-    dispatch(setWiping(false));
-    dispatch(setSensorError(false));
-    dispatch(setSensorDataReceived(false));
-    setState(prev => ({ ...prev, awaitingDevice: false, connectingDevice: deviceToConnect, connectedDevice: null }));
-
-    BleService.connectAndListen(
-      deviceToConnect.bleDevice,
-      onConnected,
-      onSensorDataReceived,
-      onBatteryDataReceived,
-      onDeviceDisconnected
-    );
-
-    dispatch(setDeviceConnected(deviceToConnect));
-
-    const routeToDeviceView = CommonActions.navigate({
-      name: 'DeviceView',
-      params: {
-        deviceDataObj,
-        deviceName: deviceDataObj.name,
-      },
-    });
-    navigation.dispatch(routeToDeviceView);
-  }, [stopScan, dispatch, navigation, onConnected, onSensorDataReceived, onBatteryDataReceived, onDeviceDisconnected]);
-
-  // Cancel connection
-  const cancelConnectToDevice = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      connectingDevice: null,
-      connectedDevice: null,
-      connectionAttemptStarted: false,
-      awaitingDevice: false,
-    }));
-  }, []);
-
-  // Enter demo mode
-  const enterDemoModeButtonPress = useCallback(() => {
-    dispatch(setDemoModeEnabled(true));
-    setState(prev => ({ ...prev, demoModeEnabled: true }));
-
-    const routeToDeviceView = CommonActions.navigate({
-      name: 'DeviceView',
-      params: {
-        deviceDataObj: null,
-        demoModeEnabled: true,
-        deviceName: 'DEMO',
-      },
-    });
-    navigation.dispatch(routeToDeviceView);
-  }, [dispatch, navigation]);
-
   // Mount effect
   useEffect(() => {
-    BleService.init();
     getBluetoothPermissionsAndStartBluetoothProcesses();
+    startLocationUpdates();
 
-    let stateSubscription: any = null;
+    // Set up Classic Bluetooth event subscriptions
+    disconnectSubscriptionRef.current =
+      RNBluetoothClassic.onDeviceDisconnected(onDeviceDisconnected);
+    bluetoothEnabledSubscriptionRef.current =
+      RNBluetoothClassic.onBluetoothEnabled(onBluetoothStateChange);
+    bluetoothDisabledSubscriptionRef.current =
+      RNBluetoothClassic.onBluetoothDisabled(onBluetoothStateChange);
 
-    const checkBluetoothState = async () => {
-      try {
-        const isEnabled = await BleService.isBluetoothEnabled();
-        setState(prev => ({ ...prev, bluetoothEnabled: isEnabled }));
-      } catch (error) {
-        console.log('Error checking Bluetooth state:', error);
-        setState(prev => ({ ...prev, bluetoothEnabled: false }));
-      }
-    };
-
-    // Initialize Bluetooth monitoring after BLE service is ready
-    const initBluetoothMonitoring = async () => {
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      await checkBluetoothState();
-
-      stateSubscription = BleService.onStateChange((bleState: string) => {
-        console.log('Bluetooth state changed:', bleState);
-        // Include 'Unsupported' for iOS simulator
-        const isEnabled = ['PoweredOn', 'Unsupported'].includes(bleState);
-        setState(prev => ({ ...prev, bluetoothEnabled: isEnabled }));
-      });
-    };
-
-    initBluetoothMonitoring();
+    // Start connection status check interval (every 5 seconds)
+    connectionCheckIntervalRef.current = setInterval(() => {
+      checkConnectionStatus();
+    }, 5000);
 
     return () => {
-      if (stateSubscription) {
-        stateSubscription.remove();
+      console.log("XXXX removing subscriptions");
+      if (disconnectSubscriptionRef.current) {
+        disconnectSubscriptionRef.current.remove();
       }
-      stopScan(); // ADD THIS
+      if (bluetoothEnabledSubscriptionRef.current) {
+        bluetoothEnabledSubscriptionRef.current.remove();
+      }
+      if (bluetoothDisabledSubscriptionRef.current) {
+        bluetoothDisabledSubscriptionRef.current.remove();
+      }
+      if (onDataReceivedSubscriptionRef.current) {
+        onDataReceivedSubscriptionRef.current.remove();
+      }
+
+      // Clear connection check interval
+      if (connectionCheckIntervalRef.current) {
+        clearInterval(connectionCheckIntervalRef.current);
+        connectionCheckIntervalRef.current = null;
+      }
+
+      // 🟢 NEW: pending discovery timers clear karo, taake yeh remount ke baad
+      // stale chain na banayein
+      if (discoveryTimeoutRef.current) {
+        clearTimeout(discoveryTimeoutRef.current);
+        discoveryTimeoutRef.current = null;
+      }
+      if (discoveryRestartTimeoutRef.current) {
+        clearTimeout(discoveryRestartTimeoutRef.current);
+        discoveryRestartTimeoutRef.current = null;
+      }
+      if (isDiscoveringRef.current) {
+        RNBluetoothClassic.cancelDiscovery().catch(() => { });
+        isDiscoveringRef.current = false;
+      }
+
+      console.log("XXX resetting 6");
       dispatch(resetValues());
       stopLocationUpdates();
     };
-  }, [getBluetoothPermissionsAndStartBluetoothProcesses, dispatch, stopLocationUpdates]);
+  }, [
+    getBluetoothPermissionsAndStartBluetoothProcesses,
+    startLocationUpdates,
+    onDeviceDisconnected,
+    onBluetoothStateChange,
+    checkConnectionStatus, // Add this
+    dispatch,
+    stopLocationUpdates,
+  ]);
 
-  // Demo mode effect
+  /// Demo mode effect
   useEffect(() => {
     if (state.demoModeEnabled && !intervalIdRef.current) {
       intervalIdRef.current = setInterval(() => {
@@ -817,7 +1192,7 @@ const Devices: React.FC = () => {
       currentTurbidityValueRef.current = null;
       currentTemperatureValueRef.current = null;
       setState(prev => ({ ...prev, demoModeEnabled: false }));
-
+      console.log("XXX resetting 7");
       dispatch(resetValues());
     }
 
@@ -828,7 +1203,7 @@ const Devices: React.FC = () => {
         intervalIdRef.current = null;
       }
     };
-  }, [state.demoModeEnabled, demo.demoModeEnabled, createDemoDataReading, dispatch]); // FIXED: Added createDemoDataReading
+  }, [state.demoModeEnabled, demo.demoModeEnabled, createDemoDataReading, dispatch]);
 
   // Render
   const connectingDeviceLabel = state.connectingDevice ? state.connectingDevice.name : null;
@@ -848,6 +1223,7 @@ const Devices: React.FC = () => {
         connectToDeviceHandler={connectToDevice}
         cancelConnectToDeviceHandler={cancelConnectToDevice}
       />
+
       <View>
         <NepLinkHeader />
         {!(state.bluetoothAvailable && state.bluetoothEnabled && state.bluetoothPermissions) ? (
@@ -859,13 +1235,19 @@ const Devices: React.FC = () => {
         ) : (
           <>
             <DevicesList
-              bleDevicesFound={devices.bleDevicesFoundFormatted}
-              //bondedDevices={[{ name: 'NEP-LINK BLE', id: 'demo', inRange: true }]}
+              bondedDevices={devices.bondedDevicesFormatted}
               connectToDeviceHandler={connectToDevice}
+            />
+
+            <DevicesListButtons
+              bluetoothAvailable={state.bluetoothAvailable}
+              bluetoothEnabled={state.bluetoothEnabled}
+              bluetoothPermissions={state.bluetoothPermissions}
+              addEditDevicesButtonPressHandler={addEditDevicesButtonPress}
+              enterDemoModeButtonPressHandler={enterDemoModeButtonPress}
             />
           </>
         )}
-        <DevicesListButtons enterDemoModeButtonPressHandler={enterDemoModeButtonPress} />
       </View>
     </SafeAreaView>
   );

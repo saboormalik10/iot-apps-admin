@@ -3,15 +3,35 @@ import { View, StyleSheet } from 'react-native';
 import { Button } from 'react-native-paper';
 
 interface DevicesListButtonsProps {
+  bluetoothAvailable: boolean;
+  bluetoothEnabled: boolean;
+  bluetoothPermissions: boolean;
+  addEditDevicesButtonPressHandler: () => void;
   enterDemoModeButtonPressHandler: () => void;
 }
 
 const DevicesListButtons: React.FC<DevicesListButtonsProps> = ({
+  bluetoothAvailable,
+  bluetoothEnabled,
+  bluetoothPermissions,
+  addEditDevicesButtonPressHandler,
   enterDemoModeButtonPressHandler,
 }) => {
+  const isBluetoothReady = bluetoothAvailable && bluetoothEnabled && bluetoothPermissions;
+
   return (
     <View style={styles.outerContainer}>
       <View style={styles.innerContainer}>
+        {isBluetoothReady && (
+          <Button
+            mode="outlined"
+            style={styles.button}
+            onPress={addEditDevicesButtonPressHandler}
+            textColor="#007AFF"
+          >
+            Add/Edit Devices...
+          </Button>
+        )}
         <Button
           mode="outlined"
           style={styles.button}
@@ -21,24 +41,21 @@ const DevicesListButtons: React.FC<DevicesListButtonsProps> = ({
           Demo Mode
         </Button>
       </View>
+     
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   outerContainer: {
-    padding: 10,
-    paddingTop: 0,
-    width: '100%',
+    width: '100%'
   },
   innerContainer: {
     padding: 10,
-    marginTop: 50,
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    borderRadius: 7,
+    justifyContent: 'space-evenly',
+    alignItems: 'center'
   },
   button: {
     borderColor: '#007AFF',

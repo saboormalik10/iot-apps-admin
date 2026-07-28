@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fetchLoggingSessions } from '../../actions/LoggingActions';
 import { fetchKnownDevices } from '../../actions/DeviceActions';

@@ -1,13 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { Notification, NotificationType } from '../models/Notification';
-import { NotificationToken } from '../models/NotificationToken';
+import { NotificationToken, TOKEN_TTL_DAYS } from '../models/NotificationToken';
 import { User } from '../models/User';
 import { DomainEvent, NotificationEvent } from '../realtime/realtime.events';
 import { PushService } from './push.service';
-
-const TOKEN_TTL_DAYS = 60;
 
 export interface NotifyPayload {
   type: NotificationType;
@@ -18,6 +16,8 @@ export interface NotifyPayload {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly eventEmitter: EventEmitter2,
     private readonly pushService: PushService,
@@ -26,7 +26,8 @@ export class NotificationsService {
   /**
    * Central delivery seam used by alerts, session-complete and firmware.
    * Persists a Notification per target user (feed), pushes it live over the
-   * WebSocket gateway, and hands off to PushService (env-gated no-op for now).
+   * WebSocket gateway (admin dashboard), and hands off to PushService for real
+   * device push (FCM/APNs — a no-op unless a service account is configured).
    * `userIds` null/empty → every active user in the org.
    */
   async notify(
@@ -67,9 +68,11 @@ export class NotificationsService {
     };
     this.eventEmitter.emit(DomainEvent.NOTIFICATION, event);
 
+    // Same recipients as the feed rows above — an alert rule names who it should
+    // reach, so push must honour `targetIds` rather than blanket the whole org.
     this.pushService
-      .sendToOrg(organizationId, { title: payload.title, body, data })
-      .catch(() => void 0);
+      .sendToUsers(organizationId, targetIds, { type: payload.type, title: payload.title, body, data })
+      .catch((err: Error) => this.logger.warn(`push dispatch failed: ${err.message}`));
   }
 
   // ── Feed ──────────────────────────────────────────────────────────────────
@@ -145,12 +148,20 @@ export class NotificationsService {
         code: 'VALIDATION_ERROR',
       });
     }
+    // Push is targeted per user, so a token with no user is undeliverable. Reject
+    // it here rather than storing a row that silently never receives anything.
+    if (!Types.ObjectId.isValid(userId)) {
+      throw Object.assign(new Error('A per-user access token is required to register a device'), {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 86_400_000);
     const doc = await NotificationToken.findOneAndUpdate(
       { token: body.token },
       {
         $set: {
-          userId: Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null,
+          userId: new Types.ObjectId(userId),
           organizationId: new Types.ObjectId(organizationId),
           platform: body.platform,
           appId: body.appId,

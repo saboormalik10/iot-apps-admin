@@ -56,10 +56,9 @@ services:
       - key: PUBLIC_SHARE_BASE_URL
         sync: false           # e.g. https://dashboard.observator.com
 
-      # Push notifications (Month 6) — optional; WebSocket delivery works without these
-      - key: PUSH_ONESIGNAL_APP_ID
-        sync: false
-      - key: PUSH_ONESIGNAL_API_KEY
+      # Push notifications — optional; feed + WebSocket delivery work without this.
+      # Base64 of the Firebase service-account JSON (see .env.example).
+      - key: FCM_SERVICE_ACCOUNT_B64
         sync: false
 
       # Nodemailer — Gmail SMTP

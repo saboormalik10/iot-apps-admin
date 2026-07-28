@@ -20,7 +20,6 @@ const HeaderRightBatteryIndicator: React.FC<HeaderRightBatteryIndicatorProps> = 
   batteryCharging,
 }) => {
   const batteryData = useMemo<BatteryDisplayData | null>(() => {
-    console.log("XXXX batteryLevel",batteryLevel);
     if (batteryLevel === null || batteryLevel === undefined) {
       return null;
     }

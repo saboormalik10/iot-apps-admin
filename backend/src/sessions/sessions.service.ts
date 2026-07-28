@@ -13,11 +13,14 @@ function deriveProbeRange(turbidity: number): 'R1' | 'R2' | 'R3' {
   return 'R3';
 }
 
+const PROBE_RANGES = ['R1', 'R2', 'R3'] as const;
+
 interface SampleInput {
   turbidityValue?: number | null;
   temperatureValue?: number | null;
   locationLat?: number | null;
   locationLng?: number | null;
+  probeRange?: string | null;
 }
 
 function computeStats(samples: SampleInput[]) {
@@ -31,7 +34,16 @@ function computeStats(samples: SampleInput[]) {
   const temperatureMin = temperatures.length ? Math.min(...temperatures) : null;
   const temperatureMax = temperatures.length ? Math.max(...temperatures) : null;
   const firstTurbidity = turbidities[0] ?? null;
-  const probeRange = firstTurbidity != null ? deriveProbeRange(firstTurbidity) : null;
+  // Prefer the range the INSTRUMENT reported. `deriveProbeRange` infers it from the
+  // turbidity value, which disagrees with the hardware whenever a reading sits
+  // outside the assumed band for the range actually selected. Falling back keeps
+  // legacy rows (and app builds that don't send `probeRange` yet) working unchanged.
+  const reportedRange =
+    samples.find((s) => s.probeRange != null && PROBE_RANGES.includes(s.probeRange as never))
+      ?.probeRange ?? null;
+  const probeRange =
+    (reportedRange as 'R1' | 'R2' | 'R3' | null) ??
+    (firstTurbidity != null ? deriveProbeRange(firstTurbidity) : null);
   return {
     sampleCount: samples.length,
     turbidityAvg: turbidityAvg != null ? Math.round(turbidityAvg * 100) / 100 : null,
@@ -173,7 +185,7 @@ export async function insertNewNepSamples(
  */
 export async function recomputeNepSessionStats(sessionId: string) {
   const all = await NepSample.find({ sessionId })
-    .select('turbidityValue temperatureValue locationLat locationLng')
+    .select('turbidityValue temperatureValue locationLat locationLng probeRange')
     .lean();
   const stats = computeStats(all);
   await NepSession.updateOne({ id: sessionId }, { $set: stats });
@@ -202,8 +214,31 @@ export class SessionsService {
   }
 
   async createSession(organizationId: string, input: CreateSessionInput, userId?: string): Promise<INepSession> {
+    // The `id` unique index is global, so the idempotency lookup must be too —
+    // but a session belonging to ANOTHER org must never be returned or mutated.
     const existing = await NepSession.findOne({ id: input.id });
+    if (existing && existing.organizationId.toString() !== organizationId) {
+      throw Object.assign(new Error('Session id already exists'), {
+        statusCode: 409,
+        code: 'SESSION_ID_CONFLICT',
+      });
+    }
     if (existing) {
+      // Metadata convergence: a re-sync may carry an edited comment, or an
+      // endTimestamp the first upload didn't have yet. Only these two are applied —
+      // identity, ownership and the computed stats stay server-owned (the same
+      // rule MUTABLE_SESSION_FIELDS enforces on PATCH).
+      let dirty = false;
+      if (input.comment !== undefined && input.comment !== existing.comment) {
+        existing.comment = input.comment;
+        dirty = true;
+      }
+      if (input.endTimestamp != null && existing.endTimestamp == null) {
+        existing.endTimestamp = input.endTimestamp;
+        dirty = true;
+      }
+      if (dirty) await existing.save();
+
       // Retry path: the first attempt may have died between creating the session
       // and inserting its inline samples — top up whatever is missing (dedup by
       // timestamp) and heal the stats instead of silently dropping the payload.
@@ -216,7 +251,30 @@ export class SessionsService {
       }
       return existing;
     }
-    const device = await Device.findOne({ _id: new Types.ObjectId(input.deviceId), organizationId: new Types.ObjectId(organizationId), deletedAt: null });
+
+    // A malformed id would make `new Types.ObjectId()` throw a raw BSONError → 500
+    // (masked as "An unexpected error occurred" in production). Check it first so
+    // the client gets a message naming the field.
+    if (!Types.ObjectId.isValid(input.deviceId)) {
+      throw Object.assign(new Error('deviceId must be a valid Device id'), {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    // This lookup used to be performed and its result discarded, so a session could
+    // be created against a device in another org — or one that does not exist — and
+    // still return 201. Mirrors SyncService._upsertNepSession.
+    const device = await Device.findOne({
+      _id: new Types.ObjectId(input.deviceId),
+      organizationId: new Types.ObjectId(organizationId),
+      deletedAt: null,
+    });
+    if (!device) {
+      throw Object.assign(new Error('Device not found in organisation'), {
+        statusCode: 404,
+        code: 'NOT_FOUND',
+      });
+    }
     const stats = computeStats(input.samples ?? []);
     const session = await NepSession.create({
       id: input.id, organizationId: new Types.ObjectId(organizationId), deviceId: new Types.ObjectId(input.deviceId),

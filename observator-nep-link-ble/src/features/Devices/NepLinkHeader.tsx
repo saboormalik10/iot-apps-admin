@@ -14,7 +14,7 @@ const NepLinkHeader: React.FC = () => {
         />
       </View>
       <View style={styles.textContainer}>
-        <Text style={styles.title}>NEP-LINK BLE</Text>
+        <Text style={styles.title}>NEP-LINK Classic Bluetooth</Text>
         <Text style={styles.subtitle}>by Observator</Text>
       </View>
     </View>
@@ -24,6 +24,7 @@ const NepLinkHeader: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     margin: 20,
+    marginTop: 0,
     flexDirection: 'row',
   },
   imageContainer: {
@@ -35,12 +36,14 @@ const styles = StyleSheet.create({
   },
   textContainer: {
     paddingLeft: 20,
-    paddingTop: 20,
+    paddingTop: 20
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
     color: '#000',
+    flexShrink: 1,    // Allow the text to wrap
+    flexWrap: 'wrap',
   },
   subtitle: {
     fontSize: 16,

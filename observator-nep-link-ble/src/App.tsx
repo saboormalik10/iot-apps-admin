@@ -11,6 +11,7 @@ import { createTables, getDBConnection } from './utils/db';
 import { migrateAsyncStorageToSQLite } from './utils/migration';
 import RootNav from './navigation/RootNav';
 import store from './store/';
+import { AuthProvider } from './context/AuthContext';
 
 // Types
 interface MigrationStatus {
@@ -61,27 +62,63 @@ const App: React.FC = () => {
   const initializeApp = async (): Promise<void> => {
     try {
       console.log('Initializing app...');
+      setIsInitializing(true);
 
       // Step 1: Initialize database and create tables
       const db = await getDBConnection();
       await createTables(db);
       console.log('Database tables created');
 
+      // Step 2: Run migration
+      const result = await migrateAsyncStorageToSQLite();
+
+      if (result.success) {
+        if (result.alreadyMigrated) {
+          console.log('Data already migrated previously');
+        } else {
+          console.log(
+            `Migration successful: ${result.migratedSessions} sessions, ${result.migratedSamples} samples`
+          );
+          setMigrationStatus(result);
+        }
+      } else {
+        console.error('Migration failed:', result.error);
+        // You might want to show an error to the user here
+      }
+      // Step 3: Continue with normal app initialization
+      setIsInitializing(false);
     } catch (error) {
       console.error('Error initializing app:', error);
+      setIsInitializing(false);
     }
   };
 
+  if (isInitializing) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color={lightColors.primary} />
+        <Text style={styles.text}>Initializing...</Text>
+        {migrationStatus && migrationStatus.migratedSessions !== undefined && (
+          <Text style={styles.migrationText}>
+            Migrating your data: {migrationStatus.migratedSessions} sessions
+          </Text>
+        )}
+      </View>
+    );
+  }
+
   return (
     <Provider store={store}>
-      <PaperProvider>
-        <SafeAreaProvider>
-          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-          <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-            <RootNav />
-          </SafeAreaView>
-        </SafeAreaProvider>
-      </PaperProvider>
+      <AuthProvider>
+        <PaperProvider>
+          <SafeAreaProvider>
+            <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+            <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+              <RootNav />
+            </SafeAreaView>
+          </SafeAreaProvider>
+        </PaperProvider>
+      </AuthProvider>
     </Provider>
   );
 };

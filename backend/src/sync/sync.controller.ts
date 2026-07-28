@@ -13,7 +13,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { SyncService, SyncUploadPayload, DeviceStatusInput } from './sync.service';
+import { SyncService } from './sync.service';
 import { SyncUploadDto, DeviceStatusDto } from './dto';
 
 @ApiTags('Sync')
@@ -128,7 +128,7 @@ export class SyncController {
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
   async syncUpload(
-    @Body() body: SyncUploadPayload,
+    @Body() body: SyncUploadDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const result = await this.syncService.syncUpload(user!.organizationId, body, user!.userId);
@@ -210,7 +210,7 @@ export class SyncController {
   @Patch('device-status')
   @UseGuards(JwtOrApiKeyGuard)
   async deviceStatus(
-    @Body() body: DeviceStatusInput & { deviceId: string },
+    @Body() body: DeviceStatusDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const { deviceId, ...rest } = body;

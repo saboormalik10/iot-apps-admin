@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -8,6 +7,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  Alert,
+  PermissionsAndroid,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -16,7 +17,8 @@ import { DateTime } from 'luxon';
 import RNFS from 'react-native-fs';
 import { Dialog } from '@rneui/themed';
 import Share from 'react-native-share';
-import RNFetchBlob from 'rn-fetch-blob';
+// import RNFetchBlob from 'rn-fetch-blob';
+import RNFetchBlob from 'react-native-blob-util';
 import IonIcon from '@react-native-vector-icons/ionicons';
 
 import {
@@ -33,6 +35,7 @@ import LoggingSessionCommentDialog from './LoggingSessionCommentDialog';
 import WaitingDialog from './WaitingDialog';
 import Comment from './Comment';
 import { LoggingStackParamList } from '../../navigation/RootNav';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Types
 interface RootState {
@@ -115,7 +118,7 @@ const LoggingSessionView: React.FC = () => {
 
   // Redux selectors
   const logging = useSelector((state: RootState) => state.logging);
-
+  // console.log(`Redux Sate logging: ${JSON.stringify(logging)}`);
   // Route params
   const { loggingSessionId } = route.params;
 
@@ -129,6 +132,10 @@ const LoggingSessionView: React.FC = () => {
   const [waitingDialogText, setWaitingDialogText] = useState<string>('');
   const [chartDataType, setChartDataType] = useState<ChartDataType>('turbidity');
   const [processingExport, setProcessingExport] = useState<boolean>(false);
+
+  const getAndroidApiLevel = (): number => {
+    return Platform.OS === 'android' ? Platform.Version as number : 0;
+  };
 
   // Update images when session ID changes
   const updateImages = useCallback(async (sessionId: string) => {
@@ -435,22 +442,200 @@ const LoggingSessionView: React.FC = () => {
     return attachments;
   }, [logging, loggingSessionId]);
 
-  // Export data handler
-  const exportData = useCallback(async () => {
-    console.log('🔍 RNFS LOG 141: exportData called');
+  const getSaveFolderPath = useCallback((): string => {
+    if (Platform.OS === 'android') {
+      if (RNFS.DownloadDirectoryPath) {
+        return `${RNFS.DownloadDirectoryPath}/BleSessions`;
+      }
+      if (RNFS.ExternalDirectoryPath) {
+        return `${RNFS.ExternalDirectoryPath}/BleSessions`;
+      }
+    }
 
-    // Set loading state and wait for next tick to ensure render
+    return `${RNFS.DocumentDirectoryPath}/BleSessions`;
+  }, []);
+
+  const buildCsvFile = useCallback(async (directoryPath: string): Promise<{ filePath: string; fileName: string } | null> => {
+    const { loggingSession, loggingSessionSamples } = logging;
+    if (!loggingSession) {
+      return null;
+    }
+
+    const { timezoneName, timezoneOffset, comment: sessionComment } = loggingSession;
+
+    const csvArray = [
+      [
+        'Date',
+        'Time',
+        'Lat',
+        'Lon',
+        'Turbidity',
+        'Temperature',
+        '',
+        'Comment',
+        'Battery Level',
+      ].join(','),
+      [timezoneName || 'UTC', '', '', '', 'NTU', '°C', '', '', '%'].join(','),
+    ];
+
+    const commentRows = (sessionComment || '').split('\n');
+    let commentIterator = 0;
+    const localTimezoneOffsetSecs = Platform.OS === 'ios' ? parseFloat(timezoneOffset || '0') * 60 * 60 * 1000 : 0;
+
+    loggingSessionSamples.forEach(item => {
+      const timestamp = Math.round(item.timestamp / 1000) * 1000 + localTimezoneOffsetSecs;
+      const dateTime = DateTime.fromMillis(timestamp);
+      const dateStr = dateTime.toFormat('dd LLL yyyy');
+      const timeStr = dateTime.toFormat('HH:mm:ss');
+
+      csvArray.push(
+        [
+          dateStr,
+          timeStr,
+          item.locationLat || '',
+          item.locationLng || '',
+          item.turbidityValue || '',
+          item.temperatureValue || '',
+          '',
+          commentRows[commentIterator] || '',
+          item.batteryLevel || '',
+        ].join(',')
+      );
+      commentIterator++;
+    });
+
+    const csvStr = csvArray.join('\r\n');
+
+    try {
+      const directoryExists = await RNFS.exists(directoryPath);
+      if (!directoryExists) {
+        await RNFS.mkdir(directoryPath);
+      }
+    } catch (error) {
+      console.log('🔍 RNFS LOG save folder creation error:', error);
+      return null;
+    }
+
+    const sessionTimestamp = loggingSession.timestamp;
+    const fileDateTime = new Date(sessionTimestamp);
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const formattedFileName = `${pad(fileDateTime.getDate())}-${fileDateTime.toLocaleString(
+      'default',
+      { month: 'short' }
+    )}-${fileDateTime.getFullYear()}-${pad(fileDateTime.getHours())}${pad(
+      fileDateTime.getMinutes()
+    )}${pad(fileDateTime.getSeconds())}`;
+
+    const fileName = `NEP-Link-data-${formattedFileName}.csv`;
+    const filePath = `${directoryPath}/${fileName}`;
+
+    try {
+      await RNFS.writeFile(filePath, csvStr, 'utf8');
+      return { filePath, fileName };
+    } catch (error) {
+      console.log('🔍 RNFS LOG save file error:', error);
+      return null;
+    }
+  }, [logging]);
+
+  const requestStoragePermission = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+
+    const apiLevel = getAndroidApiLevel();
+
+    // API 29+ : no runtime permission needed/available for this flow
+    if (apiLevel >= 29) return true;
+
+    // API 26–28 : must request the legacy permission
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        {
+          title: 'Storage Permission',
+          message: 'NEP-LINK needs permission to save logging files to your phone.',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      console.log('🔍 requestStoragePermission error:', error);
+      return false;
+    }
+  }, []);
+
+  const saveSessionToPhone = useCallback(async () => {
     setProcessingExport(true);
     setWaitingDialogVisible(true);
-    setWaitingDialogText('Preparing...');
-
-    // Allow React to render the dialog before starting work
+    setWaitingDialogText('Saving to phone...');
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const { loggingSession } = logging;
     if (!loggingSession) {
-      console.log('🔍 RNFS LOG 142: No logging session in exportData');
+      Alert.alert('Save failed', 'Unable to save session because session data is missing.');
       setWaitingDialogVisible(false);
+      setProcessingExport(false);
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'android') {
+        // Write the CSV to a private location first — this is just a staging
+        // area, never touched by other apps or DownloadManager.
+        const csvFile = await buildCsvFile(RNFS.CachesDirectoryPath);
+        if (!csvFile) throw new Error('Failed to create CSV file.');
+
+        // Now copy it into the real public Downloads collection via MediaStore.
+        // This is the scoped-storage-correct path — it's what makes the file
+        // visible in the system Files app / Downloads app.
+        await RNFetchBlob.MediaCollection.copyToMediaStore(
+          {
+            name: csvFile.fileName,
+            parentFolder: 'BleSessions', // creates Downloads/BleSessions/
+            mimeType: 'text/csv',
+          },
+          'Download',
+          csvFile.filePath
+        );
+
+        Alert.alert('Saved', `Session saved to Downloads/BleSessions/${csvFile.fileName}`);
+      } else {
+        const csvFile = await buildCsvFile(RNFS.CachesDirectoryPath);
+        if (!csvFile) throw new Error('Failed to create CSV file.');
+
+        const iosPath = `${RNFS.DocumentDirectoryPath}/${csvFile.fileName}`;
+        await RNFS.copyFile(csvFile.filePath, iosPath);
+        Alert.alert('Saved', `Session saved to ${iosPath}`);
+      }
+    } catch (error: any) {
+      console.log('🔍 saveSessionToPhone error:', error);
+      Alert.alert(
+        'Save failed',
+        error?.message || 'Unable to save the logging session to phone storage.'
+      );
+    } finally {
+      setWaitingDialogVisible(false);
+      setProcessingExport(false);
+    }
+  }, [logging, buildCsvFile]);
+
+  // Export data handler
+  const exportData = useCallback(async () => {
+    console.log('🔍 RNFS LOG 141: exportData called');
+
+    setProcessingExport(true);
+    setWaitingDialogVisible(true);
+    setWaitingDialogText('Preparing...');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const { loggingSession } = logging;
+    console.log('logging session', loggingSession);
+    if (!loggingSession) {
+      console.log('🔍 RNFS LOG 142: No logging session in exportData');
+      Alert.alert('Export failed', 'No session data available to export.');
+      setWaitingDialogVisible(false);
+      setProcessingExport(false);
       return;
     }
 
@@ -458,39 +643,21 @@ const LoggingSessionView: React.FC = () => {
       const timestamp = loggingSession.timestamp;
       const dateTime = DateTime.fromMillis(timestamp);
 
-      setWaitingDialogText('Loading files...');
-      console.log('🔍 RNFS LOG 143: About to call getAttachments');
-      const attachments = await getAttachments();
-      console.log('🔍 RNFS LOG 144: getAttachments returned, count:', attachments.length);
+      setWaitingDialogText('Building CSV...');
+      console.log('🔍 RNFS LOG 143: About to build CSV file');
+      // Private cache is fine here — Share reads the file itself, no
+      // MediaStore/DownloadManager involvement like the save-to-phone flow.
+      const csvFile = await buildCsvFile(RNFS.CachesDirectoryPath);
 
-      const attachmentUrlsArray: string[] = [];
-      const attachmentFilenamesArray: string[] = [];
-
-      setWaitingDialogText('Processing files...');
-      for (const attachment of attachments) {
-        const filePath = attachment.path;
-        if (!filePath) {
-          console.log('🔍 RNFS LOG 145: Skipping attachment with no path');
-          continue;
-        }
-
-        console.log('🔍 RNFS LOG 146: Processing attachment:', filePath);
-        const pathSplit = filePath.split('/');
-        const fileName = pathSplit[pathSplit.length - 1];
-        attachmentFilenamesArray.push(fileName);
-
-        console.log('🔍 RNFS LOG 147: About to call RNFetchBlob.fs.readFile for:', filePath);
-        const data = await RNFetchBlob.fs.readFile(filePath, 'base64');
-        console.log('🔍 RNFS LOG 148: RNFetchBlob.fs.readFile completed');
-
-        const base64Data = `data:${attachment.type};base64,${data}`;
-        attachmentUrlsArray.push(base64Data);
+      if (!csvFile) {
+        throw new Error('Could not generate the CSV file.');
       }
+      console.log('🔍 RNFS LOG 144: CSV built at', csvFile.filePath);
 
       const mailSubject = `NEP-LINK Files for logging session at ${dateTime.toFormat(
         'dd-LLL-yyyy HH:mm:ss'
       )}`;
-      const mailBody = `Hello, Here are your files for the NEP-LINK logging session conducted at ${dateTime.toFormat(
+      const mailBody = `Hello, here is the CSV export for the NEP-LINK logging session conducted at ${dateTime.toFormat(
         'dd-LLL-yyyy HH:mm:ss'
       )}.`;
 
@@ -499,20 +666,26 @@ const LoggingSessionView: React.FC = () => {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       console.log('🔍 RNFS LOG 149: About to call Share.open');
+
       await Share.open({
         title: mailSubject,
         subject: mailSubject,
         message: mailBody,
-        urls: attachmentUrlsArray,
-        filenames: attachmentFilenamesArray,
+        url: `file://${csvFile.filePath}`, // react-native-share wraps this in a content:// URI on Android internally
+        type: 'text/csv',
+        filename: csvFile.fileName,
+        failOnCancel: false, // user dismissing the sheet shouldn't surface as an error
       });
+
       console.log('🔍 RNFS LOG 150: Share.open completed');
-    } catch (error) {
+    } catch (error: any) {
       console.error('🔍 RNFS LOG 151: Error exporting data:', error);
+      Alert.alert('Export failed', error?.message || 'Unable to export the logging session.');
+    } finally {
       setProcessingExport(false);
       setWaitingDialogVisible(false);
     }
-  }, [logging, getAttachments]);
+  }, [logging, buildCsvFile]);
 
   // Delete session handler
   const deleteSession = useCallback((action: string = 'showConfirmationDialog') => {
@@ -574,6 +747,7 @@ const LoggingSessionView: React.FC = () => {
       <ActionsMenu
         loggingSessionId={loggingSession.id}
         exportDataHandler={exportData}
+        saveDataHandler={saveSessionToPhone}
         deleteSessionHandler={deleteSession}
       />
     );
@@ -624,21 +798,25 @@ const LoggingSessionView: React.FC = () => {
     }
 
     if (chartDataType === 'turbidity') {
-      const turbiditySamples = loggingSessionSamples.map(({ timestamp, turbidityValue }) => {
-        const time = parseInt(timestamp.toString(), 10);
-        const value = parseFloat(turbidityValue.toString());
-        const label = DateTime.fromMillis(time).toFormat('ss');
-        return { timestamp: time, value, label };
-      });
+      const turbiditySamples = loggingSessionSamples
+        .filter(({ turbidityValue }) => turbidityValue != null && !isNaN(turbidityValue))
+        .map(({ timestamp, turbidityValue }) => {
+          const time = parseInt(timestamp.toString(), 10);
+          const value = parseFloat(turbidityValue.toString());
+          const label = DateTime.fromMillis(time).toFormat('ss');
+          return { timestamp: time, value, label };
+        });
 
       return <SessionLineChart samples={turbiditySamples} dataType="turbidity" />;
     } else {
-      const temperatureSamples = loggingSessionSamples.map(({ timestamp, temperatureValue }) => {
-        const time = parseInt(timestamp.toString(), 10);
-        const value = parseFloat(temperatureValue.toString());
-        const label = DateTime.fromMillis(time).toFormat('ss');
-        return { timestamp: time, value, label };
-      });
+      const temperatureSamples = loggingSessionSamples
+        .filter(({ temperatureValue }) => temperatureValue != null && !isNaN(temperatureValue))
+        .map(({ timestamp, temperatureValue }) => {
+          const time = parseInt(timestamp.toString(), 10);
+          const value = parseFloat(temperatureValue.toString());
+          const label = DateTime.fromMillis(time).toFormat('ss');
+          return { timestamp: time, value, label };
+        });
 
       return <SessionLineChart samples={temperatureSamples} dataType="temperature" />;
     }

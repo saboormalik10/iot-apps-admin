@@ -1,5 +1,7 @@
+import { BLUETOOTH_DEVICE_NAME_REGEX } from '../constants/constants';
+
 // Types
-interface BleDevice {
+interface DeviceBase {
   id: string;
   name?: string;
   localName?: string;
@@ -10,20 +12,13 @@ interface Device {
   address: string;
   name: string;
   origName?: string;
-  bleDevice?: BleDevice;
+  device?: DeviceBase;
   inRange?: boolean;
   inRangeSince?: number | null;
   lastSeenAt?: number;
   isConnected?: boolean;
   oldCustomName?: string;
   customName?: string;
-}
-
-interface BleDeviceFoundRaw {
-  bleDevice?: BleDevice;
-  id?: string;
-  address?: string;
-  name?: string;
 }
 
 interface KnownDevice {
@@ -37,8 +32,12 @@ interface DeviceState {
   wiping: boolean;
   sensorDataReceived: boolean;
   sensorError: boolean;
-  bleDevicesFoundRaw: BleDeviceFoundRaw[];
-  bleDevicesFoundFormatted: Device[];
+  // Classic Bluetooth properties
+  bondedDevicesRaw: any[];
+  bondedDevicesFormatted: Device[];
+  discoveredDevices: any[];
+  unpairedDevices: any[];
+  // Shared properties
   devicesInRange: Device[];
   knownDevices: KnownDevice[];
   deviceIdNameHash: Record<string, string>;
@@ -66,8 +65,12 @@ const initialState: DeviceState = {
   wiping: false,
   sensorDataReceived: false,
   sensorError: false,
-  bleDevicesFoundRaw: [],
-  bleDevicesFoundFormatted: [],
+  // Classic Bluetooth
+  bondedDevicesRaw: [],
+  bondedDevicesFormatted: [],
+  discoveredDevices: [],
+  unpairedDevices: [],
+  // Shared
   devicesInRange: [],
   knownDevices: [],
   deviceIdNameHash: {},
@@ -83,37 +86,37 @@ const initialState: DeviceState = {
 };
 
 const filterAndSortDevices = (
-  devices: BleDeviceFoundRaw[],
+  devices: any[],
   deviceIdNameHash: Record<string, string>,
   state: DeviceState
 ): Device[] => {
   const normalizedDevices = devices.map(d => {
-    if (d.bleDevice) {
-      return {
-        id: d.bleDevice.id,
-        address: d.bleDevice.id,
-        name: d.bleDevice.name || d.bleDevice.localName || '',
-        origName: d.bleDevice.name || d.bleDevice.localName || '',
-      };
-    } else {
-      return {
-        id: d.id || '',
-        address: d.address || d.id || '',
-        name: d.name || '',
-        origName: d.name || '',
-      };
-    }
+    return {
+      id: d.id || '',
+      address: d.address || d.id || '',
+      name: d.name || '',
+      origName: d.name || '',
+    };
   });
 
   const filtered = normalizedDevices
-    .filter(({ name }) => name && name.trim().length > 0)
+    .filter(({ name }) => name) // && name.match(BLUETOOTH_DEVICE_NAME_REGEX))
     .map(device => {
       const customName = deviceIdNameHash[device.address];
-      return {
-        ...device,
+      const deviceInRange = state.devicesInRange.find(
+        d => d.address === device.address
+      );
+      const ret: Device = {
+        id: device.id,
+        address: device.address,
         name: customName || device.name,
-        inRange: true,
+        origName: device.origName,
+        inRange: typeof deviceInRange !== 'undefined',
       };
+      if (state.device?.address === device.address) {
+        ret.isConnected = true;
+      }
+      return ret;
     })
     .sort((a, b) => {
       let sortVal = 0;
@@ -131,27 +134,14 @@ const filterAndSortDevices = (
   return filtered;
 };
 
-const devicesAreSame = (a: BleDeviceFoundRaw[], b: BleDeviceFoundRaw[]): boolean => {
-  if (a.length !== b.length) {
-    return false;
-  }
-  return a.every(deviceA =>
-    b.some(
-      deviceB =>
-        deviceA.id === deviceB.id &&
-        (deviceA.name === deviceB.name || !deviceA.name || !deviceB.name)
-    )
-  );
-};
-
 export default function deviceReducer(
   state: DeviceState = initialState,
   action: DeviceAction
 ): DeviceState {
-  let newBleDevicesFoundFormatted: Device[];
-  let filteredFormattedBleDevicesFound: Device[];
+  let newBondedDevicesFormatted: Device[];
+  let filteredFormattedBondedDevices: Device[];
   let deviceIdNameHash: Record<string, string>;
-  let newBleDeviceFound: any;
+  let newBondedDevice: any;
 
   switch (action.type) {
     case 'SCAN_START':
@@ -167,47 +157,63 @@ export default function deviceReducer(
       return { ...state, availableDevices: action.devices || [] };
 
     case 'DEVICE_CONNECTING':
-      return { ...state, connectingDevice: action.meta, connectError: null };
+      return {
+        ...state,
+        connectionStateChanging: true,
+        connectingDevice: action.meta,
+        device: action.meta,
+        status: 'connecting',
+        connectError: null,
+      };
 
     case 'DEVICE_CONNECTED':
-      newBleDevicesFoundFormatted = state.bleDevicesFoundFormatted.map(device => {
+      // Update Classic Bluetooth bonded devices
+      newBondedDevicesFormatted = state.bondedDevicesFormatted.map(device => {
         const newDevice = { ...device };
-        if (device.id === action.meta.id || device.address === action.meta.address) {
+        if (device.address === action.meta.address) {
           newDevice.isConnected = true;
-          console.log(`🟢 Device marked as connected in redux state: ${device.name}`);
+          console.log(`🟢 Device marked as connected: ${device.name}`);
         }
         return newDevice;
       });
+
       return {
         ...state,
         connectionStateChanging: false,
+        connectingDevice: null,
         device: action.meta,
         status: 'connected',
-        bleDevicesFoundFormatted: newBleDevicesFoundFormatted,
+        bondedDevicesFormatted: newBondedDevicesFormatted,
       };
 
     case 'DEVICE_CONNECT_ERROR':
       return { ...state, connectingDevice: null, connectError: action.error || null };
 
     case 'DEVICE_DISCONNECTING':
-      return { ...state, disconnecting: true, disconnectError: null };
+      return {
+        ...state,
+        connectionStateChanging: true,
+        device: action.meta,
+        status: 'disconnecting',
+        disconnecting: true,
+        disconnectError: null,
+      };
 
     case 'DEVICE_DISCONNECTED':
     case 'DEVICE_CLEAR_CONNECTED_DEVICE':
-      newBleDevicesFoundFormatted = state.bleDevicesFoundFormatted.map(device => {
-        const newDevice = { ...device };
-        if (newDevice.isConnected) {
-          delete newDevice.isConnected;
-          console.log(`🔴 Device marked as disconnected in redux state: ${device.name}`);
-        }
-        return newDevice;
-      });
+      // Clear connection status from Classic Bluetooth devices
+      newBondedDevicesFormatted = state.bondedDevicesFormatted.map(device => ({
+        ...device,
+        isConnected: false,
+      }));
+
       return {
         ...state,
         connectionStateChanging: false,
+        connectingDevice: null,
         device: null,
         status: 'disconnected',
-        bleDevicesFoundFormatted: newBleDevicesFoundFormatted,
+        bondedDevicesFormatted: newBondedDevicesFormatted,
         wiping: false,
         sensorDataReceived: false,
         sensorError: false,
@@ -232,58 +238,127 @@ export default function deviceReducer(
       knownDevices.forEach((device: KnownDevice) => {
         deviceIdNameHash[device.id] = device.customName || device.name;
       });
-      newBleDevicesFoundFormatted = [...state.bleDevicesFoundFormatted];
-      newBleDevicesFoundFormatted.forEach(bleDeviceFound => {
-        const customName = deviceIdNameHash[bleDeviceFound.address];
-        bleDeviceFound.name = customName || bleDeviceFound.name;
-        bleDeviceFound.origName = bleDeviceFound.name;
+
+      // Update Classic Bluetooth bonded devices with custom names
+      newBondedDevicesFormatted = [...state.bondedDevicesFormatted];
+      newBondedDevicesFormatted.forEach(bondedDevice => {
+        const customName = deviceIdNameHash[bondedDevice.address];
+        bondedDevice.name = customName || bondedDevice.origName || bondedDevice.name;
+        if (!bondedDevice.origName) {
+          bondedDevice.origName = bondedDevice.name;
+        }
       });
+
       return {
         ...state,
-        bleDevicesFoundFormatted: newBleDevicesFoundFormatted,
+        bondedDevicesFormatted: newBondedDevicesFormatted,
         knownDevices,
         deviceIdNameHash,
       };
 
-    case 'DEVICE_SET_BLE_DEVICES_FOUND': {
-      const newBleDevicesFound = action.payload.bleDevicesFound;
-
-      if (devicesAreSame(state.bleDevicesFoundRaw, newBleDevicesFound)) {
-        console.log('🔁 Reducer skipped DEVICE_SET_BLE_DEVICES_FOUND: same data');
-        return state;
-      }
-
-      filteredFormattedBleDevicesFound = filterAndSortDevices(
-        action.payload.bleDevicesFound,
+    // Classic Bluetooth - Set Bonded Devices
+    case 'DEVICE_SET_BONDED_DEVICES':
+      filteredFormattedBondedDevices = filterAndSortDevices(
+        action.payload.bondedDevices,
         state.deviceIdNameHash,
         state
       );
-
       return {
         ...state,
-        bleDevicesFoundRaw: action.payload.bleDevicesFound,
-        devicesInRange: filteredFormattedBleDevicesFound,
-        bleDevicesFoundFormatted: filteredFormattedBleDevicesFound,
+        bondedDevicesRaw: action.payload.bondedDevices,
+        bondedDevicesFormatted: filteredFormattedBondedDevices,
       };
-    }
 
-    case 'DEVICE_ADD_BLE_DEVICE_FOUND':
-      newBleDeviceFound = { ...action.payload.newBleDeviceFound };
-      const newBleDevicesFoundRaw = [...state.bleDevicesFoundRaw, newBleDeviceFound];
+    // Classic Bluetooth - Add Bonded Device
+    case 'DEVICE_ADD_BONDED_DEVICE':
+      newBondedDevice = { ...action.payload.newBondedDevice };
+      const newBondedDevicesRaw = [...state.bondedDevicesRaw, newBondedDevice];
       deviceIdNameHash = { ...state.deviceIdNameHash };
-      deviceIdNameHash[action.payload.newBleDeviceFound.address] =
-        action.payload.newBleDeviceFound.name;
-      filteredFormattedBleDevicesFound = filterAndSortDevices(
-        newBleDevicesFoundRaw,
+      deviceIdNameHash[action.payload.newBondedDevice.address] =
+        action.payload.newBondedDevice.name;
+      filteredFormattedBondedDevices = filterAndSortDevices(
+        newBondedDevicesRaw,
         deviceIdNameHash,
         state
       );
       return {
         ...state,
-        bleDevicesFoundRaw: newBleDevicesFoundRaw,
-        bleDevicesFoundFormatted: filteredFormattedBleDevicesFound,
+        bondedDevicesRaw: newBondedDevicesRaw,
+        bondedDevicesFormatted: filteredFormattedBondedDevices,
         deviceIdNameHash,
       };
+
+    // Classic Bluetooth - Set Discovered Devices
+    case 'DEVICE_SET_DISCOVERED_DEVICES': {
+      const unpairedDevices: any[] = [];
+      const currentTimestamp = new Date().getTime();
+      const devicesInRange = [...action.payload.discoveredDevices];
+
+      // Find unpaired devices (discovered but not bonded)
+      action.payload.discoveredDevices
+        .filter(({ name, address }: any) => {
+          const bondedDevice = state.bondedDevicesRaw.find(
+            (bondedDevice: any) => bondedDevice.address === address
+          );
+          return !bondedDevice && name;// && name?.match(BLUETOOTH_DEVICE_NAME_REGEX);
+        })
+        .filter(({name,address}) => (name!==address))
+        .forEach((newDevice: any) => {
+          newDevice.lastSeenAt = currentTimestamp;
+          unpairedDevices.push({ ...newDevice });
+        });
+
+      // Add old custom names to unpaired devices
+      unpairedDevices.forEach((unpairedDevice: any) => {
+        unpairedDevice.oldCustomName = state.deviceIdNameHash[unpairedDevice.address];
+      });
+
+      // Update bonded devices with in-range status
+      const bondedDevices: Device[] = [];
+      state.bondedDevicesFormatted.forEach((bondedDevice: Device) => {
+        const deviceInRange = devicesInRange.find(
+          (d: any) => d.address === bondedDevice.address
+        );
+        newBondedDevice = { ...bondedDevice };
+        if (deviceInRange) {
+          newBondedDevice.inRange = true;
+          newBondedDevice.inRangeSince = currentTimestamp;
+        } else if (
+          newBondedDevice.inRangeSince &&
+          currentTimestamp - newBondedDevice.inRangeSince < 120000
+        ) {
+          newBondedDevice.inRange = true;
+        } else {
+          newBondedDevice.inRange = false;
+          newBondedDevice.inRangeSince = null;
+        }
+        bondedDevices.push(newBondedDevice);
+      });
+
+      // Keep old unpaired devices that were recently seen
+      state.unpairedDevices.forEach((oldUnpairedDevice: any) => {
+        const newDevice = unpairedDevices.find(
+          ({ address }: any) => oldUnpairedDevice.address === address
+        );
+        if (!newDevice) {
+          if (currentTimestamp - oldUnpairedDevice.lastSeenAt < 120000) {
+            unpairedDevices.push({ ...oldUnpairedDevice });
+          }
+        }
+      });
+
+      // Sort all device lists
+      unpairedDevices.sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
+      devicesInRange.sort((a: any, b: any) => (a.name > b.name ? 1 : -1));
+      bondedDevices.sort((a: Device, b: Device) => (a.name > b.name ? 1 : -1));
+
+      return {
+        ...state,
+        unpairedDevices,
+        devicesInRange,
+        bondedDevicesFormatted: bondedDevices,
+      };
+    }
 
     default:
       return state;
@@ -291,4 +366,4 @@ export default function deviceReducer(
 }
 
 // Export types for use in other files
-export type { Device, BleDevice, KnownDevice, DeviceState, BleDeviceFoundRaw };
+export type { Device, DeviceBase, KnownDevice, DeviceState };

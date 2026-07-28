@@ -56,10 +56,15 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Register a device push token',
     description:
-      '**Call this once after login, with the push token your platform gives you** (FCM on Android, ' +
-      'APNs on iOS). Safe to call again with the same token — nothing is duplicated. Today alerts ' +
-      'are delivered to the admin dashboard; storing your token now means real push notifications ' +
-      'can be switched on later **without any app change**.',
+      '**Call this with the push token your platform gives you** (FCM on Android, APNs on iOS). ' +
+      'Safe to call again with the same token — nothing is duplicated.\n\n' +
+      'Register at **three** moments, not just one:\n' +
+      '1. straight after login,\n' +
+      '2. on every app start while already logged in,\n' +
+      '3. whenever the platform rotates the token (`onTokenRefresh`).\n\n' +
+      'A registration is kept for **60 days** since it was last seen or last successfully ' +
+      'pushed to; miss all three and the phone quietly stops receiving alerts. Requires a ' +
+      'per-user access token — push is targeted at the user, not the organization.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -82,8 +87,10 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Unregister a device push token',
     description:
-      '**Call this on logout** (before revoking the tokens) so the phone stops being a push target. ' +
-      'Send the same token you registered.',
+      '**Call this on logout, before revoking the refresh token** — it needs a valid access ' +
+      'token, and it must happen while the current user is still the one registered. Send the ' +
+      'same token you registered. Skip it and the next person to log in on that handset keeps ' +
+      'receiving the previous user\'s alerts until they register their own.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({ type: UnregisterTokenDto })

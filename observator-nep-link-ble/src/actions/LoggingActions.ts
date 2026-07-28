@@ -1,7 +1,7 @@
 import RNFS from 'react-native-fs';
 import { getDBConnection, createTables } from '../utils/db.js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Dispatch } from 'redux';
+import { update_session_comment } from '../api/apiService';
 
 interface LoggingSession {
   id: string;
@@ -77,42 +77,31 @@ export const startLogging = (
 
 export const addDataToLoggingSession =
   (loggingSessionId: string, dataObj: DataSample) =>
-  async (dispatch: Dispatch<LoggingAction>) => {
-    try {
-      const db = await getDBConnection();
-      await db.executeSql(
-        'INSERT INTO loggingSessionSamples (sessionId, timestamp, turbidityValue, temperatureValue, locationLat, locationLng, batteryLevel, batteryRawVoltage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          loggingSessionId,
-          dataObj.timestamp,
-          dataObj.turbidityValue,
-          dataObj.temperatureValue,
-          dataObj.locationLat,
-          dataObj.locationLng,
-          dataObj.batteryLevel,
-          dataObj.batteryRawVoltage,
-        ],
-      );
-      dispatch({
-        type: 'LOGGING_ADD_DATA_TO_SESSION',
-        payload: { dataSample: dataObj },
-      });
-    } catch (e) {
-      console.log('Error in addDataToLoggingSession', e);
-    }
-  };
-
-// export const saveLoggingSessionSamples = (
-//   loggingSessionId: string,
-//   dataSamples: DataSample[],
-// ) => {
-//   return (dispatch: Dispatch<LoggingAction>) => {
-//     dispatch({
-//       type: 'LOGGING_SAVE_LOGGING_SESSION_SAMPLES',
-//       payload: dataSamples,
-//     });
-//   };
-// };
+    async (dispatch: Dispatch<LoggingAction>) => {
+      try {
+        const db = await getDBConnection();
+        await db.executeSql(
+          'INSERT INTO loggingSessionSamples (sessionId, timestamp, turbidityValue, temperatureValue, locationLat, locationLng, batteryLevel, batteryRawVoltage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            loggingSessionId,
+            dataObj.timestamp,
+            dataObj.turbidityValue,
+            dataObj.temperatureValue,
+            dataObj.locationLat,
+            dataObj.locationLng,
+            dataObj.batteryLevel,
+            dataObj.batteryRawVoltage,
+          ],
+        );
+        console.log('Added data sample to logging session:', dataObj);
+        dispatch({
+          type: 'LOGGING_ADD_DATA_TO_SESSION',
+          payload: { dataSample: dataObj },
+        });
+      } catch (e) {
+        console.log('Error in addDataToLoggingSession', e);
+      }
+    };
 
 export const stopLogging = () => {
   return (dispatch: Dispatch<LoggingAction>) => {
@@ -177,6 +166,7 @@ export const fetchLoggingSessionSamples =
       for (let i = 0; i < results.rows.length; i++) {
         loggingSessionSamples.push(results.rows.item(i));
       }
+      console.log("XXX loggingSessionSamples", loggingSessionSamples);
       dispatch({
         type: 'LOGGING_FETCH_LOGGING_SESSION_SAMPLES',
         payload: { loggingSessionSamples },
@@ -188,28 +178,38 @@ export const fetchLoggingSessionSamples =
 
 export const updateLoggingSessionComment =
   (loggingSessionId: string, comment: string) =>
-  async (dispatch: Dispatch<LoggingAction>) => {
-    try {
-      const db = await getDBConnection();
-      await db.executeSql(
-        'UPDATE loggingSessions SET comment = ? WHERE id = ?',
-        [comment, loggingSessionId],
-      );
-      const [results] = await db.executeSql(
-        'SELECT * FROM loggingSessions WHERE id = ?',
-        [loggingSessionId],
-      );
-      const loggingSession: LoggingSession | null = results.rows.length
-        ? results.rows.item(0)
-        : null;
-      dispatch({
-        type: 'LOGGING_UPDATE_LOGGING_SESSION_COMMENT',
-        payload: { loggingSession },
-      });
-    } catch (e) {
-      console.log('Error in updateLoggingSessionComment', e);
-    }
-  };
+    async (dispatch: Dispatch<LoggingAction>) => {
+      try {
+        const db = await getDBConnection();
+        await db.executeSql(
+          'UPDATE loggingSessions SET comment = ? WHERE id = ?',
+          [comment, loggingSessionId],
+        );
+        const [results] = await db.executeSql(
+          'SELECT * FROM loggingSessions WHERE id = ?',
+          [loggingSessionId],
+        );
+        const loggingSession: LoggingSession | null = results.rows.length
+          ? results.rows.item(0)
+          : null;
+        dispatch({
+          type: 'LOGGING_UPDATE_LOGGING_SESSION_COMMENT',
+          payload: { loggingSession },
+        });
+
+        // 3. Update session comment in Cloud database
+        try {
+          await update_session_comment(loggingSessionId, comment);
+          console.log('Successfully updated session comment in the cloud.');
+        } catch (cloudError) {
+          console.error('Failed to sync comment to cloud, but local DB updated:', cloudError);
+          // Optional: Dispatch a 'SYNC_FAILED' action here if your UI needs to show a "Retry Sync" badge
+        }
+
+      } catch (e) {
+        console.log('Error in updateLoggingSessionComment', e);
+      }
+    };
 
 export const clearLoggingSession = () => {
   return (dispatch: Dispatch<LoggingAction>) => {

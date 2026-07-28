@@ -3,6 +3,7 @@
  * controllers keep their existing typed bodies, behaviour unchanged).
  */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString } from 'class-validator';
 
 export class CreateRecordDto {
   @ApiProperty({ description: 'Device ObjectId' })
@@ -41,9 +42,14 @@ export class MeasureDto {
       'CSV triplets from the MET-LINK SQLite `measure.dataSentence`: Value,Unit,Description,Value,Unit,Description,… The **first row is the header row** whose triplets carry the literal "Unit,Description" placeholders; the backend parses each data row into named fields (windSpeedMs, tempC, pressureHpa, …).',
     example: '12.5,m/s,relative,23.4,°C,TEMP,63.5,%,RH,1.025,B,PRESS,-37.8136,144.9631',
   })
+  // Decorated because MeasureDto is nested inside SyncUploadDto, which IS bound to
+  // the ValidationPipe — under `whitelist: true` an undecorated property is stripped,
+  // which would silently empty every MET-LINK measure upload.
+  @IsString()
   dataSentence!: string;
 
   @ApiProperty({ description: 'Human-readable timestamp: "YYYY-MM-DD HH:mm:ss"', example: '2026-05-01 14:32:01' })
+  @IsString()
   timeStamp!: string;
 }
 

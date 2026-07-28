@@ -18,7 +18,9 @@
       "Bash(SESSION_SECRET=dev_only_insecure_session_secret_change_me_please BACKEND_URL=http://localhost:3000/v1 NEXT_PUBLIC_BACKEND_WS_URL=ws://localhost:3000 yarn start)",
       "Bash(yarn test:e2e)",
       "Bash(yarn test:e2e --grep \"renders the sign-in form\" --reporter=list)",
-      "Bash(yarn test:e2e --grep \"no serious accessibility violations \\\\\\(axe\\\\\\)\" --reporter=list)"
+      "Bash(yarn test:e2e --grep \"no serious accessibility violations \\\\\\(axe\\\\\\)\" --reporter=list)",
+      "Bash(npx jest *)",
+      "Bash(echo \"--- exit: $? ---\")"
     ]
   }
 }

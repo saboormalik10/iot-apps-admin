@@ -3,7 +3,15 @@ import SQLite from 'react-native-sqlite-storage';
 SQLite.enablePromise(true);
 
 export const getDBConnection = async () => {
-  return SQLite.openDatabase({name: 'app.db', location: 'default'});
+  return SQLite.openDatabase({ name: 'app.db', location: 'default' });
+};
+
+const columnExists = async (db, table, column) => {
+  const [result] = await db.executeSql(`PRAGMA table_info(${table});`);
+  for (let i = 0; i < result.rows.length; i++) {
+    if (result.rows.item(i).name === column) return true;
+  }
+  return false;
 };
 
 export const createTables = async db => {
@@ -43,4 +51,9 @@ export const createTables = async db => {
     customName TEXT
   );
 `);
+
+  const hasUpdateStatus = await columnExists(db, 'loggingSessions', 'update_status');
+  if (!hasUpdateStatus) {
+    await db.executeSql(`ALTER TABLE loggingSessions ADD COLUMN update_status BOOLEAN DEFAULT 0;`);
+  }
 };

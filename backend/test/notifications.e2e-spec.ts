@@ -10,7 +10,7 @@ import { AppModule } from '../src/app.module';
  */
 describe('Notifications (e2e)', () => {
   let app: INestApplication;
-  let httpServer: unknown;
+  let httpServer: Parameters<typeof request>[0];
   let adminToken: string;
 
   beforeAll(async () => {
@@ -46,6 +46,52 @@ describe('Notifications (e2e)', () => {
       .send({ platform: 'android', token: `fcm_test_${Date.now()}`, appId: 'com.observator.neplink', deviceModel: 'CI' });
     expect(res.status).toBe(201);
     expect(res.body.data._id).toBeDefined();
+    // Push targets by user, so registration must attribute the token to one.
+    expect(res.body.data.userId).toBeTruthy();
+  });
+
+  it('re-registering the same token updates in place instead of duplicating', async () => {
+    const token = `fcm_test_dup_${Date.now()}`;
+    const send = (deviceModel: string) =>
+      request(httpServer)
+        .post('/v1/notifications/token')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ platform: 'android', token, appId: 'com.observator.neplink', deviceModel });
+
+    const first = await send('CI-first');
+    const second = await send('CI-second');
+    expect(second.status).toBe(201);
+    expect(second.body.data._id).toBe(first.body.data._id);
+    expect(second.body.data.deviceModel).toBe('CI-second');
+
+    await request(httpServer)
+      .delete('/v1/notifications/token')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ token });
+  });
+
+  it('DELETE /v1/notifications/token removes it from the org (the logout path)', async () => {
+    const token = `fcm_test_logout_${Date.now()}`;
+    await request(httpServer)
+      .post('/v1/notifications/token')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ platform: 'ios', token, appId: 'com.observator.metlink', deviceModel: 'CI' });
+
+    const before = await request(httpServer).get('/v1/notifications/tokens').set('Authorization', `Bearer ${adminToken}`);
+    expect(before.body.data.some((t: { _id: string }) => t._id)).toBe(true);
+
+    const del = await request(httpServer)
+      .delete('/v1/notifications/token')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ token });
+    expect(del.status).toBe(204);
+
+    // Gone for good — a second logout must not error either.
+    const again = await request(httpServer)
+      .delete('/v1/notifications/token')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ token });
+    expect(again.status).toBe(204);
   });
 
   it('POST /v1/notifications/read-all → 200', async () => {

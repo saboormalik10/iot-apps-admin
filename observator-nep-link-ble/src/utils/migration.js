@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {getDBConnection} from '../utils/db.js';
+import { getDBConnection } from '../utils/db.js';
 
 /**
  * Migration utility to transfer logging data from AsyncStorage to SQLite

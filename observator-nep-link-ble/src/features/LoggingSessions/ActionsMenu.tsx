@@ -14,6 +14,7 @@ interface PickerCmpProps {
 interface ActionsMenuProps {
   loggingSessionId: string;
   exportDataHandler: () => void;
+  saveDataHandler: () => void;
   deleteSessionHandler: () => void;
 }
 
@@ -21,6 +22,7 @@ const PickerCmp: React.FC<PickerCmpProps> = ({ onValueChange }) => {
   const data = useMemo<DropdownItem[]>(
     () => [
       { label: 'Export Data', value: 'export_data' },
+      { label: 'Save to Phone', value: 'save_to_phone' },
       { label: 'Delete Session', value: 'delete_session' },
     ],
     []
@@ -53,6 +55,7 @@ const PickerCmp: React.FC<PickerCmpProps> = ({ onValueChange }) => {
 
 const ActionsMenu: React.FC<ActionsMenuProps> = ({
   exportDataHandler,
+  saveDataHandler,
   deleteSessionHandler,
 }) => {
   const handleValueChange = useCallback(
@@ -61,6 +64,9 @@ const ActionsMenu: React.FC<ActionsMenuProps> = ({
         case 'export_data':
           exportDataHandler();
           break;
+        case 'save_to_phone':
+          saveDataHandler();
+          break;
         case 'delete_session':
           deleteSessionHandler();
           break;
@@ -68,7 +74,7 @@ const ActionsMenu: React.FC<ActionsMenuProps> = ({
           break;
       }
     },
-    [exportDataHandler, deleteSessionHandler]
+    [exportDataHandler, saveDataHandler, deleteSessionHandler]
   );
 
   return (

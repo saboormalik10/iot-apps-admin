@@ -1,7 +1,7 @@
 import React from 'react';
-import { Text, View, SafeAreaView, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 export default function About() {
   const version = DeviceInfo.getVersion();
   const buildNumber = DeviceInfo.getBuildNumber();

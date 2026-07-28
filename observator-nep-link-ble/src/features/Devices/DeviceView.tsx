@@ -1,14 +1,14 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { SafeAreaView, ScrollView, View, Text, Dimensions, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ScrollView, View, Dimensions, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
+import RNBluetoothClassic, { BluetoothDeviceEvent } from 'react-native-bluetooth-classic';
 import { launchCamera, CameraOptions, ImagePickerResponse } from 'react-native-image-picker';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import { DateTime } from 'luxon';
 import RNFS from 'react-native-fs';
 import uuid from 'react-native-uuid';
-
-import BleService from '../../services/BleService';
 
 import {
   startLogging,
@@ -26,6 +26,7 @@ import LocationMap from './LocationMap';
 import LoggingButtons from './LoggingButtons';
 import HeaderRightBatteryIndicator from './HeaderRightBatteryIndicator';
 import HeaderRightCameraButton from './HeaderRightCameraButton';
+import { upload_session_file } from '../../api/apiService';
 
 // Types
 interface RootState {
@@ -36,7 +37,7 @@ interface RootState {
   };
   sensorData: {
     batteryLevel?: number;
-    batteryRawVoltage?: number;
+    batteryVoltage?: number;
     batteryCharging?: boolean;
     turbidityEnabled: boolean;
     temperatureEnabled: boolean;
@@ -71,6 +72,7 @@ const DeviceView: React.FC = () => {
   const logging = useSelector((state: RootState) => state.logging);
   const demo = useSelector((state: RootState) => state.demo);
 
+  // State
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [lastCompletedSessionId, setLastCompletedSessionId] = useState<string | null>(null);
   const [showTakePhotoDialog, setShowTakePhotoDialog] = useState<boolean>(false);
@@ -81,7 +83,6 @@ const DeviceView: React.FC = () => {
   const loggingSessionIdRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
   const disconnectSubscriptionRef = useRef<any>(null);
-  const appStateSubscriptionRef = useRef<any>(null);
   const loggingRef = useRef(logging);
   const lastCompletedSessionIdRef = useRef<string | null>(null);
   const sensorErrorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -114,25 +115,32 @@ const DeviceView: React.FC = () => {
 
   // Update header with battery indicator
   useEffect(() => {
-    const batteryLevel = sensorData.batteryLevel || undefined;
-    const batteryRawVoltage = sensorData.batteryRawVoltage || 0;
+    const batteryLevel = sensorData.batteryLevel;
+    const batteryVoltage = sensorData.batteryVoltage || 0;
 
     navigation.setOptions({
       headerBackButtonMenuEnabled: false,
       headerRight: () => (
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
-        <HeaderRightBatteryIndicator
-          batteryLevel={batteryLevel}
-          batteryRawVoltage={batteryRawVoltage}
-          batteryCharging={sensorData.batteryCharging}
-        />
-        <HeaderRightCameraButton
-          isLogging={logging.isLogging}
-          onPress={handleHeaderCameraPress}
-        />
-      </View>),
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16 }}>
+          <HeaderRightBatteryIndicator
+            batteryLevel={batteryLevel}
+            batteryVoltage={batteryVoltage}
+            batteryCharging={sensorData.batteryCharging}
+          />
+          <HeaderRightCameraButton
+            isLogging={logging.isLogging}
+            onPress={handleHeaderCameraPress}
+          />
+        </View>
+      ),
     });
-  }, [navigation, sensorData.batteryLevel, sensorData.batteryRawVoltage, sensorData.batteryCharging, logging.isLogging]);
+  }, [
+    navigation,
+    sensorData.batteryLevel,
+    sensorData.batteryVoltage,
+    sensorData.batteryCharging,
+    logging.isLogging,
+  ]);
 
   // Set sensor error after timeout if no data received
   useEffect(() => {
@@ -143,6 +151,7 @@ const DeviceView: React.FC = () => {
 
     sensorErrorTimeoutRef.current = setTimeout(() => {
       if (!sensorData.turbidityEnabled && !sensorData.temperatureEnabled) {
+        console.log("XXXX setting sensorError true 2");
         dispatch(setSensorError(true));
       }
     }, 40000);
@@ -165,34 +174,74 @@ const DeviceView: React.FC = () => {
 
   const prevLoggingRef = useRef(logging.isLogging);
 
-  // Remove the auto-clearing effect entirely, or modify it to only clear when dialog is false
+  // Clear logging session ID after logging stops and photo dialog closes
   useEffect(() => {
-    // Only clear when photo dialog is closed AND logging has stopped
     if (prevLoggingRef.current && !logging.isLogging && loggingSessionId && !showTakePhotoDialog) {
       console.log('Clearing loggingSessionId after logging stopped and photo dialog closed');
-      // Clear immediately when dialog closes (no setTimeout needed)
       setLoggingSessionId(null);
     }
     prevLoggingRef.current = logging.isLogging;
   }, [logging.isLogging, loggingSessionId, showTakePhotoDialog]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      console.log("XXX Disconnecting here");
-      BleService.disconnectConnectedDevice();
-      if (demo.demoModeEnabled) {
-        dispatch(setDemoModeEnabled(false));
-      }
-    };
-  }, [demo.demoModeEnabled, dispatch]);
+  // Disconnect connected devices
+  const disconnectConnectedDevices = useCallback(async () => {
+    console.log("XXX disconnectConnectedDevices")
+    await RNBluetoothClassic.getConnectedDevices()
+      .then(connected => {
+        connected.forEach(deviceToDisconnect => {
+          console.log("XXX disconnectConnectedDevices deviceToDisconnect", deviceToDisconnect)
+          deviceToDisconnect
+            .disconnect()
+            .then(connection => {
+              console.log('DeviceView disconnect', connection);
+            })
+            .catch(error => {
+              console.log("DeviceView Error - Couldn't disconnect", error);
+            });
+        });
+      })
+      .catch(error => {
+        console.log('Error getting connected devices', error);
+      });
+  }, []);
 
-  // Track photo dialog visibility changes
-  useEffect(() => {
-    console.log('📸 PHOTO DIALOG: showTakePhotoDialog changed to:', showTakePhotoDialog);
-    console.log('📸 PHOTO DIALOG: goBackAfterPhoto is:', goBackAfterPhoto);
-    console.log('📸 PHOTO DIALOG: lastCompletedSessionId is:', lastCompletedSessionIdRef.current);
-  }, [showTakePhotoDialog, goBackAfterPhoto]);
+  // Handle device disconnection
+  const onDeviceDisconnected = useCallback(
+    (event: BluetoothDeviceEvent) => {
+      console.log('Device disconnected event');
+      console.log("XXX DeviceView onDeviceDisconnected");
+      const currentLogging = loggingRef.current;
+
+      console.log("XXXX currentLogging", currentLogging)
+
+      // if (currentLogging.isLogging) {
+      //   // Save the current session ID before stopping
+      //   const currentSessionId = loggingSessionIdRef.current;
+      //   if (currentSessionId) {
+      //     setLastCompletedSessionId(currentSessionId);
+      //     lastCompletedSessionIdRef.current = currentSessionId;
+      //   }
+
+      //   dispatch(stopLogging());
+      //   console.log("XXXX calling disconnectConnectedDevices 1");
+      //   disconnectConnectedDevices();
+      //   takeMapImageCapture();
+      //   dispatch(fetchLoggingSessions());
+      //   setShowTakePhotoDialog(true);
+      //   setGoBackAfterPhoto(true);
+      // } else {
+      //   console.log("XXXX calling disconnectConnectedDevices 2");
+      //   disconnectConnectedDevices();
+      //   console.log("XXXX navigation.canGoBack() 1");
+      //   if (navigation.canGoBack()) {
+      //     console.log("XXXX navigation.goBack() 1");
+      //     navigation.goBack();
+      //   }
+      // }
+
+    },
+    [dispatch, navigation, disconnectConnectedDevices, takeMapImageCapture]
+  );
 
   // Prevent navigation away during logging
   usePreventRemove(logging.isLogging, ({ data }) => {
@@ -201,9 +250,12 @@ const DeviceView: React.FC = () => {
     console.log('🚨 PREVENT REMOVE: Current loggingSessionId:', loggingSessionIdRef.current);
     console.log('🚨 PREVENT REMOVE: Navigation data:', data);
 
+    const connectedDevice = devices.device;
+    const deviceName = connectedDevice?.name || '';
+
     Alert.alert(
       'End Logging and Disconnect?',
-      `Do you want to end your logging session and disconnect from ${devices.device?.bleDevice?.name || ''}?`,
+      `Do you want to end your logging session and disconnect from ${deviceName}?`,
       [
         {
           text: 'Continue Logging',
@@ -236,7 +288,8 @@ const DeviceView: React.FC = () => {
             console.log('🚨 PREVENT REMOVE: stopLogging dispatched');
 
             console.log('🚨 PREVENT REMOVE: About to disconnect device');
-            BleService.disconnectConnectedDevice();
+            console.log("XXXX calling disconnectConnectedDevices 3");
+            disconnectConnectedDevices();
             console.log('🚨 PREVENT REMOVE: Device disconnect called');
 
             console.log('🚨 PREVENT REMOVE: About to take map image capture');
@@ -255,15 +308,38 @@ const DeviceView: React.FC = () => {
             setGoBackAfterPhoto(true);
             console.log('🚨 PREVENT REMOVE: goBackAfterPhoto set to true');
 
-            // DON'T dispatch navigation immediately - let the photo dialog handle it
-            console.log('🚨 PREVENT REMOVE: NOT dispatching navigation - photo dialog will handle going back');
-            // navigation.dispatch(data.action); // REMOVE THIS LINE
+            console.log('🚨 PREVENT REMOVE: Photo dialog will handle navigation');
           },
         },
       ],
       { cancelable: false }
     );
   });
+
+  // Setup Classic Bluetooth subscriptions and listeners
+  useEffect(() => {
+    // Disconnect subscription
+    disconnectSubscriptionRef.current =
+      RNBluetoothClassic.onDeviceDisconnected(onDeviceDisconnected);
+
+    // Cleanup on unmount
+    return () => {
+      if (disconnectSubscriptionRef.current) {
+        disconnectSubscriptionRef.current.remove();
+      }
+    };
+  }, [onDeviceDisconnected]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log("XXXX calling disconnectConnectedDevices 4");
+      disconnectConnectedDevices();
+      if (demo.demoModeEnabled) {
+        dispatch(setDemoModeEnabled(false));
+      }
+    };
+  }, [demo.demoModeEnabled, dispatch, disconnectConnectedDevices]);
 
   // Helper function to get next available filename
   const getNextAvailableFilename = async (
@@ -409,7 +485,7 @@ const DeviceView: React.FC = () => {
       setTimeout(() => {
         setGoBackAfterPhoto(false); // Reset the flag
         if (navigation.canGoBack()) {
-          console.log("XXX navigation.goBack()");
+          console.log("XXXX navigation.goBack() 2");
           navigation.goBack();
         }
       }, 100);
@@ -420,18 +496,14 @@ const DeviceView: React.FC = () => {
   const startLoggingHandler = useCallback(() => {
     console.log('🟢 Starting logging...');
     const id = uuid.v4() as string;
-
+    console.log(`UUID for new session ${id}`)
     // Update BOTH the state AND the ref immediately
     setLoggingSessionId(id);
     loggingSessionIdRef.current = id;
 
-    const demoModeEnabled = demo.demoModeEnabled;
     const connectedDevice = devices.device;
-    console.log("XXX startLoggingHandler demoModeEnabled",demoModeEnabled);
-    console.log("XXX startLoggingHandler connectedDevice",connectedDevice);
-    console.log("XXX startLoggingHandler devices",devices);
-    const deviceId = demo.demoModeEnabled ? 'demo' : connectedDevice?.bleDevice?.id;
-    const deviceName = demo.demoModeEnabled ? 'DEMO' : connectedDevice?.bleDevice?.name;
+    const deviceId = connectedDevice?.id || 'demo';
+    const deviceName = connectedDevice?.name || 'DEMO';
 
     const timezoneName = DateTime.now().toFormat('z');
     const timezoneOffset = DateTime.now().toFormat('Z');
@@ -452,24 +524,28 @@ const DeviceView: React.FC = () => {
     setTimeout(() => {
       takeMapImageCapture();
     }, 2000);
-  }, [devices.device, demo.demoModeEnabled, sensorData.turbidityEnabled, sensorData.temperatureEnabled, dispatch, takeMapImageCapture]);
+  }, [devices.device, sensorData.turbidityEnabled, sensorData.temperatureEnabled, dispatch, takeMapImageCapture]);
 
   const stopLoggingHandler = useCallback(() => {
     // Save the current session ID before stopping
     const currentSessionId = loggingSessionIdRef.current;
     if (currentSessionId) {
-      setLastCompletedSessionId(currentSessionId); // REMOVED the extra 'r'
+      setLastCompletedSessionId(currentSessionId);
       lastCompletedSessionIdRef.current = currentSessionId;
     }
 
     // Capture map BEFORE stopping (while view is still active)
+    Object.entries(logging).map(([key, value]) => {
+      console.log(key, value);
+    });
     takeMapImageCapture()
-      .then(() => {
+      .then(async () => {
         dispatch(stopLogging());
         dispatch(fetchLoggingSessions());
         setShowTakePhotoDialog(true);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Error capturing map image before stopping logging:', error);
         // Even if capture fails, still stop logging
         dispatch(stopLogging());
         dispatch(fetchLoggingSessions());
@@ -500,7 +576,7 @@ const DeviceView: React.FC = () => {
           console.error('🔍 RNFS LOG 34: No logging session ID available for photo');
           setShowTakePhotoDialog(false);
           if (goBackAfterPhoto && navigation.canGoBack()) {
-            console.log("XXX navigation.goBack()");
+            console.log("XXXX navigation.goBack() 3");
             navigation.goBack();
           }
           return;
@@ -508,29 +584,69 @@ const DeviceView: React.FC = () => {
 
         const timestamp = logging?.loggingSession?.timestamp || Date.now();
         const dateTime = DateTime.fromMillis(timestamp);
-
+        const capturedAt = DateTime.now().toISO();
         const dirPath = `${RNFS.DocumentDirectoryPath}/loggingSessionFiles/${sessionId}/images`;
         console.log('🔍 RNFS LOG 35: Photo dirPath:', dirPath);
 
         try {
-          console.log('🔍 RNFS LOG 36: About to call RNFS.mkdir for images');
+          // console.log('🔍 RNFS LOG 36: About to call RNFS.mkdir for images');
           await RNFS.mkdir(dirPath);
           console.log('🔍 RNFS LOG 37: mkdir (images) completed');
 
           // Get next available filename
           console.log('🔍 RNFS LOG 38: About to call getNextAvailableFilename');
-          const filePath = await getNextAvailableFilename(
-            dirPath,
-            `NEP-Link-image-${dateTime.toFormat('dd-LLL-yyyy_HHmmss')}`,
-            'jpg'
-          );
+          const fileBaseName = `NEP-Link-image-${dateTime.toFormat('dd-LLL-yyyy_HHmmss')}`;
+
+          // old way to create filePath
+
+          // const filePath = await getNextAvailableFilename(
+          //   dirPath,
+          //   `NEP-Link-image-${dateTime.toFormat('dd-LLL-yyyy_HHmmss')}`,
+          //   'jpg'
+          // );
+
+          const filePath = await getNextAvailableFilename(dirPath, fileBaseName, 'jpg');
           console.log('🔍 RNFS LOG 39: getNextAvailableFilename returned:', filePath);
 
+          const asset = response.assets[0];
+
+          // old way to copy file
           if (response.assets[0].uri) {
             console.log('🔍 RNFS LOG 40: About to call RNFS.copyFile for camera image from:', response.assets[0].uri, 'to:', filePath);
             await RNFS.copyFile(response.assets[0].uri, filePath);
             console.log('🔍 RNFS LOG 41: copyFile (camera) completed successfully:', filePath);
           }
+
+
+
+          // new way to copy file and upload to cloud
+          // if (asset.uri) {
+          //   await RNFS.copyFile(asset.uri, filePath);
+          //   console.log('🔍 RNFS LOG 41: copyFile (camera) completed successfully:', filePath);
+
+          //   // Fire-and-forget: upload using your existing apiService function
+          //   const uploadUri = filePath.startsWith('file://') ? filePath : `file://${filePath}`;
+          //   console.log(`current session for file upload: ${sessionId}`);
+          //   upload_session_file(
+          //     sessionId,
+          //     {
+          //       uri: uploadUri,
+          //       name: `${fileBaseName}.jpg`,
+          //       type: asset.type || 'image/jpeg',
+          //     },
+          //     'photo',
+          //     capturedAt
+          //   )
+          //     .then((result: any) => {
+          //       console.log('🔍 UPLOAD: Photo uploaded successfully:', result);
+          //       // TODO: mark local record synced, e.g. update SQLite row for this file
+          //     })
+          //     .catch((error: any) => {
+          //       console.error('🔍 UPLOAD: Photo upload failed, will retry via sync sweep:', error);
+          //       // TODO: mark local record with sync_error so your sync sweep retries it
+          //     });
+          // }
+          
 
           // Only clear session IDs if logging has stopped
           if (!currentLogging.isLogging) {
@@ -566,7 +682,7 @@ const DeviceView: React.FC = () => {
 
       setShowTakePhotoDialog(false);
       if (goBackAfterPhoto && navigation.canGoBack()) {
-        console.log("XXX navigation.goBack()");
+        console.log("XXXX navigation.goBack() 4");
         navigation.goBack();
       }
     });
@@ -585,29 +701,12 @@ const DeviceView: React.FC = () => {
   }, [goBackAfterPhoto]);
 
   // Render loading/error states
-  if (devices.sensorError) {
-    return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <WaitingScreen waitingText="Sensor Error..." />
-      </SafeAreaView>
-    );
-  }
+  // console.log("XXXX devices.sensorError", devices.sensorError);
 
-  if (devices.wiping) {
-    return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <WaitingScreen waitingText="Wiping..." />
-      </SafeAreaView>
-    );
-  }
+  if (devices.sensorError) return <WaitingScreen waitingText="Sensor Error..." />;
+  if (devices.wiping) return <WaitingScreen waitingText="Wiping..." />;
+  if (!sensorData.turbidityEnabled && !sensorData.temperatureEnabled) return <WaitingScreen waitingText="Waiting for data..." />;
 
-  if (!sensorData.turbidityEnabled && !sensorData.temperatureEnabled) {
-    return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <WaitingScreen waitingText="Waiting for data..." />
-      </SafeAreaView>
-    );
-  }
 
   clearTimeout(sensorErrorTimeoutRef.current);
 
@@ -616,7 +715,7 @@ const DeviceView: React.FC = () => {
     <SafeAreaView style={{ flex: 1 }}>
       <TakePhotoDialog
         visible={showTakePhotoDialog}
-        closeDialog={() => setShowTakePhotoDialog(false)}
+        closeDialog={closeTakePhotoDialog}
         launchCamera={execLaunchCamera}
       />
       <ScrollView>
@@ -626,21 +725,21 @@ const DeviceView: React.FC = () => {
           temperatureValue={sensorData.temperatureValue}
         />
         <RangeIndicator rangeLabel={sensorData.rangeLabel} />
-        <ViewShot ref={mapViewShotRef}>
-          <View
-            style={{
-              flex: 1,
-              paddingHorizontal: 20,
-              backgroundColor: 'transparent',
-            }}>
-              <LocationMap
-                locationEnabled={sensorData.locationEnabled}
-                lat={sensorData.locationLat}
-                lng={sensorData.locationLng}
-                mapHeight={mapHeight}
-              />
-          </View>
-        </ViewShot>
+        <View
+          ref={mapViewShotRef}
+          collapsable={false}
+          style={{
+            flex: 1,
+            paddingHorizontal: 20,
+            backgroundColor: '#FFF0',
+          }}>
+          <LocationMap
+            locationEnabled={sensorData.locationEnabled}
+            lat={sensorData.locationLat}
+            lng={sensorData.locationLng}
+            mapHeight={mapHeight}
+          />
+        </View>
         <LoggingButtons
           isLogging={logging.isLogging}
           loggingSessionSampleCount={logging.loggingSessionSampleCount}

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import dns from 'dns';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, BadRequestException, ValidationError } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule, OpenAPIObject } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -208,8 +208,30 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('v1', { exclude: ['health', 'version'] });
 
   // ── Global Pipes ───────────────────────────────────────────────────────────
+  // `exceptionFactory` is required, not cosmetic: Nest's default validation
+  // response is { statusCode, message: [...], error: 'Bad Request' }. That object
+  // has an `error` key, so AllExceptionsFilter passes it through verbatim — and
+  // clients reading `error.code` / `error.message` (every mobile helper does)
+  // would see `undefined`. Collapse it into the standard envelope instead.
   app.useGlobalPipes(
-    new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+      exceptionFactory: (errors: ValidationError[]) => {
+        const flatten = (errs: ValidationError[], prefix = ''): string[] =>
+          errs.flatMap((e) => {
+            const path = prefix ? `${prefix}.${e.property}` : e.property;
+            const own = Object.values(e.constraints ?? {}).map((m) =>
+              m.replace(new RegExp(`^${e.property}\\b`), path),
+            );
+            const children = e.children?.length ? flatten(e.children, path) : [];
+            return [...own, ...children];
+          });
+        const message = flatten(errors).join('; ') || 'Validation failed';
+        return new BadRequestException({ error: { code: 'VALIDATION_ERROR', message } });
+      },
+    }),
   );
 
   // ── Global Exception Filter ────────────────────────────────────────────────
