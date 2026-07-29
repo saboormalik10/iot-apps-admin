@@ -25,7 +25,7 @@ function useWindow(deviceId?: string): { win: AnalyticsWindow | undefined; from:
   const { window, scope } = useScope();
   const from = window.from ?? 0;
   const to = window.to;
-  const win = deviceId ? { deviceId, from: window.from, to: window.to, includeDemo: scope.includeDemo } : undefined;
+  const win = deviceId ? { deviceId, from: window.from, to: window.to, demoOnly: scope.demoOnly } : undefined;
   return { win, from, to };
 }
 

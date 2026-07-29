@@ -65,7 +65,10 @@ export class DailySummaryService {
       organizationId: new Types.ObjectId(orgId),
       deviceId: new Types.ObjectId(deviceId),
       deletedAt: null,
-      isDemoMode: false,
+      // No isDemoMode filter: rollups are keyed by device, so a demo device gets
+      // its own rows and the read side separates them by device. Excluding demo
+      // here instead would bake the choice into stored data and make the demo
+      // toggle impossible to honour on the daily-summary pages.
       dateStartMs: { $lt: dayEndMs },
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: dayStartMs } }],
     })
@@ -98,7 +101,7 @@ export class DailySummaryService {
       organizationId: new Types.ObjectId(orgId),
       deviceId: new Types.ObjectId(deviceId),
       deletedAt: null,
-      isDemoMode: false,
+      // Same as populateMetDay: keyed by device, so demo rolls up separately.
       startTimestamp: { $lt: dayEndMs },
       $or: [{ endTimestamp: null }, { endTimestamp: { $gte: dayStartMs } }],
     })

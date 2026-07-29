@@ -155,29 +155,29 @@ export const markNotificationRead = (id: string) => http.patch<unknown>(`/notifi
 export const markAllNotificationsRead = () => http.post<{ updated: number }>('/notifications/read-all', {});
 
 // ── Dashboard (Month 8) ─────────────────────────────────────────────────────
-const demoParam = (includeDemo?: boolean) => (includeDemo ? '&includeDemoMode=true' : '');
+const demoParam = (demoOnly?: boolean) => (demoOnly ? '&demoOnly=true' : '');
 
 export interface SummaryScope {
-  includeDemo?: boolean;
+  demoOnly?: boolean;
   type?: DeviceType;
   deviceId?: string;
 }
 export const getSummary = (scope: SummaryScope = {}, signal?: AbortSignal) => {
   const params = new URLSearchParams();
-  if (scope.includeDemo) params.set('includeDemoMode', 'true');
+  if (scope.demoOnly) params.set('demoOnly', 'true');
   if (scope.type) params.set('type', scope.type);
   if (scope.deviceId) params.set('deviceId', scope.deviceId);
   const qs = params.toString();
   return http.get<DashboardSummary>(`/dashboard/summary${qs ? `?${qs}` : ''}`, signal);
 };
-export const getDashboardDevices = (signal?: AbortSignal) =>
-  http.get<DashboardDevice[]>('/dashboard/devices', signal);
-export const getMetLatest = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
-  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
-export const getMetWindrose = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
-  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
+export const getDashboardDevices = (demoOnly?: boolean, signal?: AbortSignal) =>
+  http.get<DashboardDevice[]>(`/dashboard/devices${demoOnly ? '?demoOnly=true' : ''}`, signal);
+export const getMetLatest = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
+  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
+export const getMetWindrose = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
+  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
 export const getMetHistory = (
-  params: { deviceId: string; sensor: string; from: number; to: number; includeDemo?: boolean },
+  params: { deviceId: string; sensor: string; from: number; to: number; demoOnly?: boolean },
   signal?: AbortSignal,
 ) => {
   const qs = new URLSearchParams({
@@ -186,13 +186,13 @@ export const getMetHistory = (
     from: String(params.from),
     to: String(params.to),
   });
-  if (params.includeDemo) qs.set('includeDemoMode', 'true');
+  if (params.demoOnly) qs.set('demoOnly', 'true');
   // getRaw (NOT get): the payload itself has a top-level `data` array, which the
   // `{ data }`-envelope unwrapper in http.get would wrongly strip to just the array.
   return http.getRaw<MetHistory>(`/dashboard/met/history?${qs.toString()}`, signal);
 };
 export const getMetHistoryMulti = (
-  params: { deviceId: string; sensors: string[]; from: number; to: number; includeDemo?: boolean },
+  params: { deviceId: string; sensors: string[]; from: number; to: number; demoOnly?: boolean },
   signal?: AbortSignal,
 ) => {
   const qs = new URLSearchParams({
@@ -201,11 +201,11 @@ export const getMetHistoryMulti = (
     from: String(params.from),
     to: String(params.to),
   });
-  if (params.includeDemo) qs.set('includeDemoMode', 'true');
+  if (params.demoOnly) qs.set('demoOnly', 'true');
   return http.getRaw<MetHistoryMulti>(`/dashboard/met/history-multi?${qs.toString()}`, signal);
 };
-export const getNepLatest = (deviceId: string, includeDemo = false, signal?: AbortSignal) =>
-  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}${demoParam(includeDemo)}`, signal);
+export const getNepLatest = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
+  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
 export const getOrgDeviceMap = (signal?: AbortSignal) =>
   http.get<FleetMapPoint[]>('/dashboard/org/device-map', signal);
 
@@ -215,6 +215,8 @@ export interface DevicesQuery {
   search?: string;
   page?: number;
   limit?: number;
+  /** true → demo-device data ONLY; false/undefined → real-device data only. */
+  demoOnly?: boolean;
 }
 export const listDevices = async (q: DevicesQuery = {}, signal?: AbortSignal): Promise<Page<Device>> => {
   const params = new URLSearchParams();
@@ -262,7 +264,7 @@ export interface AnalyticsWindow {
   deviceId: string;
   from?: number;
   to?: number;
-  includeDemo?: boolean;
+  demoOnly?: boolean;
 }
 
 function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefined> = {}): string {
@@ -271,7 +273,7 @@ function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefine
   // fall back to "last 24h", which silently truncates the "All time" preset.
   p.set('from', String(w.from ?? 0));
   if (w.to != null) p.set('to', String(w.to));
-  if (w.includeDemo) p.set('includeDemoMode', 'true');
+  if (w.demoOnly) p.set('demoOnly', 'true');
   for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') p.set(k, v);
   return p.toString();
 }
@@ -315,6 +317,8 @@ export interface RecordsQuery {
   to?: number;
   page?: number;
   limit?: number;
+  /** true → demo-device data ONLY; false/undefined → real-device data only. */
+  demoOnly?: boolean;
 }
 
 export const listRecords = async (q: RecordsQuery = {}, signal?: AbortSignal): Promise<Page<MetRecordRow>> => {
@@ -403,14 +407,14 @@ export const getNepCrossSessionTrend = (
 
 // ── Org rollups (Month 10) ──────────────────────────────────────────────────
 export const getOrgDeviceComparison = (
-  params: { deviceIds: string[]; sensor: string; from?: number; to?: number; interval?: string; includeDemo?: boolean },
+  params: { deviceIds: string[]; sensor: string; from?: number; to?: number; interval?: string; demoOnly?: boolean },
   signal?: AbortSignal,
 ) => {
   const p = new URLSearchParams({ sensor: params.sensor });
   if (params.from != null) p.set('from', String(params.from));
   if (params.to != null) p.set('to', String(params.to));
   if (params.interval) p.set('interval', params.interval);
-  if (params.includeDemo) p.set('includeDemoMode', 'true');
+  if (params.demoOnly) p.set('demoOnly', 'true');
   const ids = params.deviceIds.map((id) => `deviceIds[]=${encodeURIComponent(id)}`).join('&');
   return http.get<OrgDeviceComparison>(`/analytics/org/device-comparison?${p.toString()}&${ids}`, signal);
 };
@@ -427,6 +431,8 @@ export interface SessionsQuery {
   search?: string;
   page?: number;
   limit?: number;
+  /** true → demo-device data ONLY; false/undefined → real-device data only. */
+  demoOnly?: boolean;
 }
 
 export const listSessions = async (q: SessionsQuery = {}, signal?: AbortSignal): Promise<Page<NepSessionRow>> => {

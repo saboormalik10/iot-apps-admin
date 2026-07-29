@@ -29,6 +29,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
+import { parseDemoOnly } from '../utils/demo-scope.util';
 import { RecordsService, CreateRecordInput, MeasureInput } from './records.service';
 import { CreateRecordDto, UpdateRecordDto, BulkMeasuresDto } from './dto';
 
@@ -55,6 +56,7 @@ export class RecordsController {
   @ApiQuery({ name: 'to', required: false, description: 'Unix ms — end of range' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Paginated records', schema: { example: { data: [RECORD_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
   @ApiErrors('unauthorized')
   @Get()
@@ -65,6 +67,7 @@ export class RecordsController {
     @Query('to') to?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.recordsService.listRecords({
@@ -74,6 +77,7 @@ export class RecordsController {
       to: to ? Number(to) : undefined,
       page: page ? Number(page) : 1,
       limit: limit ? Math.min(Number(limit), 100) : 20,
+      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -85,7 +89,12 @@ export class RecordsController {
       'duplicate-guard: if the upload is interrupted, retry with the same `localRecordId` and ' +
       'nothing is duplicated. **Save the returned `_id`** — you need it to push the readings with ' +
       '`POST /v1/records/{id}/measures` and pictures with `POST /v1/records/{id}/pictures`. The ' +
-      'record is saved with the logged-in user\'s id, so the admin panel shows who uploaded it.',
+      'record is saved with the logged-in user\'s id, so the admin panel shows who uploaded it.\n\n' +
+      '### Demo mode\n' +
+      'Set `isDemoMode: true` **and** send the `deviceId` of your demo device (register it with ' +
+      '`POST /v1/devices` using `bleId: "demo"`, `type: "MET-LINK"`). Demo data is hidden from the ' +
+      'admin panel by default and only appears when the operator switches to demo mode — it is ' +
+      'never mixed into real readings. A hard-coded placeholder `deviceId` will be rejected with **404**.',
   })
   @Consumers('met-link')
   @ApiBody({
@@ -168,8 +177,15 @@ export class RecordsController {
       '(W/m²), precipitation, voltage, dew point and GPS from each line\'s value,unit,description ' +
       'triplets. **Important: the LAST TWO values of every data row are always read as the phone\'s ' +
       'latitude,longitude** — always end the row with them (they can be empty, but a sensor triplet ' +
-      'in that position would be lost). Up to **10 000 rows per call** — split longer records into ' +
-      'several calls. Rows with a GPS position also place the device on the admin panel\'s fleet map.',
+      'in that position would be lost). Rows with a GPS position also place the device on the admin ' +
+      'panel\'s fleet map.\n\n' +
+      '⚠️ **Retrying is NOT safe here.** Unlike NEP-LINK samples, measures are **not** ' +
+      'de-duplicated — every call appends, so re-sending a batch after a timeout inserts the rows ' +
+      'a second time. Only retry when you know the previous call did not reach the server, and ' +
+      'prefer splitting a long record into batches you can track individually. (The record itself ' +
+      'is still protected: `localRecordId` keeps `POST /v1/records` idempotent.)\n\n' +
+      'There is no hard row cap, but keep batches to a few thousand rows so the request does not ' +
+      'time out on a slow mobile connection.',
   })
   @Consumers('met-link')
   @ApiBody({

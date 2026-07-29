@@ -4,6 +4,7 @@ import { Device } from '../models/Device';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { NepSession } from '../models/NepSession';
+import { isDeviceInScope, demoDeviceSelfFilter } from '../utils/demo-scope.util';
 import { NepSample } from '../models/NepSample';
 import { fromCache, toCache, downsample } from '../utils/cache.util';
 import {
@@ -37,7 +38,7 @@ import {
 const SCATTER_CAP = 500;
 
 interface CommonOpts {
-  includeDemoMode?: boolean;
+  demoOnly?: boolean;
 }
 
 @Injectable()
@@ -51,8 +52,12 @@ export class AnalyticsService {
     deviceId: string,
     fromMs: number,
     toMs: number,
-    includeDemo: boolean,
+    demoOnly: boolean,
   ): Promise<Types.ObjectId[]> {
+    // Pinned to one device, and the device is what makes data demo or real — so
+    // instead of filtering rows, refuse a device the current mode excludes. That
+    // stops a hand-edited URL from reading demo analytics in real mode.
+    if (!(await isDeviceInScope(orgId, deviceId, demoOnly))) return [];
     const query: Record<string, unknown> = {
       organizationId: orgId,
       deviceId: new Types.ObjectId(deviceId),
@@ -60,7 +65,6 @@ export class AnalyticsService {
       dateStartMs: { $lte: toMs },
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
     };
-    if (!includeDemo) query.isDemoMode = false;
     const records = await MetRecord.find(query).select('_id').lean();
     return records.map((r) => r._id as Types.ObjectId);
   }
@@ -72,9 +76,9 @@ export class AnalyticsService {
     fromMs: number,
     toMs: number,
     fields: string[],
-    includeDemo: boolean,
+    demoOnly: boolean,
   ) {
-    const recordIds = await this.metRecordIds(orgId, deviceId, fromMs, toMs, includeDemo);
+    const recordIds = await this.metRecordIds(orgId, deviceId, fromMs, toMs, demoOnly);
     if (!recordIds.length) return [];
     return MetMeasure.find({
       recordId: { $in: recordIds },
@@ -91,15 +95,17 @@ export class AnalyticsService {
     deviceId: string,
     fromMs: number,
     toMs: number,
-    includeDemo: boolean,
+    demoOnly: boolean,
   ): Promise<string[]> {
+    // Same rule as metRecordIds: the device decides, so an out-of-scope device
+    // yields nothing rather than leaking the other mode's sessions.
+    if (!(await isDeviceInScope(orgId, deviceId, demoOnly))) return [];
     const query: Record<string, unknown> = {
       organizationId: orgId,
       deviceId: new Types.ObjectId(deviceId),
       deletedAt: null,
       startTimestamp: { $gte: fromMs, $lte: toMs },
     };
-    if (!includeDemo) query.isDemoMode = false;
     const sessions = await NepSession.find(query).select('id').lean();
     return sessions.map((s) => s.id);
   }
@@ -129,8 +135,8 @@ export class AnalyticsService {
   ) {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:windrose:${orgId}:${deviceId}:${fromMs}:${toMs}:${period}:${unit}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:windrose:${orgId}:${deviceId}:${fromMs}:${toMs}:${period}:${unit}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
@@ -140,7 +146,7 @@ export class AnalyticsService {
       fromMs,
       toMs,
       ['windSpeedMs', 'windDirTrueDeg', 'windDirRelDeg'],
-      includeDemo,
+      demoOnly,
     );
 
     const sectors = WIND_SECTORS.map((label, i) => ({
@@ -211,12 +217,12 @@ export class AnalyticsService {
     });
     const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS['1min'];
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:multi:${orgId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}:${interval}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:multi:${orgId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}:${interval}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, fields, includeDemo);
+    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, fields, demoOnly);
 
     // bucket → field → values[]
     const buckets = new Map<number, Record<string, number[]>>();
@@ -259,12 +265,12 @@ export class AnalyticsService {
     const field = MET_SENSOR_FIELD[sensor];
     if (!field) throw new BadRequestException(`Unknown sensor "${sensor}"`);
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:stats:${orgId}:${deviceId}:${sensor}:${fromMs}:${toMs}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:stats:${orgId}:${deviceId}:${sensor}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, [field], includeDemo);
+    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, [field], demoOnly);
     const values = rows
       .map((r) => (r as Record<string, unknown>)[field])
       .filter((v): v is number => typeof v === 'number');
@@ -329,8 +335,8 @@ export class AnalyticsService {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS['1h'];
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:gust:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:gust:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
@@ -340,7 +346,7 @@ export class AnalyticsService {
       fromMs,
       toMs,
       ['windSpeedMs', 'windDirTrueDeg'],
-      includeDemo,
+      demoOnly,
     );
     const buckets = new Map<number, { gustMs: number; dirDeg: number | null }>();
     for (const r of rows) {
@@ -375,8 +381,8 @@ export class AnalyticsService {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS['1h'];
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:comfort:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:comfort:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
@@ -386,7 +392,7 @@ export class AnalyticsService {
       fromMs,
       toMs,
       ['tempC', 'humidityPct', 'windSpeedMs'],
-      includeDemo,
+      demoOnly,
     );
     type Acc = { t: number[]; h: number[]; w: number[] };
     const buckets = new Map<number, Acc>();
@@ -436,8 +442,8 @@ export class AnalyticsService {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS['1h'];
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:met:fog:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:met:fog:${orgId}:${deviceId}:${fromMs}:${toMs}:${interval}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
@@ -447,7 +453,7 @@ export class AnalyticsService {
       fromMs,
       toMs,
       ['tempC', 'dewPointC', 'humidityPct'],
-      includeDemo,
+      demoOnly,
     );
     type Acc = { t: number[]; d: number[]; h: number[] };
     const buckets = new Map<number, Acc>();
@@ -484,14 +490,14 @@ export class AnalyticsService {
   // ── GET /analytics/met/pressure-tendency ──────────────────────────────────
   async metPressureTendency(orgId: string, deviceId: string, hours = 3, opts: CommonOpts = {}) {
     if (!deviceId) throw new BadRequestException('deviceId is required');
-    const includeDemo = !!opts.includeDemoMode;
+    const demoOnly = !!opts.demoOnly;
     const toMs = Date.now();
     const fromMs = toMs - hours * 3600_000;
-    const key = `an:met:ptend:${orgId}:${deviceId}:${hours}:${includeDemo}`;
+    const key = `an:met:ptend:${orgId}:${deviceId}:${hours}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, ['pressureHpa'], includeDemo);
+    const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, ['pressureHpa'], demoOnly);
     const withP = rows.filter((r) => r.pressureHpa != null);
     if (withP.length < 2) {
       return toCache(key, { deviceId, hours, current: null, previous: null, deltaHpa: null, deltaPerHr: null, tendency: 'steady', label: 'Insufficient data' });
@@ -525,11 +531,11 @@ export class AnalyticsService {
     deviceId: string | undefined,
     fromMs: number,
     toMs: number,
-    includeDemo: boolean,
+    demoOnly: boolean,
   ): Promise<Record<string, unknown>> {
     if (sessionId) return { sessionId };
     if (!deviceId) throw new BadRequestException('sessionId or deviceId is required');
-    const ids = await this.nepSessionIds(orgId, deviceId, fromMs, toMs, includeDemo);
+    const ids = await this.nepSessionIds(orgId, deviceId, fromMs, toMs, demoOnly);
     return { sessionId: { $in: ids } };
   }
 
@@ -543,12 +549,12 @@ export class AnalyticsService {
     opts: CommonOpts = {},
   ) {
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:nep:dist:${orgId}:${sessionId ?? deviceId}:${fromMs}:${toMs}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:nep:dist:${orgId}:${sessionId ?? deviceId}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const q = await this.nepSampleQuery(new Types.ObjectId(orgId), sessionId, deviceId, fromMs, toMs, includeDemo);
+    const q = await this.nepSampleQuery(new Types.ObjectId(orgId), sessionId, deviceId, fromMs, toMs, demoOnly);
     const samples = await NepSample.find({ ...q, turbidityValue: { $ne: null } })
       .select('turbidityValue probeRange')
       .lean();
@@ -659,12 +665,12 @@ export class AnalyticsService {
   async nepProbeBreakdown(orgId: string, deviceId: string, from?: string, to?: string, opts: CommonOpts = {}) {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:nep:probe:${orgId}:${deviceId}:${fromMs}:${toMs}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:nep:probe:${orgId}:${deviceId}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const ids = await this.nepSessionIds(new Types.ObjectId(orgId), deviceId, fromMs, toMs, includeDemo);
+    const ids = await this.nepSessionIds(new Types.ObjectId(orgId), deviceId, fromMs, toMs, demoOnly);
     const samples = await NepSample.find({ sessionId: { $in: ids }, turbidityValue: { $ne: null } })
       .select('timestamp turbidityValue')
       .lean();
@@ -704,12 +710,12 @@ export class AnalyticsService {
   // ── GET /analytics/nep/turbidity-temperature-correlation ──────────────────
   async nepCorrelation(orgId: string, sessionId?: string, deviceId?: string, from?: string, to?: string, opts: CommonOpts = {}) {
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
-    const key = `an:nep:corr:${orgId}:${sessionId ?? deviceId}:${fromMs}:${toMs}:${includeDemo}`;
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:nep:corr:${orgId}:${sessionId ?? deviceId}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const q = await this.nepSampleQuery(new Types.ObjectId(orgId), sessionId, deviceId, fromMs, toMs, includeDemo);
+    const q = await this.nepSampleQuery(new Types.ObjectId(orgId), sessionId, deviceId, fromMs, toMs, demoOnly);
     const samples = await NepSample.find({ ...q, turbidityValue: { $ne: null }, temperatureValue: { $ne: null } })
       .select('turbidityValue temperatureValue')
       .lean();
@@ -826,14 +832,14 @@ export class AnalyticsService {
   async nepGpsDensity(orgId: string, deviceId: string, from?: string, to?: string, resolution = 'medium', opts: CommonOpts = {}) {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
+    const demoOnly = !!opts.demoOnly;
     const metersPerCell = resolution === 'low' ? 100 : resolution === 'high' ? 1 : 10;
     const cellDeg = metersPerCell / 111_320; // ~metres per degree latitude
-    const key = `an:nep:gps:${orgId}:${deviceId}:${fromMs}:${toMs}:${resolution}:${includeDemo}`;
+    const key = `an:nep:gps:${orgId}:${deviceId}:${fromMs}:${toMs}:${resolution}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const ids = await this.nepSessionIds(new Types.ObjectId(orgId), deviceId, fromMs, toMs, includeDemo);
+    const ids = await this.nepSessionIds(new Types.ObjectId(orgId), deviceId, fromMs, toMs, demoOnly);
     const samples = await NepSample.find({ sessionId: { $in: ids }, locationLat: { $ne: null }, locationLng: { $ne: null } })
       .select('locationLat locationLng turbidityValue')
       .lean();
@@ -884,7 +890,7 @@ export class AnalyticsService {
     if (!field) throw new BadRequestException(`Unknown sensor "${sensor}"`);
     const intervalMs = INTERVAL_MS[interval] ?? INTERVAL_MS['1h'];
     const { fromMs, toMs } = this.parseWindow(from, to);
-    const includeDemo = !!opts.includeDemoMode;
+    const demoOnly = !!opts.demoOnly;
     const orgObjId = new Types.ObjectId(orgId);
     const palette = ['#2563eb', '#16a34a', '#ea580c', '#9333ea', '#dc2626'];
 
@@ -894,7 +900,7 @@ export class AnalyticsService {
 
     const series = await Promise.all(
       devices.map(async (dev, i) => {
-        const rows = await this.metMeasures(orgObjId, (dev._id as Types.ObjectId).toString(), fromMs, toMs, [field], includeDemo);
+        const rows = await this.metMeasures(orgObjId, (dev._id as Types.ObjectId).toString(), fromMs, toMs, [field], demoOnly);
         const buckets = new Map<number, number[]>();
         for (const r of rows) {
           const v = (r as Record<string, unknown>)[field];
@@ -912,13 +918,22 @@ export class AnalyticsService {
   }
 
   // ── GET /analytics/org/fleet-health ───────────────────────────────────────
-  async orgFleetHealth(orgId: string) {
-    const key = `an:org:fleet:${orgId}`;
+  async orgFleetHealth(orgId: string, opts: CommonOpts = {}) {
+    const demoOnly = !!opts.demoOnly;
+    const key = `an:org:fleet:${orgId}:${demoOnly}`;
     const cached = fromCache(key);
     if (cached) return cached;
 
     const orgObjId = new Types.ObjectId(orgId);
-    const devices = await Device.find({ organizationId: orgObjId, deletedAt: null }).sort({ type: 1, name: 1 }).lean();
+    // Fleet health sweeps every device, so it needs the device-level mode filter
+    // — a demo device must not be counted against the real fleet's health.
+    const devices = await Device.find({
+      organizationId: orgObjId,
+      deletedAt: null,
+      ...(await demoDeviceSelfFilter(orgObjId, demoOnly)),
+    })
+      .sort({ type: 1, name: 1 })
+      .lean();
     const now = Date.now();
     const ONLINE_MS = 5 * 60 * 1000;
     const MET_DOC_BYTES = 650;

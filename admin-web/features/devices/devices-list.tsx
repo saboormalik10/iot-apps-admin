@@ -26,7 +26,13 @@ export function DevicesList() {
   const { scope } = useScope();
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
-  const { data, isLoading } = useDevices({ type: scope.deviceType, page, limit: 20 });
+  // A demo device IS a device, so this list honours the mode like every other.
+  const { data, isLoading } = useDevices({
+    type: scope.deviceType,
+    page,
+    limit: 20,
+    demoOnly: scope.demoOnly || undefined,
+  });
 
   const columns = useMemo<ColumnDef<Device, unknown>[]>(
     () => [

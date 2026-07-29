@@ -42,7 +42,7 @@ export function MetGraphStack({ deviceId }: { deviceId?: string }) {
           // graph honours the range picker instead of silently showing 6h.
           from: window.from ?? 0,
           to: window.to,
-          includeDemo: scope.includeDemo,
+          demoOnly: scope.demoOnly,
         }
       : undefined,
   );

@@ -16,12 +16,12 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @ApiOperation({ summary: 'List organization audit-log entries (admin only)' })
-  @ApiQuery({ name: 'action', required: false, enum: ['create', 'update', 'delete', 'invite', 'revoke', 'export', 'login', 'logout'] })
-  @ApiQuery({ name: 'resourceType', required: false, enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'] })
+  @ApiQuery({ name: 'action', required: false, enum: ['create', 'update', 'delete', 'invite', 'revoke', 'export', 'login', 'logout'], description: 'Filter by audit action, e.g. device.create' })
+  @ApiQuery({ name: 'resourceType', required: false, enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'], description: 'Filter by audited resource, e.g. device | session | user' })
   @ApiQuery({ name: 'userId', required: false, description: 'Filter by acting user id' })
   @ApiQuery({ name: 'from', required: false, description: 'ISO date — inclusive lower bound' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date — inclusive upper bound' })
-  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'page', required: false, example: 1, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, example: 50, description: 'Max 100' })
   @ApiOkResponse({
     description: 'Paginated audit log',

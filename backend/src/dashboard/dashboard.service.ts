@@ -92,6 +92,7 @@ import { MetMeasure } from '../models/MetMeasure';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { AlertRule } from '../models/AlertRule';
+import { demoDeviceFilter, demoDeviceSelfFilter } from '../utils/demo-scope.util';
 
 // ─── Daily-count sparkline helper (§10.8) ────────────────────────────────────
 
@@ -101,7 +102,7 @@ async function dailyCounts(
   model: { aggregate(pipeline: unknown[]): Promise<Array<{ _id: string; count: number }>> },
   orgId: Types.ObjectId,
   days: number,
-  includeDemo: boolean,
+  demoFilter: Record<string, unknown>,
   extraMatch: Record<string, unknown> = {},
 ): Promise<number[]> {
   const now = new Date();
@@ -113,7 +114,7 @@ async function dailyCounts(
         organizationId: orgId,
         deletedAt: null,
         createdAt: { $gte: start },
-        ...(includeDemo ? {} : { isDemoMode: false }),
+        ...demoFilter,
         ...extraMatch,
       },
     },
@@ -164,21 +165,23 @@ export class DashboardService {
 
   async getSummary(
     organizationId: string,
-    includeDemo = false,
+    demoOnly = false,
     type?: 'MET-LINK' | 'NEP-LINK',
     deviceId?: string,
   ) {
-    const cacheKey = `summary:${organizationId}:${includeDemo}:${type ?? 'all'}:${deviceId ?? 'all'}`;
+    const cacheKey = `summary:${organizationId}:${demoOnly}:${type ?? 'all'}:${deviceId ?? 'all'}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
     const orgId = new Types.ObjectId(organizationId);
-    // Records/sessions carry isDemoMode; devices do not (a device is never "demo").
-    const demoFilter = includeDemo ? {} : { isDemoMode: false };
+    // Demo-ness comes from the device, so it scopes the device counts too — a demo
+    // device must not be counted in the real fleet, and vice versa.
+    const demoFilter = await demoDeviceFilter(orgId, demoOnly);
+    const demoDevFilter = await demoDeviceSelfFilter(orgId, demoOnly);
 
     // Scope narrowing: `type` restricts device counts to that family and zeroes the
     // other family's data counts; `deviceId` narrows every count to one device.
-    const devMatch: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
+    const devMatch: Record<string, unknown> = { organizationId: orgId, deletedAt: null, ...demoDevFilter };
     if (type) devMatch.type = type;
     if (deviceId && Types.ObjectId.isValid(deviceId)) devMatch._id = new Types.ObjectId(deviceId);
 
@@ -212,8 +215,8 @@ export class DashboardService {
       countMet ? MetRecord.countDocuments({ organizationId: orgId, deletedAt: null, ...demoFilter, ...dataMatch }) : Promise.resolve(0),
       countNep ? NepSession.countDocuments({ organizationId: orgId, deletedAt: null, ...demoFilter, ...dataMatch }) : Promise.resolve(0),
       AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
-      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, includeDemo, dataMatch) : zeros(),
-      countNep ? dailyCounts(NepSession, orgId, SPARKLINE_DAYS, includeDemo, dataMatch) : zeros(),
+      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, demoFilter, dataMatch) : zeros(),
+      countNep ? dailyCounts(NepSession, orgId, SPARKLINE_DAYS, demoFilter, dataMatch) : zeros(),
     ]);
 
     const result = {
@@ -235,15 +238,22 @@ export class DashboardService {
 
   // ── GET /dashboard/devices ────────────────────────────────────────────────
 
-  async getDevices(organizationId: string) {
-    const cacheKey = `devices:${organizationId}`;
+  async getDevices(organizationId: string, demoOnly = false) {
+    const cacheKey = `devices:${organizationId}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
     const orgId = new Types.ObjectId(organizationId);
     const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-    const devices = await Device.find({ organizationId: orgId, deletedAt: null })
+    // This list feeds both the fleet table and the scope-bar device picker, so
+    // scoping it here is what keeps a demo device from being selectable in real
+    // mode (and the reverse) everywhere else in the panel.
+    const devices = await Device.find({
+      organizationId: orgId,
+      deletedAt: null,
+      ...(await demoDeviceSelfFilter(orgId, demoOnly)),
+    })
       .sort({ type: 1, name: 1 })
       .lean();
 
@@ -265,8 +275,8 @@ export class DashboardService {
 
   // ── GET /dashboard/met/latest ─────────────────────────────────────────────
 
-  async getMetLatest(organizationId: string, deviceId: string, includeDemo = false) {
-    const cacheKey = `met:latest:${organizationId}:${deviceId}:${includeDemo}`;
+  async getMetLatest(organizationId: string, deviceId: string, demoOnly = false) {
+    const cacheKey = `met:latest:${organizationId}:${deviceId}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -278,7 +288,10 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
-      ...(includeDemo ? {} : { isDemoMode: false }),
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+      // are both filtered by `demoDeviceSelfFilter`.
     })
       .sort({ dateStartMs: -1 })
       .select('_id deviceName dateStart')
@@ -338,8 +351,8 @@ export class DashboardService {
 
   // ── GET /dashboard/met/windrose ───────────────────────────────────────────
 
-  async getMetWindrose(organizationId: string, deviceId: string, includeDemo = false) {
-    const cacheKey = `met:windrose:${organizationId}:${deviceId}:${includeDemo}`;
+  async getMetWindrose(organizationId: string, deviceId: string, demoOnly = false) {
+    const cacheKey = `met:windrose:${organizationId}:${deviceId}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -351,7 +364,10 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
-      ...(includeDemo ? {} : { isDemoMode: false }),
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+      // are both filtered by `demoDeviceSelfFilter`.
     })
       .sort({ dateStartMs: -1 })
       .select('_id')
@@ -432,7 +448,7 @@ export class DashboardService {
     sensor: string,
     fromMs: number,
     toMs: number,
-    includeDemo = false,
+    demoOnly = false,
   ) {
     const field = SENSOR_FIELD_MAP[sensor];
     if (!field) {
@@ -441,7 +457,7 @@ export class DashboardService {
       );
     }
 
-    const cacheKey = `met:history:${organizationId}:${deviceId}:${sensor}:${fromMs}:${toMs}:${includeDemo}`;
+    const cacheKey = `met:history:${organizationId}:${deviceId}:${sensor}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -455,7 +471,10 @@ export class DashboardService {
       deletedAt: null,
       dateStartMs: { $lte: toMs },
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
-      ...(includeDemo ? {} : { isDemoMode: false }),
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+      // are both filtered by `demoDeviceSelfFilter`.
     })
       .select('_id dateStartMs dateEndMs')
       .lean();
@@ -525,7 +544,7 @@ export class DashboardService {
     sensors: string[],
     fromMs: number,
     toMs: number,
-    includeDemo = false,
+    demoOnly = false,
   ) {
     if (!sensors.length) {
       throw new BadRequestException('sensors is required (comma-separated list)');
@@ -540,7 +559,7 @@ export class DashboardService {
       return { sensor, field };
     });
 
-    const cacheKey = `met:history-multi:${organizationId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}:${includeDemo}`;
+    const cacheKey = `met:history-multi:${organizationId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -553,7 +572,10 @@ export class DashboardService {
       deletedAt: null,
       dateStartMs: { $lte: toMs },
       $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
-      ...(includeDemo ? {} : { isDemoMode: false }),
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+      // are both filtered by `demoDeviceSelfFilter`.
     })
       .select('_id dateStartMs dateEndMs')
       .lean();
@@ -629,15 +651,24 @@ export class DashboardService {
     deviceId?: string,
     page = 1,
     limit = 20,
-    filters: { from?: number; to?: number; probeRange?: string; search?: string } = {},
+    filters: { from?: number; to?: number; probeRange?: string; search?: string; demoOnly?: boolean } = {},
   ) {
     const { from, to, probeRange, search } = filters;
-    const cacheKey = `nep:sessions:${organizationId}:${deviceId ?? 'all'}:${page}:${limit}:${from ?? ''}:${to ?? ''}:${probeRange ?? ''}:${search ?? ''}`;
+    const demoOnly = !!filters.demoOnly;
+    // demoOnly belongs in the cache key — without it a toggled request would be
+    // served the other mode's cached page.
+    const cacheKey = `nep:sessions:${organizationId}:${deviceId ?? 'all'}:${page}:${limit}:${from ?? ''}:${to ?? ''}:${probeRange ?? ''}:${search ?? ''}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
     const orgId = new Types.ObjectId(organizationId);
-    const query: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
+    const query: Record<string, unknown> = {
+      organizationId: orgId,
+      deletedAt: null,
+      ...(await demoDeviceFilter(orgId, demoOnly)),
+    };
+    // An explicit device wins over the mode filter — the picker only ever offers
+    // devices the current mode allows.
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (probeRange) query.probeRange = probeRange;
     if (from != null || to != null) {
@@ -669,8 +700,8 @@ export class DashboardService {
 
   // ── GET /dashboard/nep/latest ─────────────────────────────────────────────
 
-  async getNepLatest(organizationId: string, deviceId: string, includeDemo = false) {
-    const cacheKey = `nep:latest:${organizationId}:${deviceId}:${includeDemo}`;
+  async getNepLatest(organizationId: string, deviceId: string, demoOnly = false) {
+    const cacheKey = `nep:latest:${organizationId}:${deviceId}:${demoOnly}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -681,7 +712,10 @@ export class DashboardService {
       organizationId: orgId,
       deviceId: devId,
       deletedAt: null,
-      ...(includeDemo ? {} : { isDemoMode: false }),
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+      // are both filtered by `demoDeviceSelfFilter`.
     })
       .sort({ startTimestamp: -1 })
       .lean();

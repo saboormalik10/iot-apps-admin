@@ -54,7 +54,7 @@ export class AlertRulesController {
   @ApiOperation({ summary: 'List alert rules' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
   @ApiQuery({ name: 'isActive', required: false, description: 'true | false' })
-  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false })
   @ApiOkResponse({
     description: 'Paginated alert rules',

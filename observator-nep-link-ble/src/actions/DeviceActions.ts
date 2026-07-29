@@ -467,8 +467,11 @@ export const deviceDisconnectError = (error: any): DeviceDisconnectErrorAction =
 //  Demo device
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Fixed Bluetooth-address stand-in for demo mode. POST /v1/devices is idempotent
- *  on (organizationId, bleId), so this always resolves to the same server device. */
+/** Fixed Bluetooth-address stand-in for demo mode. `POST /v1/devices` is idempotent
+ *  on (organizationId, bleId, type), so this always resolves to the same server
+ *  device. Both apps send the SAME bleId — the device families are separated by
+ *  `type`, so MET-LINK gets its own 'demo' row. The admin panel treats any device
+ *  whose bleId starts with `demo` as a demo device. */
 const DEMO_BLE_ID = 'demo';
 
 /** Cache key is org-scoped: a device `_id` is only valid inside the organization

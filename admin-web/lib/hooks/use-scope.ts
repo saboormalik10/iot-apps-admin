@@ -7,8 +7,14 @@ import type { DeviceType } from '@/lib/api/types';
 /**
  * Global scope state (plan §3.6) — the app-wide filter shared by every data page.
  * Defaults to the whole org / entire fleet ("All"); narrows to a device, device
- * type, date range, or demo-inclusion on demand. State lives in the URL so it is
- * shareable, bookmarkable, and preserved across navigation.
+ * type, or date range on demand. State lives in the URL so it is shareable,
+ * bookmarkable, and preserved across navigation.
+ *
+ * `demoOnly` is a MODE, not an include: false shows real-device data only, true
+ * shows demo-device data only. The two are never mixed, so a chart or count can
+ * never silently blend test data into real readings. Demo-ness is a property of
+ * the DEVICE (bleId starting `demo`), so it applies uniformly to sessions,
+ * records, samples and rollups alike.
  */
 export type RangePreset = '1h' | '24h' | '7d' | '30d' | 'all';
 
@@ -24,7 +30,7 @@ export interface Scope {
   deviceId?: string;
   deviceType?: DeviceType;
   range: RangePreset;
-  includeDemo: boolean;
+  demoOnly: boolean;
 }
 
 const DEFAULT_RANGE: RangePreset = '24h';
@@ -48,7 +54,7 @@ export function useScope() {
       deviceId: params.get('device') || undefined,
       deviceType: type === 'MET-LINK' || type === 'NEP-LINK' ? type : undefined,
       range: validRange,
-      includeDemo: params.get('demo') === '1',
+      demoOnly: params.get('demo') === '1',
     };
   }, [params]);
 
@@ -60,7 +66,7 @@ export function useScope() {
       set('device', merged.deviceId);
       set('type', merged.deviceType);
       set('range', merged.range === DEFAULT_RANGE ? undefined : merged.range);
-      set('demo', merged.includeDemo ? '1' : undefined);
+      set('demo', merged.demoOnly ? '1' : undefined);
       router.replace(`${pathname}?${sp.toString()}`, { scroll: false });
     },
     [scope, params, pathname, router],
@@ -72,7 +78,7 @@ export function useScope() {
     router.replace(sp.toString() ? `${pathname}?${sp.toString()}` : pathname, { scroll: false });
   }, [params, pathname, router]);
 
-  const isDefault = !scope.deviceId && !scope.deviceType && scope.range === DEFAULT_RANGE && !scope.includeDemo;
+  const isDefault = !scope.deviceId && !scope.deviceType && scope.range === DEFAULT_RANGE && !scope.demoOnly;
 
   // The window MUST be stable across renders: it feeds query keys (metHistory and
   // every Month-9 analytics chart). Computing `Date.now()` inline on each render

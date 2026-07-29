@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
+import { parseDemoOnly } from '../utils/demo-scope.util';
 import { DashboardService } from './dashboard.service';
 
 @ApiTags('Dashboard')
@@ -25,45 +26,46 @@ export class DashboardController {
       'Device / record / session counts, plus the active (armed) alert-rule count and ' +
       'last-14-day daily-count sparklines ({ records[], sessions[] }) for the dashboard KPI tiles.',
   })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiQuery({ name: 'type', required: false, description: 'MET-LINK | NEP-LINK — narrow every count to one device family' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Device ObjectId — narrow every count to one device' })
   @Get('summary')
   @UseGuards(JwtAuthGuard)
   async getSummary(
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @Query('type') type: string,
     @Query('deviceId') deviceId: string,
     @CurrentUser() user: JWTPayload,
   ) {
     return this.dashboardService.getSummary(
       user.organizationId,
-      demo === 'true',
+      parseDemoOnly(demo),
       type === 'MET-LINK' || type === 'NEP-LINK' ? type : undefined,
       deviceId || undefined,
     );
   }
 
   @ApiOperation({ summary: 'List all devices with online status' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo devices ONLY; omitted/false → real devices only' })
   @ApiOkResponse({ description: 'Device list with isOnline flag' })
   @Get('devices')
   @UseGuards(JwtAuthGuard)
-  async getDevices(@CurrentUser() user: JWTPayload) {
-    return this.dashboardService.getDevices(user.organizationId);
+  async getDevices(@Query('demoOnly') demo: string, @CurrentUser() user: JWTPayload) {
+    return this.dashboardService.getDevices(user.organizationId, parseDemoOnly(demo));
   }
 
   @ApiOperation({ summary: 'Latest MET-LINK sensor snapshot' })
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Full sensor snapshot from the latest record row' })
   @Get('met/latest')
   @UseGuards(JwtAuthGuard)
   async getMetLatest(
     @Query('deviceId') deviceId: string,
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
-    return this.dashboardService.getMetLatest(user.organizationId, deviceId, demo === 'true');
+    return this.dashboardService.getMetLatest(user.organizationId, deviceId, parseDemoOnly(demo));
   }
 
   @ApiOperation({ summary: 'MET-LINK wind rose data (last 10 min and 2 min)' })
@@ -72,15 +74,15 @@ export class DashboardController {
     description:
       'Wind direction/speed arrays: last600 (≈10 min) and last120 (≈2 min)',
   })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @Get('met/windrose')
   @UseGuards(JwtAuthGuard)
   async getMetWindrose(
     @Query('deviceId') deviceId: string,
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
-    return this.dashboardService.getMetWindrose(user.organizationId, deviceId, demo === 'true');
+    return this.dashboardService.getMetWindrose(user.organizationId, deviceId, parseDemoOnly(demo));
   }
 
   @ApiOperation({ summary: 'MET-LINK 1-minute aggregated sensor history' })
@@ -93,7 +95,7 @@ export class DashboardController {
   })
   @ApiQuery({ name: 'from', required: true, description: 'Start time (Unix ms)' })
   @ApiQuery({ name: 'to', required: true, description: 'End time (Unix ms)' })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: '1-minute buckets: { sensor, unit, data: [{timestampMs, min, max, avg, count}] }' })
   @Get('met/history')
   @UseGuards(JwtAuthGuard)
@@ -102,7 +104,7 @@ export class DashboardController {
     @Query('sensor') sensor: string,
     @Query('from') from: string,
     @Query('to') to: string,
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
     return this.dashboardService.getMetHistory(
@@ -111,7 +113,7 @@ export class DashboardController {
       sensor,
       parseInt(from, 10),
       parseInt(to, 10),
-      demo === 'true',
+      parseDemoOnly(demo),
     );
   }
 
@@ -125,7 +127,7 @@ export class DashboardController {
   })
   @ApiQuery({ name: 'from', required: true, description: 'Start time (Unix ms)' })
   @ApiQuery({ name: 'to', required: true, description: 'End time (Unix ms)' })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({
     description:
       'Adaptive buckets for every requested sensor in one payload: ' +
@@ -138,7 +140,7 @@ export class DashboardController {
     @Query('sensors') sensors: string,
     @Query('from') from: string,
     @Query('to') to: string,
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
     const list = (sensors ?? '')
@@ -151,7 +153,7 @@ export class DashboardController {
       list,
       parseInt(from, 10),
       parseInt(to, 10),
-      demo === 'true',
+      parseDemoOnly(demo),
     );
   }
 
@@ -163,6 +165,7 @@ export class DashboardController {
   @ApiQuery({ name: 'search', required: false, description: 'Match deviceName or comment' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device sessions ONLY; omitted/false → real-device sessions only' })
   @ApiOkResponse({ description: 'Paginated NEP-LINK session list' })
   @Get('nep/sessions')
   @UseGuards(JwtAuthGuard)
@@ -174,6 +177,7 @@ export class DashboardController {
     @Query('search') search: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
     return this.dashboardService.getNepSessions(
@@ -186,22 +190,23 @@ export class DashboardController {
         to: to ? parseInt(to, 10) : undefined,
         probeRange: probeRange || undefined,
         search: search || undefined,
+        demoOnly: parseDemoOnly(demo),
       },
     );
   }
 
   @ApiOperation({ summary: 'Latest NEP-LINK session + most recent sample snapshot' })
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
-  @ApiQuery({ name: 'includeDemoMode', required: false, description: 'true to include demo data (default: excluded)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Latest session summary and last sample reading' })
   @Get('nep/latest')
   @UseGuards(JwtAuthGuard)
   async getNepLatest(
     @Query('deviceId') deviceId: string,
-    @Query('includeDemoMode') demo: string,
+    @Query('demoOnly') demo: string,
     @CurrentUser() user: JWTPayload,
   ) {
-    return this.dashboardService.getNepLatest(user.organizationId, deviceId, demo === 'true');
+    return this.dashboardService.getNepLatest(user.organizationId, deviceId, parseDemoOnly(demo));
   }
 
   @ApiOperation({ summary: 'NEP-LINK session trend (turbidity or temperature), downsampled to ≤500 pts' })

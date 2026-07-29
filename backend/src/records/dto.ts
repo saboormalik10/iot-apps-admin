@@ -12,10 +12,19 @@ export class CreateRecordDto {
   @ApiPropertyOptional()
   deviceName?: string;
 
-  @ApiProperty({ example: '2026-06-23 09:00:00', description: 'Record start (local time string)' })
+  @ApiProperty({
+    example: '2026-06-23 09:00:00',
+    description:
+      'Record start, `"YYYY-MM-DD HH:mm:ss"`. Parsed with no timezone, so it is read in the ' +
+      '**server\'s** timezone (UTC in production) — append an offset (e.g. `+05:00`) if you are ' +
+      'sending phone-local time. An unparseable value silently falls back to the time of upload.',
+  })
   dateStart!: string;
 
-  @ApiPropertyOptional({ example: '2026-06-23 12:00:00' })
+  @ApiPropertyOptional({
+    example: '2026-06-23 12:00:00',
+    description: 'Record end, same format and timezone rules as `dateStart`. Omit while still logging.',
+  })
   dateEnd?: string | null;
 
   @ApiPropertyOptional()
@@ -24,7 +33,17 @@ export class CreateRecordDto {
   @ApiPropertyOptional({ description: 'URL of an attached map/screenshot' })
   urlMaps?: string | null;
 
-  @ApiPropertyOptional({ description: "App-side local id for idempotent upload" })
+  @ApiPropertyOptional({
+    description:
+      'Your app\'s own record id from its local database — the duplicate-guard that makes retrying ' +
+      'safe.\n\n' +
+      '⚠️ **Uniqueness is per ORGANISATION, not per device.** If two MET-LINK phones in the same ' +
+      'organisation both number their local records from 1, phone B\'s record 42 is treated as a ' +
+      'duplicate of phone A\'s and the server returns **phone A\'s existing record** instead of ' +
+      'creating a new one — silently, with a 201. Use a value that is unique across the whole ' +
+      'organisation (e.g. derive it from the device id), or omit the field to disable the guard.',
+    example: 42,
+  })
   localRecordId?: number | null;
 
   @ApiPropertyOptional({ default: false })
@@ -48,7 +67,15 @@ export class MeasureDto {
   @IsString()
   dataSentence!: string;
 
-  @ApiProperty({ description: 'Human-readable timestamp: "YYYY-MM-DD HH:mm:ss"', example: '2026-05-01 14:32:01' })
+  @ApiProperty({
+    description:
+      'Timestamp of the row: `"YYYY-MM-DD HH:mm:ss"`. **Parsed with no timezone, so it is read in ' +
+      'the SERVER\'s timezone (UTC in production)** — append an offset (e.g. `2026-05-01 14:32:01+05:00`) ' +
+      'if your rows are in local time, or the readings land on the wrong instant. ' +
+      '⚠️ An unparseable value does NOT error: it silently falls back to the time of upload, which ' +
+      'corrupts the row\'s position on every chart. Validate the format before sending.',
+    example: '2026-05-01 14:32:01',
+  })
   @IsString()
   timeStamp!: string;
 }

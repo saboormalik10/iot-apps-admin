@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Device, IDevice } from '../models/Device';
+import { demoDeviceSelfFilter } from '../utils/demo-scope.util';
 import { AuditLog } from '../models/AuditLog';
 import { NepSession } from '../models/NepSession';
 import { DeviceSettings } from '../models/DeviceSettings';
@@ -31,6 +32,8 @@ export interface ListDevicesOptions {
   bleId?: string;
   page?: number;
   limit?: number;
+  /** true → demo devices ONLY; false/undefined → real devices only. */
+  demoOnly?: boolean;
 }
 
 export interface ListDevicesResult {
@@ -42,9 +45,13 @@ export interface ListDevicesResult {
 export class DevicesService {
   async listDevices(opts: ListDevicesOptions): Promise<ListDevicesResult> {
     const { organizationId, type, bleId, page = 1, limit = 20 } = opts;
+    const orgId = new Types.ObjectId(organizationId);
     const query: Record<string, unknown> = {
-      organizationId: new Types.ObjectId(organizationId),
+      organizationId: orgId,
       deletedAt: null,
+      // A demo device is a device — the list has to honour the mode too, or the
+      // toggle would be visible but inert on /devices.
+      ...(await demoDeviceSelfFilter(orgId, !!opts.demoOnly)),
     };
     if (type) query.type = type;
     if (bleId) query.bleId = bleId;
@@ -74,9 +81,13 @@ export class DevicesService {
     },
     actor: { userId: string; email: string },
   ): Promise<{ device: IDevice; created: boolean }> {
+    // Matched on type as well as bleId, mirroring the unique index: the two apps
+    // share `bleId: 'demo'`, and without `type` the MET app would be handed the
+    // NEP demo device (and then upload MET records against it).
     const existing = await Device.findOne({
       organizationId: new Types.ObjectId(organizationId),
       bleId: body.bleId,
+      type: body.type,
       deletedAt: null,
     });
     if (existing) {

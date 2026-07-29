@@ -31,6 +31,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
+import { parseDemoOnly } from '../utils/demo-scope.util';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto, UpdateDeviceDto, UpdateDeviceSettingsDto, FirmwareTargetDto } from './dto';
 
@@ -56,6 +57,7 @@ export class DevicesController {
   @ApiQuery({ name: 'bleId', required: false, description: 'Filter by BLE identifier — useful for re-pairing lookup' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo devices ONLY; omitted/false → real devices only' })
   @ApiOkResponse({
     description: 'Paginated device list',
     schema: { example: { data: [DEVICE_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } },
@@ -68,6 +70,7 @@ export class DevicesController {
     @Query('bleId') bleId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.devicesService.listDevices({
@@ -76,6 +79,7 @@ export class DevicesController {
       bleId,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
+      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -86,10 +90,21 @@ export class DevicesController {
       'Send the instrument\'s BLE id, a display name, and `type` ("MET-LINK" or "NEP-LINK" — the ' +
       'only difference between the two apps, see the **Examples** dropdown).\n\n' +
       '**Save the returned `_id` on the phone — that is the `deviceId` every upload, heartbeat and ' +
-      'settings call asks for.** This endpoint is **idempotent**: if the same `bleId` was already ' +
-      'registered it returns **200** with the existing device instead of an error, so a re-install ' +
-      'or re-pair just works. HTTP **201** means a brand-new device was created. The ' +
-      'registering user is remembered so the admin panel can show who added each device.',
+      'settings call asks for.** This endpoint is **idempotent on `(bleId, type)` within your ' +
+      'organisation**: register the same pair again and you get **200** with the existing device ' +
+      'instead of an error, so a re-install or re-pair just works. HTTP **201** means a brand-new ' +
+      'device was created. The registering user is remembered so the admin panel can show who ' +
+      'added each device.\n\n' +
+      '⚠️ **Never hard-code a `deviceId`.** A device `_id` is only valid inside the organisation ' +
+      'that owns it, and yours comes from your access token — so the same instrument has a ' +
+      'different `_id` for a different organisation. Always register and use what comes back.\n\n' +
+      '### Demo mode\n' +
+      'Register **`bleId: "demo"`** to get the device that demo-mode data is uploaded against. ' +
+      'Because idempotency includes `type`, both apps send the same `bleId` and each receives its ' +
+      'own demo device. The admin panel treats any device whose `bleId` starts with `demo` as a ' +
+      'demo device and **hides it and all its data by default** — it appears only when the ' +
+      'operator turns on "Show demo devices" (`demoOnly=true`), which then shows demo data *instead ' +
+      'of* real data, never mixed in.',
   })
   @Consumers('nep-link', 'met-link')
   @ApiBody({
@@ -102,6 +117,14 @@ export class DevicesController {
       metLinkDevice: {
         summary: '📱 MET-LINK device',
         value: { bleId: 'MET-LINK-001', name: 'Weather Station Roof', type: 'MET-LINK', firmwareVersion: '1.4.0' },
+      },
+      demoNep: {
+        summary: '🧪 Demo device — NEP-LINK',
+        value: { bleId: 'demo', name: 'DEMO', type: 'NEP-LINK' },
+      },
+      demoMet: {
+        summary: '🧪 Demo device — MET-LINK (same bleId, separated by type)',
+        value: { bleId: 'demo', name: 'DEMO', type: 'MET-LINK' },
       },
     },
   })
@@ -152,7 +175,7 @@ export class DevicesController {
   }
 
   @ApiOperation({ summary: 'Firmware status per device (flags devices on outdated firmware)' })
-  @ApiQuery({ name: 'type', required: false, enum: ['MET-LINK', 'NEP-LINK'] })
+  @ApiQuery({ name: 'type', required: false, enum: ['MET-LINK', 'NEP-LINK'], description: 'MET-LINK | NEP-LINK' })
   @ApiOkResponse({
     description: 'Per-device firmware status',
     schema: { example: { data: [{ deviceId: '664a1f2e3c4d5e6f7a8b9c0f', name: 'River Intake Probe', type: 'NEP-LINK', firmwareVersion: '2.1.0', target: '2.2.0', targetSource: 'configured', outdated: true }], meta: { total: 1, outdated: 1 } } },

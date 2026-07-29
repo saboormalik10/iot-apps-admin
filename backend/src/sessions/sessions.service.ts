@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { NepSession, INepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
+import { demoDeviceFilter } from '../utils/demo-scope.util';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { DomainEvent } from '../realtime/realtime.events';
@@ -64,6 +65,8 @@ export interface ListSessionsOptions {
   probeRange?: 'R1' | 'R2' | 'R3';
   page?: number;
   limit?: number;
+  /** true → demo-device sessions ONLY; false/undefined → real-device sessions only. */
+  demoOnly?: boolean;
 }
 
 export interface CreateSessionInput {
@@ -198,7 +201,13 @@ export class SessionsService {
 
   async listSessions(opts: ListSessionsOptions) {
     const { organizationId, deviceId, from, to, probeRange, page = 1, limit = 20 } = opts;
-    const query: Record<string, unknown> = { organizationId: new Types.ObjectId(organizationId), deletedAt: null };
+    const orgId = new Types.ObjectId(organizationId);
+    const query: Record<string, unknown> = {
+      organizationId: orgId,
+      deletedAt: null,
+      // Demo/real is decided by the device that recorded the session.
+      ...(await demoDeviceFilter(orgId, !!opts.demoOnly)),
+    };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (probeRange) query.probeRange = probeRange;
     if (from || to) {

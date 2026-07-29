@@ -1,6 +1,7 @@
 import { applyDecorators } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiTooManyRequestsResponse,
@@ -22,6 +23,7 @@ export type ApiErrorKind =
   | 'unauthorized'
   | 'forbidden'
   | 'notFound'
+  | 'conflict'
   | 'unsupportedMediaType'
   | 'tooManyRequests';
 
@@ -61,6 +63,13 @@ const MAP: Record<ApiErrorKind, () => MethodDecorator & ClassDecorator> = {
     ApiNotFoundResponse({
       description: 'Resource not found',
       ...envelope('NOT_FOUND', 'Device not found'),
+    }),
+  conflict: () =>
+    ApiConflictResponse({
+      description:
+        'The resource already exists and belongs to someone else — retrying will not help. ' +
+        'Distinct from 404: the id IS taken, just not by you.',
+      ...envelope('SESSION_ID_CONFLICT', 'Session id already exists'),
     }),
   unsupportedMediaType: () =>
     ApiUnsupportedMediaTypeResponse({

@@ -6,6 +6,7 @@ import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { parseMeasureSentence, isHeaderSentence, parseTimestampMs } from '../utils/measure-parser.util';
+import { demoDeviceFilter } from '../utils/demo-scope.util';
 import { DomainEvent } from '../realtime/realtime.events';
 
 export interface ListRecordsOptions {
@@ -15,6 +16,8 @@ export interface ListRecordsOptions {
   to?: number;
   page?: number;
   limit?: number;
+  /** true → demo-device records ONLY; false/undefined → real-device records only. */
+  demoOnly?: boolean;
 }
 
 export interface CreateRecordInput {
@@ -46,7 +49,13 @@ export class RecordsService {
 
   async listRecords(opts: ListRecordsOptions) {
     const { organizationId, deviceId, from, to, page = 1, limit = 20 } = opts;
-    const query: Record<string, unknown> = { organizationId: new Types.ObjectId(organizationId), deletedAt: null };
+    const orgId = new Types.ObjectId(organizationId);
+    const query: Record<string, unknown> = {
+      organizationId: orgId,
+      deletedAt: null,
+      // Demo/real is decided by the device that recorded it.
+      ...(await demoDeviceFilter(orgId, !!opts.demoOnly)),
+    };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (from || to) {
       query.dateStartMs = {};

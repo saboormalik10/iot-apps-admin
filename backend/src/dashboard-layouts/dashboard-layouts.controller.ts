@@ -25,7 +25,7 @@ export class DashboardLayoutsController {
   constructor(private readonly service: DashboardLayoutsService) {}
 
   @ApiOperation({ summary: "List the current user's saved layouts (optionally per device)" })
-  @ApiQuery({ name: 'deviceId', required: false })
+  @ApiQuery({ name: 'deviceId', required: false, description: 'Device ObjectId (from POST /v1/devices)' })
   @ApiOkResponse({ description: 'Saved layouts' })
   @ApiErrors('unauthorized')
   @Get()

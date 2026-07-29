@@ -1,7 +1,7 @@
 {
   "name": "observator-backend",
   "version": "1.0.0",
-  "description": "Observator Instruments — Cloud API Backend",
+  "description": "Observator Instruments \u2014 Cloud API Backend",
   "main": "dist/main.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
@@ -14,7 +14,9 @@
     "test": "jest --config test/jest-e2e.json",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/**/*.ts",
-    "migrate:metrecord-index": "ts-node src/scripts/migrate-metrecord-index.ts"
+    "migrate:metrecord-index": "ts-node src/scripts/migrate-metrecord-index.ts",
+    "migrate:device-bleid-index": "ts-node src/scripts/migrate-device-bleid-index.ts",
+    "check:swagger": "ts-node src/scripts/check-swagger-sync.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

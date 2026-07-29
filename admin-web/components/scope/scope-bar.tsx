@@ -24,15 +24,16 @@ const ALL_TYPES = '__all_types__';
  * Routes that are not "data pages" — the Scope Bar hides itself here (plan §3.6).
  * `/import` belongs on this list: the wizard picks its own target device, and a
  * scope row above it would imply the import honours the device/date filter.
- * `/analytics` renders its own reduced, type-scoped bar (AnalyticsScopeBar) — no
- * device-type select and no demo toggle — so the global bar steps aside there.
+ * `/analytics` renders its own reduced, type-scoped bar (AnalyticsScopeBar) —
+ * no device-type select (each tab is locked to one family) — so the global bar
+ * steps aside there. That bar carries its own demo toggle.
  */
 const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import', '/analytics'];
 
 /**
  * ScopeBar — the persistent, URL-synced filter row inherited by every data page
  * (plan §3.6). Defaults to All / whole fleet and narrows on demand: device,
- * device type, date range, and demo-data inclusion. One-click reset to All.
+ * device type, date range, and real-vs-demo mode. One-click reset to All.
  * Units stay in the app-shell toggle (global), so they are not duplicated here.
  */
 export function ScopeBar() {
@@ -80,11 +81,13 @@ export function ScopeBar() {
       <div className="flex items-center gap-2 pl-1">
         <Switch
           id="scope-demo"
-          checked={scope.includeDemo}
-          onCheckedChange={(v) => setScope({ includeDemo: v })}
+          checked={scope.demoOnly}
+          onCheckedChange={(v) => setScope({ demoOnly: v })}
         />
         <Label htmlFor="scope-demo" className="text-xs text-muted-foreground">
-          Include demo data
+          {/* A mode, not an "include": on shows demo-device data INSTEAD of real,
+              so the two are never mixed into the same chart or count. */}
+          Show demo devices
         </Label>
       </div>
 

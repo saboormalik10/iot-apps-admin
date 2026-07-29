@@ -84,8 +84,12 @@ export class SyncController {
           timezoneOffset: 10,
           turbidityEnabled: true,
           temperatureEnabled: true,
+          locationEnabled: true,
+          comment: 'River sampling at intake',
+          isDemoMode: false,
           samples: [
-            { timestamp: 1746057601000, turbidityValue: 245.5, temperatureValue: 18.4, probeRange: 'R2', batteryLevel: 85 },
+            { timestamp: 1746057601000, turbidityValue: 245.5, temperatureValue: 18.4, probeRange: 'R2',
+              locationLat: -27.4698, locationLng: 153.0251, batteryLevel: 85, batteryCharging: false },
           ],
         },
       },

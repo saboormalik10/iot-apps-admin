@@ -45,7 +45,17 @@ const deviceSchema = new Schema<IDevice>(
   { timestamps: true },
 );
 
-deviceSchema.index({ organizationId: 1, bleId: 1 }, { unique: true });
+// `type` is part of the uniqueness key so one bleId can exist once per device
+// family. That is what lets BOTH apps register the shared demo device as plain
+// `bleId: 'demo'` — MET-LINK and NEP-LINK each get their own row, separated by
+// type, instead of the second app silently receiving the first app's device.
+// Real hardware keeps a globally distinct bleId, so nothing else is affected.
+//
+// NOTE: Mongoose creates indexes but never drops them. The old
+// `organizationId_1_bleId_1` unique index must be dropped on any existing
+// database or it still blocks the second demo device — see
+// scripts/migrate-device-bleid-index.ts.
+deviceSchema.index({ organizationId: 1, bleId: 1, type: 1 }, { unique: true });
 deviceSchema.index({ organizationId: 1, type: 1 });
 deviceSchema.index({ lastSeenAt: -1 });
 

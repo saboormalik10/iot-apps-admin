@@ -28,21 +28,27 @@ export function useSummary() {
   return useQuery({
     // Scope (type/device/demo) appended AFTER the prefix so realtime
     // prefix-invalidations on queryKeys.summary still match.
-    queryKey: [...queryKeys.summary, scope.includeDemo, scope.deviceType ?? null, scope.deviceId ?? null] as const,
+    queryKey: [...queryKeys.summary, scope.demoOnly, scope.deviceType ?? null, scope.deviceId ?? null] as const,
     queryFn: ({ signal }) =>
-      getSummary({ includeDemo: scope.includeDemo, type: scope.deviceType, deviceId: scope.deviceId }, signal),
+      getSummary({ demoOnly: scope.demoOnly, type: scope.deviceType, deviceId: scope.deviceId }, signal),
   });
 }
 
 export function useDashboardDevices() {
-  return useQuery({ queryKey: queryKeys.dashboardDevices, queryFn: ({ signal }) => getDashboardDevices(signal) });
+  // This feeds the scope-bar device picker AND the fleet table, so scoping it is
+  // what stops a demo device being selectable in real mode (and the reverse).
+  const { scope } = useScope();
+  return useQuery({
+    queryKey: [...queryKeys.dashboardDevices, scope.demoOnly] as const,
+    queryFn: ({ signal }) => getDashboardDevices(scope.demoOnly, signal),
+  });
 }
 
 export function useMetLatest(deviceId?: string) {
   const { scope } = useScope();
   return useQuery({
-    queryKey: [...queryKeys.metLatest(deviceId ?? ''), scope.includeDemo] as const,
-    queryFn: ({ signal }) => getMetLatest(deviceId!, scope.includeDemo, signal),
+    queryKey: [...queryKeys.metLatest(deviceId ?? ''), scope.demoOnly] as const,
+    queryFn: ({ signal }) => getMetLatest(deviceId!, scope.demoOnly, signal),
     enabled: Boolean(deviceId),
   });
 }
@@ -50,16 +56,16 @@ export function useMetLatest(deviceId?: string) {
 export function useMetWindrose(deviceId?: string) {
   const { scope } = useScope();
   return useQuery({
-    queryKey: [...queryKeys.metWindrose(deviceId ?? ''), scope.includeDemo] as const,
-    queryFn: ({ signal }) => getMetWindrose(deviceId!, scope.includeDemo, signal),
+    queryKey: [...queryKeys.metWindrose(deviceId ?? ''), scope.demoOnly] as const,
+    queryFn: ({ signal }) => getMetWindrose(deviceId!, scope.demoOnly, signal),
     enabled: Boolean(deviceId),
   });
 }
 
-export function useMetHistory(params?: { deviceId: string; sensor: string; from: number; to: number; includeDemo?: boolean }) {
+export function useMetHistory(params?: { deviceId: string; sensor: string; from: number; to: number; demoOnly?: boolean }) {
   return useQuery({
     queryKey: params
-      ? ([...queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to), params.includeDemo ?? false] as const)
+      ? ([...queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to), params.demoOnly ?? false] as const)
       : (['met-history', 'idle'] as const),
     queryFn: ({ signal }) => getMetHistory(params!, signal),
     enabled: Boolean(params?.deviceId),
@@ -76,13 +82,13 @@ export function useMetHistoryMulti(params?: {
   sensors: string[];
   from: number;
   to: number;
-  includeDemo?: boolean;
+  demoOnly?: boolean;
 }) {
   return useQuery({
     queryKey: params
       ? ([
           ...queryKeys.metHistoryMulti(params.deviceId, params.sensors.join(','), params.from, params.to),
-          params.includeDemo ?? false,
+          params.demoOnly ?? false,
         ] as const)
       : (['met-history-multi', 'idle'] as const),
     queryFn: ({ signal }) => getMetHistoryMulti(params!, signal),
@@ -93,8 +99,8 @@ export function useMetHistoryMulti(params?: {
 export function useNepLatest(deviceId?: string) {
   const { scope } = useScope();
   return useQuery({
-    queryKey: [...queryKeys.nepLatest(deviceId ?? ''), scope.includeDemo] as const,
-    queryFn: ({ signal }) => getNepLatest(deviceId!, scope.includeDemo, signal),
+    queryKey: [...queryKeys.nepLatest(deviceId ?? ''), scope.demoOnly] as const,
+    queryFn: ({ signal }) => getNepLatest(deviceId!, scope.demoOnly, signal),
     enabled: Boolean(deviceId),
   });
 }

@@ -29,6 +29,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
+import { parseDemoOnly } from '../utils/demo-scope.util';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 
@@ -53,9 +54,10 @@ export class SessionsController {
   @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
   @ApiQuery({ name: 'from', required: false, description: 'Unix ms — start of range' })
   @ApiQuery({ name: 'to', required: false, description: 'Unix ms — end of range' })
-  @ApiQuery({ name: 'probeRange', required: false, enum: ['R1', 'R2', 'R3'] })
+  @ApiQuery({ name: 'probeRange', required: false, enum: ['R1', 'R2', 'R3'], description: 'R1 | R2 | R3 — filter to one probe range' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
+  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Paginated sessions', schema: { example: { data: [SESSION_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
   @ApiErrors('unauthorized')
   @Get()
@@ -67,6 +69,7 @@ export class SessionsController {
     @Query('probeRange') probeRange?: 'R1' | 'R2' | 'R3',
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.sessionsService.listSessions({
@@ -77,6 +80,7 @@ export class SessionsController {
       probeRange,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
+      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -85,9 +89,14 @@ export class SessionsController {
     description:
       '**Call this when a measuring session finishes (or to sync one recorded offline).**\n\n' +
       'Generate a UUID v4 on the phone and send it as `id` — if the upload is interrupted, retry ' +
-      'with the SAME id and nothing is duplicated. Send the session\'s metadata here, then push its ' +
+      'with the SAME id and nothing is duplicated. **A re-sync also updates the session**: a ' +
+      'changed `comment` is applied, and `endTimestamp` is filled in if the first upload did not ' +
+      'have it yet. Sample-derived stats (`sampleCount`, `probeRange`, the turbidity/temperature ' +
+      'aggregates) are server-owned and never taken from the payload. Send the session\'s metadata here, then push its ' +
       'readings with `POST /v1/sessions/{id}/samples`. The session is saved with the logged-in ' +
-      'user\'s id, so the admin panel shows who recorded it.',
+      'user\'s id, so the admin panel shows who recorded it.\n\n' +
+      '### Demo mode\n' +
+      'Set `isDemoMode: true` **and** send the `deviceId` of your demo device (register it with `POST /v1/devices` using `bleId: "demo"`). Demo data is hidden from the admin panel by default and only appears when the operator switches to demo mode — it is never mixed into real readings. A hard-coded placeholder `deviceId` will be rejected with **404**.',
   })
   @Consumers('nep-link')
   @ApiBody({
@@ -105,13 +114,15 @@ export class SessionsController {
           timezoneOffset: 10,
           turbidityEnabled: true,
           temperatureEnabled: true,
+          locationEnabled: true,
           comment: 'River sampling at intake',
+          isDemoMode: false,
         },
       },
     },
   })
   @ApiCreatedResponse({ description: 'Created session', schema: { example: { data: SESSION_EXAMPLE } } })
-  @ApiErrors('badRequest', 'unauthorized', 'notFound')
+  @ApiErrors('badRequest', 'unauthorized', 'notFound', 'conflict')
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
@@ -183,9 +194,13 @@ export class SessionsController {
     summary: 'Bulk insert samples for a session',
     description:
       '**Call this right after uploading the session** to push its readings. `:id` is the session ' +
-      'UUID you generated. Send up to **7200 samples per call** — for longer sessions, split into ' +
-      'several calls. Include `locationLat`/`locationLng` when the phone has a GPS fix: those points ' +
-      'draw the session on the map AND place the device on the admin panel\'s fleet map.',
+      'UUID you generated. Send up to **7200 samples per call** — go over and you get **400 ' +
+      '`TOO_MANY_SAMPLES`**, so split longer sessions into several calls (5000 is a comfortable ' +
+      'chunk at 1 sample/second). Include `locationLat`/`locationLng` when the phone has a GPS fix: ' +
+      'those points draw the session on the map AND place the device on the admin panel\'s fleet map.\n\n' +
+      '**Retrying is safe.** Samples are de-duplicated by `timestamp` within the session, so ' +
+      're-sending a batch after a dropped connection inserts only what was missing — `inserted` in ' +
+      'the response tells you how many were actually new (0 means it was all already there).',
   })
   @Consumers('nep-link')
   @ApiBody({
@@ -195,7 +210,9 @@ export class SessionsController {
         summary: '📱 NEP-LINK samples',
         value: {
           samples: [
-            { timestamp: 1746057601000, turbidityValue: 245.5, temperatureValue: 18.4, probeRange: 'R2', batteryLevel: 85 },
+            { timestamp: 1746057601000, turbidityValue: 245.5, temperatureValue: 18.4, probeRange: 'R2',
+              locationLat: -27.4698, locationLng: 153.0251, batteryLevel: 85, batteryRawVoltage: 3.9,
+              batteryCharging: false, demoModeEnabled: false },
           ],
         },
       },

@@ -42,6 +42,9 @@ export function SessionsList() {
     search: search.trim() || undefined,
     page,
     limit: 20,
+    // Demo mode is part of the query, so it is part of the react-query key too —
+    // without it the toggle would serve the other mode's cached page.
+    demoOnly: scope.demoOnly || undefined,
   });
 
   const columns = useMemo<ColumnDef<NepSessionRow, unknown>[]>(
