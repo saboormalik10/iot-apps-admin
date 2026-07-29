@@ -33,8 +33,14 @@ describe('PushService (e2e)', () => {
         });
       },
     };
-    (service as unknown as { messagingPromise: Promise<unknown> }).messagingPromise =
-      Promise.resolve(fake);
+    const internals = service as unknown as {
+      messagingPromise: Promise<unknown>;
+      pushEnabled: boolean;
+    };
+    internals.messagingPromise = Promise.resolve(fake);
+    // Push is switched off in production right now; flip the instance copy so
+    // the dispatch/pruning logic below stays covered and ready to re-enable.
+    internals.pushEnabled = true;
     return { service, batches };
   };
 
@@ -135,5 +141,19 @@ describe('PushService (e2e)', () => {
     const unconfigured = new PushService();
     expect(await unconfigured.sendToUsers(orgId.toString(), [userA.toString()], { type: 'alert', title: 't', body: 'b', data: null }))
       .toEqual({ sent: 0, failed: 0, pruned: 0 });
+  });
+
+  it('is off by the master switch — WebSocket is the only delivery path', async () => {
+    // Guards the current product decision: even with credentials present and
+    // tokens registered, a default PushService must not dispatch anything.
+    process.env.FCM_SERVICE_ACCOUNT_B64 = Buffer.from('{"unused":true}').toString('base64');
+    const prod = new PushService();
+
+    expect(await prod.sendToUsers(orgId.toString(), [userA.toString()], {
+      type: 'alert', title: 'Turbidity high', body: '512 NTU', data: null,
+    })).toEqual({ sent: 0, failed: 0, pruned: 0 });
+
+    // Tokens are deliberately left untouched so the registry keeps filling.
+    expect(await NotificationToken.countDocuments({ organizationId: orgId })).toBe(4);
   });
 });

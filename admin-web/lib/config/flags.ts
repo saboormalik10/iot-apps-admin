@@ -31,7 +31,10 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   records: true,
   analytics: true,
   // Month 11 lands alerts, the notifications feed + token registry, and share links.
-  alerts: true,
+  // Alerts are switched off for now (product decision) — the backend no longer
+  // evaluates rules either, so the section would have nothing to manage. The
+  // notifications feed stays on; it is delivered over the WebSocket gateway.
+  alerts: false,
   notifications: true,
   share: true,
   // Month 12 lands the import wizard + batch export and the global command palette.

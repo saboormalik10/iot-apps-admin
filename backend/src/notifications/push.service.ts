@@ -5,6 +5,13 @@ import type { BatchResponse, Messaging, MulticastMessage } from 'firebase-admin/
 import { NotificationType } from '../models/Notification';
 import { NotificationToken, TOKEN_TTL_DAYS } from '../models/NotificationToken';
 
+/**
+ * Master switch for real device push. `false` → notifications go out over the
+ * WebSocket gateway only, and the FCM code below never runs regardless of
+ * whether a service account is configured. Flip to `true` to re-enable.
+ */
+const PUSH_ENABLED = false;
+
 /** FCM caps a multicast send at 500 tokens per call. */
 const MULTICAST_CHUNK = 500;
 
@@ -63,6 +70,12 @@ export class PushService {
   private messagingPromise: Promise<Messaging | null> | null = null;
 
   /**
+   * Instance copy of the master switch, so the test suite can still exercise the
+   * dispatch/pruning logic while push stays off in production.
+   */
+  private readonly pushEnabled: boolean = PUSH_ENABLED;
+
+  /**
    * Push the notification to the given users' registered devices.
    *
    * Scoped by userId, not just organization: an alert rule names the people it
@@ -75,6 +88,16 @@ export class PushService {
     payload: PushPayload,
   ): Promise<PushResult> {
     const empty: PushResult = { sent: 0, failed: 0, pruned: 0 };
+
+    // ── Device push is switched off (product decision) ────────────────────────
+    // Notifications are delivered over the WebSocket gateway only. Everything
+    // below still works and is covered by tests; delete this block to switch
+    // real FCM/APNs delivery back on. Token registration is deliberately left
+    // running so the registry keeps filling in the meantime.
+    if (!this.pushEnabled) {
+      this.logger.debug(`[push off] "${payload.title}" — WebSocket delivery only`);
+      return empty;
+    }
 
     const messaging = await this.getMessaging();
     if (!messaging) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Cpu, Wifi, WifiOff, FileText, Waves, BellRing } from 'lucide-react';
+import { Cpu, Wifi, WifiOff, FileText, Waves } from 'lucide-react'; // BellRing ← armed-alerts tile disabled
 import { StatTile } from '@/components/charts/stat-tile';
 import { TableSkeleton } from '@/components/screen-states';
 import { fmt } from '@/components/charts/chart-utils';
@@ -50,13 +50,16 @@ export function KpiRow() {
           sparkRole="chart-1"
         />
       ) : null}
+      {/* Armed-alerts tile removed with the alerts section. The backend still
+          returns `activeAlertRules` (a count of previously configured rules),
+          but nothing evaluates them, so the number would be misleading.
       <StatTile
         label="Armed alerts"
         value={fmt(data.activeAlertRules, 0)}
         sub="View alert rules"
         icon={<BellRing className="h-4 w-4" />}
         href="/alerts"
-      />
+      /> */}
       {!effectiveType ? (
         <StatTile label="MET / NEP" value={`${fmt(data.metLinkDevices, 0)} / ${fmt(data.nepLinkDevices, 0)}`} />
       ) : null}

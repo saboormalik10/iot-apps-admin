@@ -14,6 +14,8 @@ import {
 import RNFS from 'react-native-fs';
 import { getDBConnection } from '../../utils/db';
 import { bulk_insert_samples, create_session, upload_session_file } from '../../api/apiService';
+import { getDemoDeviceId } from '../../actions/DeviceActions';
+import { useAuth } from '../../context/AuthContext';
 import { CreateSessionDto, SampleDto, RNFile } from '../../types/types';
 import IonIcon from '@react-native-vector-icons/ionicons';
 import { lightColors } from '@rneui/themed';
@@ -70,6 +72,10 @@ const WEIGHTS = { session: 5, samples: 20, images: 75 };
 const ListItem: React.FC<ListItemProps> = ({ id, timestamp, itemName, onPressHandler, update_status }) => {
   const formattedDateTime = formatDateTime(timestamp);
   const thumbnailUri = `file://${RNFS.DocumentDirectoryPath}/loggingSessionThumnails/${id}.jpg`;
+
+  // Demo sessions upload against a DEMO device registered in this user's org,
+  // so the sync path needs to know who is logged in.
+  const { user } = useAuth();
 
   // Local hook to handle individual list-row item loading spinner metrics
   const [isSyncing, setIsSyncing] = useState(false);
@@ -135,10 +141,23 @@ const ListItem: React.FC<ListItemProps> = ({ id, timestamp, itemName, onPressHan
 
       console.log(`📦 Found meta parameters & compiled ${compiledSamples.length} samples. Transmitting...`);
 
-      // 3. 🟢 FIXED: Correctly mapped keys to match 'CreateSessionDto' rules
+      // 3. Resolve the device id the server will accept.
+      //
+      // A device `_id` is only valid inside the organization that owns it, so it
+      // can never be hard-coded. Demo sessions previously sent the Swagger example
+      // id '664a1f2e3c4d5e6f7a8b9c0f', which belongs to no device — the server
+      // rejects it with 404 ("Device not found in organisation"). Instead, register
+      // a real DEMO device for the logged-in user's org and reuse its id; the
+      // endpoint is idempotent, so nothing is duplicated.
+      const isDemoSession = sessionRow.deviceId == 'demo';
+      const resolvedDeviceId = isDemoSession
+        ? await getDemoDeviceId(user?.organizationId ?? '')
+        : sessionRow.deviceId;
+
+      // 4. 🟢 FIXED: Correctly mapped keys to match 'CreateSessionDto' rules
       const sessionPayload: CreateSessionDto = {
         id: sessionRow.id,
-        deviceId: sessionRow.deviceId != 'demo' ? sessionRow.deviceId : '664a1f2e3c4d5e6f7a8b9c0f', // Fix: mapped deviceId correctly
+        deviceId: resolvedDeviceId,
         deviceName: sessionRow.deviceName || 'Unknown Device',
         startTimestamp: Number(sessionRow.timestamp), // Fix: mapped timestamp to startTimestamp
         timezoneName: sessionRow.timezoneName || 'Asia/Karachi',
@@ -146,10 +165,12 @@ const ListItem: React.FC<ListItemProps> = ({ id, timestamp, itemName, onPressHan
         turbidityEnabled: Boolean(sessionRow.turbidityEnabled),
         temperatureEnabled: Boolean(sessionRow.temperatureEnabled),
         comment: sessionRow.comment || '',
-        // isDemoMode: compiledSamples.length > 0 ? compiledSamples[0].demoModeEnabled : false,
+        // Flags the session as demo so it is excluded from analytics and fleet
+        // rollups (the backend filters on this — `if (!includeDemo) isDemoMode: false`).
+        isDemoMode: isDemoSession,
       };
 
-      // 4. STEP 1 API CALL: Create the base session container registry entry
+      // 5. STEP 1 API CALL: Create the base session container registry entry
       console.log('📡 [Step 1/2] Creating session profile on server...');
       console.log('sessionPayload', sessionPayload);
       console.log('compiledSamples', compiledSamples);
@@ -159,7 +180,7 @@ const ListItem: React.FC<ListItemProps> = ({ id, timestamp, itemName, onPressHan
       setSyncPercent(completedWeight);
       updateSyncNotification(completedWeight, 'Session created');
 
-      // 5. STEP 2 API CALL: Bulk upload telemetry arrays if samples exist
+      // 6. STEP 2 API CALL: Bulk upload telemetry arrays if samples exist
       // ── Phase 2: bulk insert samples (20%) ────────────────
       if (compiledSamples.length > 0) {
         await bulk_insert_samples(id, compiledSamples, (p) => reportProgress(WEIGHTS.samples, p));
@@ -170,7 +191,7 @@ const ListItem: React.FC<ListItemProps> = ({ id, timestamp, itemName, onPressHan
 
 
       // upload session related images
-      // 6. Upload session images (photos only — map images are excluded on purpose)
+      // 7. Upload session images (photos only — map images are excluded on purpose)
       // Path matches the "images" folder used in LoggingSessionView's updateImages/getAttachments
       // ── Phase 3: images (75%, split evenly per image) ─────
       const imagesDirPath = `${RNFS.DocumentDirectoryPath}/loggingSessionFiles/${id}/images`;

@@ -8,8 +8,11 @@ describe('notification deep-links (plan §6)', () => {
   it('firmware → that device detail', () => {
     expect(notificationLink({ type: 'firmware', data: { deviceId: 'd9', current: '1.0', target: '1.1' } })).toBe('/devices/d9');
   });
-  it('alert → the alerts page', () => {
-    expect(notificationLink({ type: 'alert', data: { ruleId: 'r1', deviceId: 'd1' } })).toBe('/alerts');
+  // The alerts section is switched off, so historical `alert` rows in the feed
+  // link to the device that fired instead of the (now absent) rule list.
+  it('alert → the device that fired, while the alerts page is disabled', () => {
+    expect(notificationLink({ type: 'alert', data: { ruleId: 'r1', deviceId: 'd1' } })).toBe('/devices/d1');
+    expect(notificationLink({ type: 'alert', data: { ruleId: 'r1' } })).toBe('/devices');
   });
   it('falls back to the section landing when the id is missing', () => {
     expect(notificationLink({ type: 'session_complete', data: null })).toBe('/sessions');

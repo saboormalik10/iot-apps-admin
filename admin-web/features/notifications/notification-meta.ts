@@ -26,9 +26,13 @@ export function notificationMeta(type: NotificationKind): NotificationMeta {
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
 /**
- * Where a notification deep-links. `alert` → the rule list; `session_complete` →
- * that session's detail; `firmware` → that device's detail (firmware timeline).
- * Falls back to the section landing when the id is missing.
+ * Where a notification deep-links. `session_complete` → that session's detail;
+ * `firmware` → that device's detail (firmware timeline). Falls back to the
+ * section landing when the id is missing.
+ *
+ * `alert` used to point at `/alerts`. That route is switched off, so historical
+ * alert rows in the feed link to the device they fired on instead — restore the
+ * `/alerts` target if the section comes back.
  */
 export function notificationLink(n: { type: NotificationKind; data: Record<string, unknown> | null }): string {
   const d = n.data ?? {};
@@ -39,6 +43,7 @@ export function notificationLink(n: { type: NotificationKind; data: Record<strin
       return str(d.deviceId) ? `/devices/${str(d.deviceId)}` : '/devices';
     case 'alert':
     default:
-      return '/alerts';
+      // return '/alerts';   ← alerts section disabled
+      return str(d.deviceId) ? `/devices/${str(d.deviceId)}` : '/devices';
   }
 }

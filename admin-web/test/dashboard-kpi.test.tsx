@@ -14,20 +14,25 @@ vi.mock('next/navigation', () => {
 });
 
 describe('KpiRow (§10.8 summary enrichment)', () => {
-  it('renders the KPI numbers, the armed-alerts tile, and the sparklines', async () => {
+  it('renders the KPI numbers and the sparklines', async () => {
     renderWithProviders(<KpiRow />);
 
     // Headline counts from the mocked /dashboard/summary.
-    await waitFor(() => expect(screen.getByText('Armed alerts')).toBeInTheDocument());
-    expect(screen.getByText('Devices')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Devices')).toBeInTheDocument());
     expect(screen.getByText('MET records')).toBeInTheDocument();
     expect(screen.getByText('NEP sessions')).toBeInTheDocument();
 
-    // The armed-alerts tile deep-links to /alerts.
-    const alertsLink = screen.getByRole('link', { name: /armed alerts/i });
-    expect(alertsLink).toHaveAttribute('href', '/alerts');
-
     // §10.8 sparklines render as SVGs on the records/sessions tiles.
     await waitFor(() => expect(document.querySelectorAll('svg').length).toBeGreaterThanOrEqual(2));
+  });
+
+  // Alerts are switched off: nothing evaluates rules, so an "armed" count would
+  // be misleading and the /alerts route it linked to no longer exists.
+  it('omits the armed-alerts tile while alerts are disabled', async () => {
+    renderWithProviders(<KpiRow />);
+
+    await waitFor(() => expect(screen.getByText('Devices')).toBeInTheDocument());
+    expect(screen.queryByText('Armed alerts')).toBeNull();
+    expect(screen.queryByRole('link', { name: /armed alerts/i })).toBeNull();
   });
 });

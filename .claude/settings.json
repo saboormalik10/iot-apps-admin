@@ -20,7 +20,9 @@
       "Bash(yarn test:e2e --grep \"renders the sign-in form\" --reporter=list)",
       "Bash(yarn test:e2e --grep \"no serious accessibility violations \\\\\\(axe\\\\\\)\" --reporter=list)",
       "Bash(npx jest *)",
-      "Bash(echo \"--- exit: $? ---\")"
+      "Bash(echo \"--- exit: $? ---\")",
+      "Bash(xargs ls -la)",
+      "Bash(awk '{printf \"%9d B \\(%6.1f kB\\)  %s\\\\n\", $5, $5/1024, $9}')"
     ]
   }
 }

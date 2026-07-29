@@ -7,8 +7,13 @@ import { AppModule } from '../src/app.module';
 
 /**
  * Month 6 — alert-rules CRUD.
+ *
+ * SKIPPED: alerts are switched off (product decision) — `AlertRulesModule` is
+ * unregistered in app.module.ts, so every `/v1/alert-rules` route returns 404
+ * and nothing evaluates thresholds. The suite is left intact and unmodified;
+ * change `describe.skip` back to `describe` when the module is re-registered.
  */
-describe('Alert rules (e2e)', () => {
+describe.skip('Alert rules (e2e)', () => {
   let app: INestApplication;
   let httpServer: unknown;
   let adminToken: string;

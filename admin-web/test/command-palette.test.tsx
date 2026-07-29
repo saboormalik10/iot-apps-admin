@@ -101,10 +101,12 @@ describe('CommandPalette (plan §13)', () => {
     const u = userEvent.setup();
     renderPalette();
     await u.click(screen.getByRole('button', { name: /search devices, sessions and records/i }));
-    await u.type(screen.getByRole('combobox'), 'alert');
+    // Was 'alert' before the alerts section was switched off — that destination
+    // no longer exists in the nav, so filter on another one.
+    await u.type(screen.getByRole('combobox'), 'notif');
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /alerts/i })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /notifications/i })).toBeInTheDocument();
       expect(screen.queryByRole('option', { name: /dashboard/i })).toBeNull();
     });
   });

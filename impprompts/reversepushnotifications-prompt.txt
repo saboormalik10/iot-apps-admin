@@ -1,0 +1,94 @@
+Re-enable the alerts feature and device push notifications. Both were commented
+out (not deleted) in a single change; every edit site has a comment saying what
+to restore. Nothing was renamed or removed, so this is a pure uncomment pass.
+
+## Part 1 — Backend: re-enable alert rules
+
+1. `backend/src/app.module.ts`
+   - Uncomment the `import { AlertRulesModule } from './alert-rules/alert-rules.module';`
+     line and delete the 4-line explanatory comment above it.
+   - Uncomment `AlertRulesModule,` in the `imports` array.
+   This restores the `/v1/alert-rules` endpoints AND `AlertEvaluationService`
+   (threshold evaluation) in one go — nothing else was touched under `alert-rules/`.
+
+2. `backend/test/alert-rules.e2e-spec.ts`
+   - Change `describe.skip(` back to `describe(` and remove the SKIPPED note in
+     the docblock. The suite body was never modified.
+
+## Part 2 — Backend: re-enable device push (FCM/APNs)
+
+3. `backend/src/notifications/push.service.ts`
+   - Set `const PUSH_ENABLED = false;` to `true`.
+   - Optionally delete the `if (!this.pushEnabled)` early-return block in
+     `sendToUsers` and the `pushEnabled` field, since the switch is then always on.
+
+4. `backend/test/push.e2e-spec.ts`
+   - DELETE the test named `'is off by the master switch — WebSocket is the only
+     delivery path'`. It asserts push does nothing and WILL fail once enabled.
+   - Leave `internals.pushEnabled = true` in the `withFakeFcm` helper (harmless).
+
+5. Push only actually delivers once a Firebase service account is configured:
+   set `FCM_SERVICE_ACCOUNT_B64` (base64 of the service-account JSON) on the
+   backend host. Without it the service logs and no-ops by design. iOS also needs
+   an APNs `.p8` auth key uploaded in the Firebase console. See
+   `backend/.env.example` for the full setup notes.
+
+## Part 3 — Admin panel: restore the Alerts section
+
+6. `admin-web/lib/config/flags.ts` — set `alerts: false` back to `alerts: true`
+   and drop the 3-line comment explaining why it was off.
+
+7. `admin-web/components/app-shell/nav-config.ts`
+   - Uncomment the `Bell,` icon import.
+   - Uncomment the alerts nav entry:
+     `{ key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },`
+
+8. `admin-web/features/dashboard/dashboard-home.tsx`
+   - Uncomment the `ActiveAlertsPanel` import.
+   - Uncomment the `<div className="space-y-4"><ActiveAlertsPanel /></div>` block.
+   - IMPORTANT: change the live-tiles column back from `xl:col-span-3` to
+     `xl:col-span-2`, or the alerts panel will wrap to its own row.
+
+9. `admin-web/features/dashboard/kpi-row.tsx`
+   - Restore `BellRing` to the `lucide-react` import.
+   - Uncomment the `<StatTile label="Armed alerts" ... href="/alerts" />` block.
+
+10. `admin-web/features/notifications/notification-meta.ts`
+    - In `notificationLink`, the `case 'alert'` should `return '/alerts';` again
+      (replacing the `/devices/${deviceId}` fallback). Restore the docblock line
+      describing `alert` → the rule list.
+
+## Part 4 — Restore the tests that were flipped
+
+11. `admin-web/test/notifications.test.ts` — the alert deep-link test should expect
+    `'/alerts'` again, not `/devices/d1`; drop the second assertion added with it.
+12. `admin-web/test/dashboard-kpi.test.tsx` — restore the `Armed alerts` text +
+    `href="/alerts"` link assertions to the first test, and DELETE the test named
+    `'omits the armed-alerts tile while alerts are disabled'`.
+13. `admin-web/test/command-palette.test.tsx` — in `'filters destinations as you
+    type'`, change the typed query back from `'notif'` to `'alert'` and the
+    expected option from `/notifications/i` to `/alerts/i`.
+14. `admin-web/e2e/dashboard-devices.spec.ts` — restore:
+    `await expect(page.getByText('Armed alerts')).toBeVisible();`
+    `await expect(page.getByRole('link', { name: /armed alerts/i })).toHaveAttribute('href', '/alerts');`
+    replacing the two lines that assert it is absent.
+
+## Verify before declaring done
+
+Backend:  cd backend && npx tsc --noEmit && npm run build \
+          && npx jest --config test/jest-e2e.json test/push.e2e-spec.ts \
+             test/notifications.e2e-spec.ts test/alert-rules.e2e-spec.ts test/app.e2e-spec.ts
+Admin:    cd admin-web && yarn typecheck && yarn lint && yarn test
+
+Expect: no skipped backend suites, all admin-web tests passing, and the Alerts
+entry visible in the nav.
+
+## Notes
+
+- Parts 1+3+4 (alerts) and Part 2 (push) are independent — do either alone.
+- `backend/src/dashboard/dashboard.service.ts` still returns `activeAlertRules`;
+  it was never changed, so the KPI number becomes live again as soon as rules
+  can be created.
+- Known limitation, unrelated to this toggle: alert rules are evaluated only
+  against the LAST sample of each upload batch, so spikes inside a bulk
+  end-of-day sync are never checked.

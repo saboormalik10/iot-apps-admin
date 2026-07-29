@@ -2,6 +2,7 @@ import { Dispatch } from 'redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BLUETOOTH_DEVICE_NAME_REGEX } from '../constants/constants';
 import { getDBConnection } from '../utils/db';
+import { create_device } from '../api/apiService';
 
 // Types
 interface DeviceDataObject {
@@ -460,4 +461,49 @@ export const deviceDisconnecting = (device: DeviceDataObject) => {
 export const deviceDisconnectError = (error: any): DeviceDisconnectErrorAction => {
   console.error('[BLE] Device disconnect error:', error);
   return { type: 'DEVICE_DISCONNECT_ERROR', error };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Demo device
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fixed Bluetooth-address stand-in for demo mode. POST /v1/devices is idempotent
+ *  on (organizationId, bleId), so this always resolves to the same server device. */
+const DEMO_BLE_ID = 'demo';
+
+/** Cache key is org-scoped: a device `_id` is only valid inside the organization
+ *  it was created in, so a different login must never reuse the previous id. */
+const demoDeviceCacheKey = (organizationId: string) => `demoDeviceId:${organizationId}`;
+
+/**
+ * Resolves the real server `_id` to use for demo sessions.
+ *
+ * Demo sessions used to be uploaded with a hard-coded id copied from the Swagger
+ * examples (`664a1f2e3c4d5e6f7a8b9c0f`). No such device exists, so the server
+ * rejects it with 404 — and before the ownership check was added it silently
+ * wrote sessions pointing at nothing. A device id is only meaningful inside one
+ * organization, so it can never be hard-coded; it has to be registered per org.
+ *
+ * `POST /v1/devices` is idempotent on `(organizationId, bleId)` — calling it
+ * again returns the existing device rather than creating a duplicate, so this is
+ * safe to call on every demo sync. The result is cached to avoid the round trip.
+ */
+export const getDemoDeviceId = async (organizationId: string): Promise<string> => {
+  if (!organizationId) {
+    throw new Error('Cannot resolve the demo device without an organization — log in again.');
+  }
+
+  const cacheKey = demoDeviceCacheKey(organizationId);
+  const cached = await AsyncStorage.getItem(cacheKey);
+  if (cached) return cached;
+
+  const device = await create_device({
+    bleId: DEMO_BLE_ID,
+    name: 'DEMO',
+    type: 'NEP-LINK',
+  });
+
+  await AsyncStorage.setItem(cacheKey, device._id);
+  console.log('[demo] Registered demo device on server:', device._id);
+  return device._id;
 };

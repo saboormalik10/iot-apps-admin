@@ -19,7 +19,11 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ShareModule } from './share/share.module';
-import { AlertRulesModule } from './alert-rules/alert-rules.module';
+// Alerts are switched off for now (product decision). Unregistering the module
+// removes BOTH the /v1/alert-rules endpoints and AlertEvaluationService, so no
+// threshold is evaluated and no `alert` notification is ever created. The module
+// and its files are left intact — re-enable by uncommenting these two lines.
+// import { AlertRulesModule } from './alert-rules/alert-rules.module';
 import { ExportModule } from './export/export.module';
 import { ImportModule } from './import/import.module';
 
@@ -57,7 +61,7 @@ import { ImportModule } from './import/import.module';
     AuditModule,
     NotificationsModule,
     ShareModule,
-    AlertRulesModule,
+    // AlertRulesModule,   ← alerts disabled, see the import above
     ExportModule,
     ImportModule,
   ],

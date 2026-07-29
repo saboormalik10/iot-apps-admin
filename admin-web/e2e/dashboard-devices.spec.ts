@@ -4,7 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 /**
  * Month-8 acceptance journey (plan Verification §2–§3). Runs in the CI E2E job
  * against the seeded backend. Signs in, confirms the live dashboard home renders
- * (KPI tiles + §10.8 armed-alerts + fleet table), drills into the Devices module,
+ * (KPI tiles + fleet table), drills into the Devices module,
  * opens a device, and checks the settings editor + axe on the new screens.
  */
 const ADMIN_EMAIL = 'admin@observator.com';
@@ -21,9 +21,10 @@ async function signIn(page: import('@playwright/test').Page) {
 test('dashboard home shows KPIs, scope bar, and the fleet table', async ({ page }) => {
   await signIn(page);
 
-  // KPI row incl. the §10.8 armed-alerts deep-link tile.
-  await expect(page.getByText('Armed alerts')).toBeVisible();
-  await expect(page.getByRole('link', { name: /armed alerts/i })).toHaveAttribute('href', '/alerts');
+  // KPI row. The §10.8 armed-alerts tile is gone while alerts are switched off —
+  // restore both assertions if the section comes back.
+  await expect(page.getByText('Devices').first()).toBeVisible();
+  await expect(page.getByText('Armed alerts')).toHaveCount(0);
 
   // Global scope bar is present on the data page.
   await expect(page.getByText('Scope', { exact: true })).toBeVisible();

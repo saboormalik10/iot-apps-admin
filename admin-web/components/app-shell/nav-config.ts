@@ -6,7 +6,7 @@ import {
   BarChart3,
   Droplets,
   Activity,
-  Bell,
+  // Bell,   ← used only by the commented-out alerts entry below
   Inbox,
   Share2,
   Users,
@@ -43,7 +43,9 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'analytics', href: '/analytics', labelKey: 'nav.metAnalytics', icon: BarChart3, flag: 'analytics' },
   { key: 'nepAnalytics', href: '/analytics/nep', labelKey: 'nav.nepAnalytics', icon: Droplets, flag: 'analytics' },
   { key: 'fleet', href: '/fleet', labelKey: 'nav.fleet', icon: Activity, flag: 'analytics' },
-  { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
+  // Alerts switched off for now — the `alerts` flag already hides this, but the
+  // entry is commented out too so the nav reads as intentional. Restore both.
+  // { key: 'alerts', href: '/alerts', labelKey: 'nav.alerts', icon: Bell, flag: 'alerts' },
   { key: 'notifications', href: '/notifications', labelKey: 'nav.notifications', icon: Inbox, flag: 'notifications' },
   { key: 'share', href: '/share', labelKey: 'nav.share', icon: Share2, capability: 'exportData', flag: 'share' },
   { key: 'import', href: '/import', labelKey: 'nav.import', icon: Upload, capability: 'importData', flag: 'importExport' },
