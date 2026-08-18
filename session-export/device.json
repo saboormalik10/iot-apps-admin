@@ -1,0 +1,21 @@
+{
+  "_id": "6a69e9e51fed0bb16eed185e",
+  "organizationId": "6a437ef2ee000f4be3eb5b14",
+  "bleId": "demo",
+  "name": "DEMO",
+  "customName": null,
+  "type": "NEP-LINK",
+  "serialNo": null,
+  "firmwareVersion": null,
+  "lastSeenAt": null,
+  "lastBatteryPct": null,
+  "lastBatteryVoltage": null,
+  "lastBatteryCharging": null,
+  "isOnline": false,
+  "registeredByUserId": "6a52374f58207077aab63e3e",
+  "lastSeenByUserId": null,
+  "deletedAt": null,
+  "createdAt": "2026-07-29T11:54:13.123Z",
+  "updatedAt": "2026-07-29T11:54:13.123Z",
+  "__v": 0
+}

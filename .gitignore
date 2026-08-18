@@ -17,3 +17,12 @@ backend/.env
 .idea/
 .vscode/
 *.swp
+
+# Never commit private keys / credentials
+*.pem
+*.key
+*.p8
+
+# Local credential notes — never commit
+*.local.txt
+credentials*
