@@ -125,7 +125,6 @@ export class SyncUploadDto {
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
-  isDemoMode?: boolean;
 
   @ApiPropertyOptional({ type: [SampleDto], description: 'NEP samples (when type=nep_session)' })
   @IsOptional()

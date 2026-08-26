@@ -22,9 +22,14 @@ describe('instrument widgets — meter a11y contract', () => {
     expect(screen.getAllByText('km/h').length).toBeGreaterThan(0);
   });
 
-  it('Gauge renders an en-dash and omits aria-valuenow for a null reading', () => {
+  it('Gauge drops the meter role entirely for a null reading', () => {
+    // It used to keep role="meter" with no aria-valuenow — which axe flags as a
+    // CRITICAL aria-required-attr violation, and this test previously asserted
+    // that broken shape. With nothing to report it is not a meter; it degrades to
+    // an image carrying the same accessible name.
     render(<Gauge value={null} min={0} max={100} label="Humidity" unit="%" />);
-    const meter = screen.getByRole('meter', { name: 'Humidity' });
+    expect(screen.queryByRole('meter')).toBeNull();
+    const meter = screen.getByRole('img', { name: 'Humidity' });
     expect(meter).not.toHaveAttribute('aria-valuenow');
     expect(screen.getByText('–')).toBeInTheDocument();
   });
@@ -36,9 +41,10 @@ describe('instrument widgets — meter a11y contract', () => {
     expect(screen.getByText('19.1')).toBeInTheDocument();
   });
 
-  it('Thermometer shows an en-dash for a null reading', () => {
+  it('Thermometer shows an en-dash and drops the meter role for a null reading', () => {
     render(<Thermometer value={null} label="Dew point" />);
-    const meter = screen.getByRole('meter', { name: 'Dew point' });
+    expect(screen.queryByRole('meter')).toBeNull();
+    const meter = screen.getByRole('img', { name: 'Dew point' });
     expect(meter).not.toHaveAttribute('aria-valuenow');
     expect(screen.getByText('–')).toBeInTheDocument();
   });

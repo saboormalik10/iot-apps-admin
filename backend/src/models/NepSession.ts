@@ -27,7 +27,6 @@ export interface INepSession extends Document {
   temperatureMax: number | null;
   hasTempData: boolean;
   hasGpsData: boolean;
-  isDemoMode: boolean;
   syncedAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -36,7 +35,8 @@ export interface INepSession extends Document {
 
 const nepSessionSchema = new Schema<INepSession>(
   {
-    id: { type: String, required: true, unique: true },
+    // Uniqueness is declared once, at the `schema.index()` call below.
+    id: { type: String, required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
@@ -59,18 +59,17 @@ const nepSessionSchema = new Schema<INepSession>(
     temperatureMax: { type: Number, default: null },
     hasTempData: { type: Boolean, default: false },
     hasGpsData: { type: Boolean, default: false },
-    isDemoMode: { type: Boolean, default: false },
     syncedAt: { type: Date, required: true, default: Date.now },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
 
+// The ONLY declaration of this index — see the note on the field above.
 nepSessionSchema.index({ id: 1 }, { unique: true });
 nepSessionSchema.index({ organizationId: 1, startTimestamp: -1 });
 nepSessionSchema.index({ deviceId: 1, startTimestamp: -1 });
 nepSessionSchema.index({ organizationId: 1, turbidityAvg: -1 });
-nepSessionSchema.index({ organizationId: 1, isDemoMode: 1 }, { sparse: true });
 nepSessionSchema.index({ organizationId: 1, userId: 1 }, { sparse: true });
 
 export const NepSession = model<INepSession>('NepSession', nepSessionSchema);

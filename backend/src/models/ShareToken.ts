@@ -18,7 +18,8 @@ const shareTokenSchema = new Schema<IShareToken>(
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     resourceType: { type: String, enum: ['nepSession', 'metRecord'], required: true },
     resourceId: { type: String, required: true },
-    token: { type: String, required: true, unique: true },
+    // Uniqueness is declared once, at the `schema.index()` call below.
+    token: { type: String, required: true },
     expiresAt: { type: Date, default: null },
     viewCount: { type: Number, default: 0 },
     revokedAt: { type: Date, default: null },
@@ -26,6 +27,7 @@ const shareTokenSchema = new Schema<IShareToken>(
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
+// The ONLY declaration of this index — see the note on the field above.
 shareTokenSchema.index({ token: 1 }, { unique: true });
 shareTokenSchema.index({ organizationId: 1, createdBy: 1 });
 shareTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });

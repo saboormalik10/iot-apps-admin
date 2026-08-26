@@ -44,15 +44,23 @@ export function AuditLog() {
 
   return (
     <div className="space-y-4">
-      {/* Filter bar — server-side filters */}
+      {/**
+       * Filter bar — server-side filters.
+       *
+       * Every control is associated with its label by `htmlFor`/`id` (M24 W2).
+       * They used to be bare `<label>` elements sitting NEXT TO the control, which
+       * looks labelled and is not: axe reported two `button-name` and two `label`
+       * violations here, both critical, because a screen reader announced four
+       * unnamed fields. This route had no axe gate, which is why it survived.
+       */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">{t('filterAction')}</label>
+          <label htmlFor="audit-filter-action" className="text-xs text-muted-foreground">{t('filterAction')}</label>
           <Select
             value={query.action ?? ALL}
             onValueChange={(v) => patch({ action: v === ALL ? undefined : v })}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="audit-filter-action" className="w-40">
               <SelectValue placeholder={tc('all')} />
             </SelectTrigger>
             <SelectContent>
@@ -66,12 +74,12 @@ export function AuditLog() {
           </Select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">{t('filterResource')}</label>
+          <label htmlFor="audit-filter-resource" className="text-xs text-muted-foreground">{t('filterResource')}</label>
           <Select
             value={query.resourceType ?? ALL}
             onValueChange={(v) => patch({ resourceType: v === ALL ? undefined : v })}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger id="audit-filter-resource" className="w-40">
               <SelectValue placeholder={tc('all')} />
             </SelectTrigger>
             <SelectContent>
@@ -85,8 +93,9 @@ export function AuditLog() {
           </Select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">{t('filterFrom')}</label>
+          <label htmlFor="audit-filter-from" className="text-xs text-muted-foreground">{t('filterFrom')}</label>
           <Input
+            id="audit-filter-from"
             type="date"
             className="w-40"
             value={query.from ?? ''}
@@ -94,8 +103,9 @@ export function AuditLog() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">{t('filterTo')}</label>
+          <label htmlFor="audit-filter-to" className="text-xs text-muted-foreground">{t('filterTo')}</label>
           <Input
+            id="audit-filter-to"
             type="date"
             className="w-40"
             value={query.to ?? ''}

@@ -26,12 +26,12 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { parseDemoOnly } from '../utils/demo-scope.util';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto, UpdateDeviceDto, UpdateDeviceSettingsDto, FirmwareTargetDto } from './dto';
 
@@ -57,7 +57,6 @@ export class DevicesController {
   @ApiQuery({ name: 'bleId', required: false, description: 'Filter by BLE identifier — useful for re-pairing lookup' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
-  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo devices ONLY; omitted/false → real devices only' })
   @ApiOkResponse({
     description: 'Paginated device list',
     schema: { example: { data: [DEVICE_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } },
@@ -70,7 +69,6 @@ export class DevicesController {
     @Query('bleId') bleId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.devicesService.listDevices({
@@ -79,7 +77,6 @@ export class DevicesController {
       bleId,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
-      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -103,7 +100,6 @@ export class DevicesController {
       'Because idempotency includes `type`, both apps send the same `bleId` and each receives its ' +
       'own demo device. The admin panel treats any device whose `bleId` starts with `demo` as a ' +
       'demo device and **hides it and all its data by default** — it appears only when the ' +
-      'operator turns on "Show demo devices" (`demoOnly=true`), which then shows demo data *instead ' +
       'of* real data, never mixed in.',
   })
   @Consumers('nep-link', 'met-link')
@@ -154,8 +150,9 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Updated firmware target', schema: { example: { data: { deviceType: 'NEP-LINK', version: '2.2.0' } } } })
   @ApiErrors('badRequest', 'unauthorized', 'forbidden')
   @Put('firmware-target')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
   @Roles('admin')
+  @RequirePermissions('device:write')
   async setFirmwareTarget(@Body() body: FirmwareTargetDto, @CurrentUser() user: JWTPayload) {
     const data = await this.devicesService.setFirmwareTarget(user.organizationId, body, {
       userId: user.userId,
@@ -222,8 +219,9 @@ export class DevicesController {
   @ApiErrors('unauthorized', 'forbidden', 'notFound')
   @Delete(':id')
   @HttpCode(204)
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
   @Roles('admin')
+  @RequirePermissions('device:delete')
   async deleteDevice(@Param('id') id: string, @CurrentUser() user?: JWTPayload): Promise<void> {
     await this.devicesService.deleteDevice(
       user!.organizationId,

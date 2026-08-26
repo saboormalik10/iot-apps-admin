@@ -34,7 +34,7 @@ describe('Core API (e2e)', () => {
   it('POST /v1/auth/login → returns access token', async () => {
     const res = await request(httpServer)
       .post('/v1/auth/login')
-      .send({ email: 'admin@observator.com', password: 'Admin@1234' });
+      .send({ email: 'admin@observator.com', password: process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234' });
     expect(res.status).toBe(200);
     accessToken = res.body.data?.accessToken ?? res.body.accessToken;
     expect(typeof accessToken).toBe('string');

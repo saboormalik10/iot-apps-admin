@@ -78,7 +78,13 @@ export class EventsGateway implements OnGatewayConnection {
 
   @OnEvent(DomainEvent.MET_MEASURES)
   onMetMeasures(e: MetMeasuresEvent): void {
-    this.server.to(roomForDevice(e.deviceId)).emit(ClientEvent.MET_LATEST, e.latest);
+    // A backfill carries real data but stale timestamps. Broadcasting it as
+    // `met:latest` would make the live gauge jump backwards to a reading from
+    // hours ago. The wind rose still refreshes, because the distribution over
+    // the window genuinely did change.
+    if (!e.isBackfill) {
+      this.server.to(roomForDevice(e.deviceId)).emit(ClientEvent.MET_LATEST, e.latest);
+    }
     this.server.to(roomForDevice(e.deviceId)).emit(ClientEvent.MET_WINDROSE, { recordId: e.recordId, refresh: true });
   }
 

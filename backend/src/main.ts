@@ -130,11 +130,50 @@ async function bootstrap(): Promise<void> {
   // model query buffers then times out ("buffering timed out after 10000ms").
   // Connect the default connection explicitly (same URI/options the seed uses).
   if (process.env.MONGO_URI) {
-    await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 8000 });
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 8000,
+      /**
+       * autoIndex OFF in production, ON everywhere else.
+       *
+       * Two reasons, both observed (M23 W1/W4):
+       *  1. It RESURRECTS dropped indexes. An index removed from the database
+       *     comes straight back on the next connect unless it is also removed
+       *     from the schema — which is how a deliberate index change silently
+       *     undid itself.
+       *  2. It costs 13 `createIndexes` round trips at cold start, one per
+       *     model, before the first request is served.
+       *
+       * Indexes in production are applied by the migration scripts, which is
+       * where a change can be reviewed and rolled back.
+       */
+      autoIndex: process.env.NODE_ENV !== 'production',
+    });
     console.log('🔌 Default Mongoose connection established (raw models)');
   }
 
   const app = await NestFactory.create(AppModule);
+
+  /**
+   * Trust proxy — REQUIRED for per-IP rate limiting to mean anything (M24 W1).
+   *
+   * Behind a load balancer every request arrives from the balancer's address, so
+   * `req.ip` is the same for everybody. Rate limiting then buckets the whole
+   * customer base together: one noisy client 429s everyone, and an attacker is
+   * throttled by the traffic of innocent users rather than their own.
+   *
+   * It is deliberately NOT `true`. `trust proxy: true` makes Express believe the
+   * left-most `X-Forwarded-For` value, which the CLIENT supplies — so an attacker
+   * spoofs a new IP per request and skips the limiter entirely. Setting the HOP
+   * COUNT instead makes Express read the address the proxy itself appended.
+   *
+   * TRUST_PROXY = number of proxies in front of this app (1 for a single ALB).
+   * Unset means 0 — correct for direct exposure, and safe by default.
+   */
+  const hops = Number.parseInt(process.env.TRUST_PROXY ?? '0', 10);
+  if (Number.isFinite(hops) && hops > 0) {
+    app.getHttpAdapter().getInstance().set('trust proxy', hops);
+    console.log(`🔒 trust proxy: ${hops} hop(s)`);
+  }
 
   // ── Response Compression ───────────────────────────────────────────────────
   // gzip every compressible response (JSON/text) above ~1 KB. The dashboard's
@@ -189,9 +228,18 @@ async function bootstrap(): Promise<void> {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // Fail CLOSED in production. An unset CORS_ORIGIN previously fell back to a
+  // wildcard, so a deploy that simply forgot the variable would silently serve
+  // every origin — a misconfiguration that looks like nothing is wrong.
+  if (!corsOrigins.length && process.env.NODE_ENV === 'production') {
+    console.error('❌ CORS_ORIGIN must be set in production (refusing to start with a wildcard).');
+    process.exit(1);
+  }
   app.enableCors(
     corsOrigins.length
       ? { origin: corsOrigins, credentials: true }
+      // Dev only, and never with credentials — a wildcard plus credentials is
+      // rejected by browsers anyway, and would be a cross-site read if it weren't.
       : { origin: '*', credentials: false },
   );
 

@@ -126,7 +126,6 @@ export class CreateSessionDto {
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
-  isDemoMode?: boolean;
 
   @ApiPropertyOptional({ type: [SampleDto], description: 'Optional samples to insert with the session' })
   @IsOptional()
@@ -176,11 +175,6 @@ export class UpdateSessionDto {
   @IsOptional()
   @IsBoolean()
   locationEnabled?: boolean;
-
-  @ApiPropertyOptional({ description: 'Marks the session as demo data' })
-  @IsOptional()
-  @IsBoolean()
-  isDemoMode?: boolean;
 }
 
 export class BulkSamplesDto {

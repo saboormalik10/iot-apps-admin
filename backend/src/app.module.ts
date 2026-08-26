@@ -5,10 +5,15 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { AuthModule } from './auth/auth.module';
 import { DevicesModule } from './devices/devices.module';
-import { SessionsModule } from './sessions/sessions.module';
+// NEP sessions — switched off (M15 W4). NEP data came only from the mobile apps,
+// which are disabled; the module and its files stay intact for M22, when water
+// quality is onboarded as an SFTP stream type.
+// import { SessionsModule } from './sessions/sessions.module';
 import { RecordsModule } from './records/records.module';
 import { FilesModule } from './files/files.module';
-import { SyncModule } from './sync/sync.module';
+// Mobile sync — fully switched off (M15 W4). ImportModule's NEP path was its last
+// consumer of SyncService; with that disabled the module has no dependents left.
+// import { SyncModule } from './sync/sync.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DashboardLayoutsModule } from './dashboard-layouts/dashboard-layouts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -19,13 +24,15 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ShareModule } from './share/share.module';
-// Alerts are switched off for now (product decision). Unregistering the module
-// removes BOTH the /v1/alert-rules endpoints and AlertEvaluationService, so no
-// threshold is evaluated and no `alert` notification is ever created. The module
-// and its files are left intact — re-enable by uncommenting these two lines.
-// import { AlertRulesModule } from './alert-rules/alert-rules.module';
+// Alerts re-enabled in M17: the wind alarm is a product the client sells, and the
+// SFTP ingest already emits MET_MEASURES, which AlertEvaluationService listens to.
+import { AlertRulesModule } from './alert-rules/alert-rules.module';
 import { ExportModule } from './export/export.module';
 import { ImportModule } from './import/import.module';
+import { IngestModule } from './ingest/ingest.module';
+import { RolesModule } from './roles/roles.module';
+import { PlatformModule } from './platform/platform.module';
+import { ProvisionModule } from './provision/provision.module';
 
 @Module({
   imports: [
@@ -39,20 +46,36 @@ import { ImportModule } from './import/import.module';
         return {
           uri,
           serverSelectionTimeoutMS: 8000,
+          // Matches the raw connection in main.ts — see the note there. Left ON
+          // outside production so a developer's schema change still applies.
+          autoIndex: process.env.NODE_ENV !== 'production',
           connectTimeoutMS: 8000,
         };
       },
     }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60000, limit: 10 }],
+      /**
+       * Rate limiting is a production control, and the e2e suite is not the
+       * traffic it is meant to stop: ~19 login calls across the suites would
+       * blow a 10/min budget from a single IP and fail unrelated tests with 429s.
+       *
+       * The WIRING is still asserted — `throttle-coverage.e2e-spec.ts` fails the
+       * build if a @Throttle route loses its guard, which is the defect this
+       * actually guards against (M24 W1). Runtime behaviour was verified against
+       * a running server: 30 failed logins → 10×401 then 20×429.
+       */
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     EventEmitterModule.forRoot(),
     RealtimeModule,
     SystemModule,
     AuthModule,
     DevicesModule,
-    SessionsModule,
+    // SessionsModule,   ← NEP disabled (M15 W4)
     RecordsModule,
     FilesModule,
-    SyncModule,
+    // SyncModule,   ← mobile sync disabled (M15 W3/W4)
     DashboardModule,
     DashboardLayoutsModule,
     AnalyticsModule,
@@ -61,9 +84,13 @@ import { ImportModule } from './import/import.module';
     AuditModule,
     NotificationsModule,
     ShareModule,
-    // AlertRulesModule,   ← alerts disabled, see the import above
+    AlertRulesModule,
     ExportModule,
     ImportModule,
+    IngestModule,
+    RolesModule,
+    PlatformModule,
+    ProvisionModule,
   ],
 })
 export class AppModule {}

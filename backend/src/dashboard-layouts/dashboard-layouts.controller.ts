@@ -40,7 +40,7 @@ export class DashboardLayoutsController {
   @ApiErrors('badRequest', 'unauthorized')
   @Post()
   @HttpCode(201)
-  async create(@Body() body: CreateLayoutInput, @CurrentUser() user: JWTPayload) {
+  async create(@Body() body: CreateLayoutDto, @CurrentUser() user: JWTPayload) {
     const data = await this.service.create(user.organizationId, user.userId, body);
     return { data };
   }
@@ -52,7 +52,7 @@ export class DashboardLayoutsController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; tiles?: IDashboardTile[] },
+    @Body() body: UpdateLayoutDto,
     @CurrentUser() user: JWTPayload,
   ) {
     const data = await this.service.update(user.organizationId, user.userId, id, body);

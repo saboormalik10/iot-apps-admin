@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { ShareToken, IShareToken } from '../models/ShareToken';
+import { Organization } from '../models/Organization';
+import { foregroundFor } from '../utils/contrast.util';
 import { NepSession } from '../models/NepSession';
 import { NepSampleDownsampled } from '../models/NepSampleDownsampled';
 import { NepFile } from '../models/NepFile';
@@ -26,9 +28,35 @@ export class PublicService {
     // Best-effort view counter (never blocks the response).
     ShareToken.updateOne({ _id: share._id }, { $inc: { viewCount: 1 } }).catch(() => void 0);
 
-    return share.resourceType === 'nepSession'
-      ? this.nepSnapshot(share)
-      : this.metSnapshot(share);
+    const [snapshot, branding] = await Promise.all([
+      share.resourceType === 'nepSession' ? this.nepSnapshot(share) : this.metSnapshot(share),
+      this.publicBranding(share.organizationId),
+    ]);
+    // Attached to the PUBLIC payload deliberately: the recipient of a share link
+    // has no session, so the page cannot ask the authenticated branding endpoint
+    // — it would 401. This is the only way a shared page can carry the
+    // customer's identity rather than the platform's.
+    return { ...snapshot, branding };
+  }
+
+  /**
+   * The subset of branding safe to show an unauthenticated stranger.
+   *
+   * Name, logo and accent only. `supportEmail` is deliberately EXCLUDED —
+   * publishing a customer's support address on a link anyone can forward is a
+   * spam vector they never opted into.
+   */
+  private async publicBranding(organizationId: unknown) {
+    const org = await Organization.findById(organizationId).select('name branding').lean();
+    if (!org) return null;
+    const b = org.branding ?? ({} as NonNullable<typeof org.branding>);
+    const accentColor = b.accentColor ?? '';
+    return {
+      displayName: b.displayName?.trim() || org.name,
+      logoUrl: b.logoUrl ?? '',
+      accentColor,
+      accentForeground: accentColor ? foregroundFor(accentColor) : '',
+    };
   }
 
   private async nepSnapshot(share: IShareToken) {

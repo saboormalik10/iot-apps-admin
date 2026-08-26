@@ -25,12 +25,12 @@ describe('Audit log (e2e)', () => {
 
     const admin = await request(httpServer)
       .post('/v1/auth/login')
-      .send({ email: 'admin@observator.com', password: 'Admin@1234' });
+      .send({ email: 'admin@observator.com', password: process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234' });
     adminToken = admin.body.data?.accessToken ?? admin.body.accessToken;
 
     const viewer = await request(httpServer)
       .post('/v1/auth/login')
-      .send({ email: 'viewer@observator.com', password: 'Viewer@1234' });
+      .send({ email: 'viewer@observator.com', password: process.env.E2E_VIEWER_PASSWORD ?? 'Viewer@1234' });
     viewerToken = viewer.body.data?.accessToken ?? viewer.body.accessToken;
   });
 

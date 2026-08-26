@@ -3,7 +3,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Types } from 'mongoose';
 import { NepSession, INepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
-import { demoDeviceFilter } from '../utils/demo-scope.util';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { DomainEvent } from '../realtime/realtime.events';
@@ -65,8 +64,6 @@ export interface ListSessionsOptions {
   probeRange?: 'R1' | 'R2' | 'R3';
   page?: number;
   limit?: number;
-  /** true → demo-device sessions ONLY; false/undefined → real-device sessions only. */
-  demoOnly?: boolean;
 }
 
 export interface CreateSessionInput {
@@ -81,7 +78,6 @@ export interface CreateSessionInput {
   temperatureEnabled?: boolean;
   locationEnabled?: boolean;
   comment?: string;
-  isDemoMode?: boolean;
   samples?: BulkSampleInput[];
 }
 
@@ -94,7 +90,6 @@ export interface UpdateSessionInput {
   turbidityEnabled?: boolean;
   temperatureEnabled?: boolean;
   locationEnabled?: boolean;
-  isDemoMode?: boolean;
 }
 
 /**
@@ -112,7 +107,6 @@ const MUTABLE_SESSION_FIELDS: (keyof UpdateSessionInput)[] = [
   'turbidityEnabled',
   'temperatureEnabled',
   'locationEnabled',
-  'isDemoMode',
 ];
 
 export interface BulkSampleInput {
@@ -206,7 +200,6 @@ export class SessionsService {
       organizationId: orgId,
       deletedAt: null,
       // Demo/real is decided by the device that recorded the session.
-      ...(await demoDeviceFilter(orgId, !!opts.demoOnly)),
     };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (probeRange) query.probeRange = probeRange;
@@ -291,7 +284,7 @@ export class SessionsService {
       deviceName: input.deviceName, startTimestamp: input.startTimestamp, endTimestamp: input.endTimestamp ?? null,
       timezoneName: input.timezoneName, timezoneOffset: input.timezoneOffset,
       turbidityEnabled: input.turbidityEnabled ?? true, temperatureEnabled: input.temperatureEnabled ?? true,
-      locationEnabled: input.locationEnabled ?? false, comment: input.comment ?? '', isDemoMode: input.isDemoMode ?? false,
+      locationEnabled: input.locationEnabled ?? false, comment: input.comment ?? '',
       syncedAt: new Date(), ...stats,
     });
     if (input.samples && input.samples.length > 0) {

@@ -8,6 +8,9 @@ interface RbacValue {
   user: SessionUser | null;
   role: Role | null;
   can: (capability: Capability) => boolean;
+  /** True if the signed-in user holds this backend permission. */
+  has: (permission: string) => boolean;
+  isSuperAdmin: boolean;
 }
 
 const RbacContext = createContext<RbacValue | null>(null);
@@ -24,6 +27,15 @@ export function RbacProvider({ user, children }: { user: SessionUser | null; chi
       user,
       role: user?.role ?? null,
       can: (capability: Capability) => can(user?.role, capability),
+      has: (permission: string) => {
+        if (user?.isSuperAdmin) return true;
+        // A session predating M18 W2 carries no grants. Falling back to the
+        // capability matrix keeps those users working; treating "no perms" as
+        // "holds nothing" would blank the UI for everyone until they signed out.
+        if (!user?.permissions) return can(user?.role, 'manageOrg');
+        return user.permissions.includes(permission);
+      },
+      isSuperAdmin: user?.isSuperAdmin === true,
     }),
     [user],
   );

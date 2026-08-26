@@ -1,0 +1,57 @@
+# Observator ingest agent.
+#
+# Hardened deliberately: this process runs on a box that also terminates an
+# untrusted SFTP login, so it gets the narrowest privileges that still let it
+# read the drop directory and move files between siblings.
+#
+# NOTE: NoNewPrivileges=yes here is what makes `sudo` impossible in this unit.
+# That is intentional — provisioning, which DOES need sudo, lives in its own
+# unit (observator-provision.service). The two must never be merged.
+#
+#   install:  cp observator-ingest.service /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now observator-ingest
+#   logs:     journalctl -u observator-ingest -f
+
+[Unit]
+Description=Observator weather-station ingest agent
+Documentation=https://github.com/observator/iot-apps-admin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=obsingest
+Group=sftpusers
+WorkingDirectory=/opt/observator/ingest-agent
+ExecStart=/usr/bin/node /opt/observator/ingest-agent/dist/main.js
+
+# The credential lives here, not in the unit file — 0600 root:root, so it is not
+# readable by the station's own SFTP account.
+EnvironmentFile=/etc/observator-ingest.env
+
+Restart=always
+RestartSec=10s
+# Give the current batch time to finish before SIGKILL.
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The only paths it may write: the station's working directories.
+ReadWritePaths=/home/wxstation
+
+[Install]
+WantedBy=multi-user.target

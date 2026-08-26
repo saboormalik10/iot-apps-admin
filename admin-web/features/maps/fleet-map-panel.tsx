@@ -93,7 +93,10 @@ export function FleetMapPanel({ compact = false }: { compact?: boolean }) {
   return (
     <Card className="overflow-hidden p-0">
       <div className="flex items-center justify-between border-b px-4 py-2">
-        <h3 className="text-sm font-medium">Fleet map</h3>
+        {/* h2, not h3: on /map this sits directly under the page's h1, and skipping
+            a level is a heading-order failure (M24 W2). The size is typographic,
+            not structural — the level says where it sits in the outline. */}
+        <h2 className="text-sm font-medium">Fleet map</h2>
         {points ? <span className="text-xs text-muted-foreground">{points.length} located</span> : null}
       </div>
       {isLoading ? (
@@ -105,7 +108,20 @@ export function FleetMapPanel({ compact = false }: { compact?: boolean }) {
           <EmptyState title="No located devices" body="Devices appear here once they report a GPS fix." />
         </div>
       ) : (
-        <MapCanvas className={height} onReady={onReady} />
+        /**
+         * The height lives on a WRAPPER, not on MapCanvas (M24 W2).
+         *
+         * MapCanvas is a `dynamic()` import — maplibre-gl touches `window`, so it
+         * cannot be server-rendered — and its `loading:` fallback is declared at
+         * module scope where `height` is not in scope. Putting the height only on
+         * MapCanvas meant that while the maplibre chunk downloaded, the panel
+         * collapsed to the fallback's natural height and then sprang back to
+         * 320px: measured as this row going 359 → 223 → 359px on the dashboard,
+         * one of four contributors to its CLS.
+         */
+        <div className={height}>
+          <MapCanvas className="h-full" onReady={onReady} />
+        </div>
       )}
     </Card>
   );

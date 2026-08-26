@@ -58,14 +58,17 @@ export function Thermometer({
 
   const fillTop = stemBottom - frac * stemH;
 
+  // `role="meter"` REQUIRES aria-valuenow (axe: aria-required-attr, CRITICAL).
+  // With no reading there is no value to report, so it is not a meter — it falls
+  // back to an image with the same accessible name. Same rule already applied in
+  // meter.tsx; it had not been propagated here.
   return (
     <div
       className={cn('flex items-center gap-3', className)}
-      role="meter"
-      aria-valuenow={hasValue ? value! : undefined}
-      aria-valuemin={min}
-      aria-valuemax={max}
       aria-label={label}
+      {...(hasValue
+        ? { role: 'meter', 'aria-valuenow': value!, 'aria-valuemin': min, 'aria-valuemax': max }
+        : { role: 'img' })}
     >
       <svg width={W} height={height} viewBox={`0 0 ${W} ${height}`} role="presentation">
         {/* Stem track */}

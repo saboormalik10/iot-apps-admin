@@ -31,7 +31,6 @@ export function DevicesList() {
     type: scope.deviceType,
     page,
     limit: 20,
-    demoOnly: scope.demoOnly || undefined,
   });
 
   const columns = useMemo<ColumnDef<Device, unknown>[]>(

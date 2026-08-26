@@ -3,22 +3,49 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSocketEvent } from '@/lib/realtime/hooks';
-import { ClientEvent } from '@/lib/realtime/events';
+import { ClientEvent, type MetLatestPayload } from '@/lib/realtime/events';
+import type { MetLatest } from '@/lib/api/types';
 import { queryKeys } from '@/lib/query/keys';
 
 /**
- * Wires the dashboard's live surfaces to socket events (plan §3.2). The rule is
- * "refetch is truth": events invalidate the relevant query keys rather than
- * hand-patching caches. `met:windrose` fires with EVERY met:latest batch, so its
- * invalidation is debounced.
+ * Wires the dashboard's live surfaces to socket events (plan §3.2).
+ *
+ * "Refetch is truth" still holds for anything the socket cannot fully describe —
+ * histories, the wind rose, device lists. But `met:latest` now carries the whole
+ * reading, so it is applied DIRECTLY to the cached value instead of being thrown
+ * away and re-fetched. The station reports once a minute; waiting a round trip to
+ * display a number already in hand made the live dial lag its own event.
+ *
+ * The patch is a MERGE, not a replace: the payload is a subset of `MetLatest` and
+ * omits the fields that do not change (deviceName, headingOffsetDeg). Replacing
+ * would blank them.
  */
 export function useDashboardRealtime(deviceIds: { met?: string; nep?: string }) {
   const qc = useQueryClient();
   const windroseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  useSocketEvent(ClientEvent.MET_LATEST, () => {
+  useSocketEvent<MetLatestPayload>(ClientEvent.MET_LATEST, (payload) => {
     if (deviceIds.met) {
-      qc.invalidateQueries({ queryKey: queryKeys.metLatest(deviceIds.met) });
+      // Apply the pushed reading straight to the cache. Guarded on there being
+      // something to merge INTO: seeding a partial object before the first fetch
+      // would render a reading with no device name and no calibration state.
+      if (payload && typeof payload.measuredAtMs === 'number') {
+        qc.setQueryData<MetLatest | null>(queryKeys.metLatest(deviceIds.met), (prev) =>
+          prev
+            ? {
+                ...prev,
+                ...payload,
+                measuredAt: new Date(payload.measuredAtMs).toISOString(),
+              }
+            : prev,
+        );
+      }
+      // NOTE: metLatest is deliberately NOT invalidated here. The patch above
+      // already holds every field that changes, so a refetch would overwrite it
+      // with identical data and cost a round trip per minute per viewer. A missed
+      // event is recovered by <RealtimeCatchup> on reconnect or tab-return.
+      //
+      // The histories DO need the server — a single reading cannot extend a series.
       // Both the single-sensor 'history' key and the graph stack's 'history-multi'
       // key (the two are sibling prefixes, so neither matches the other).
       qc.invalidateQueries({ queryKey: ['dashboard', 'met', 'history'] });

@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import type { Response } from 'express';
 import archiver from 'archiver';
 import { Device } from '../models/Device';
+import { brandedFilename, exportLabel } from '../utils/export-branding.util';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { NepFile } from '../models/NepFile';
@@ -37,7 +38,11 @@ export class ExportService {
     const sessions = await NepSession.find(sessQuery).sort({ startTimestamp: 1 }).lean();
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="sessions-${device.name}-${Date.now()}.zip"`);
+    const label = await exportLabel(String(device.organizationId));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${brandedFilename(label, `sessions-${device.name}-${Date.now()}`, 'zip')}"`,
+    );
 
     const archive = archiver('zip', { zlib: { level: 9 } });
     archive.on('error', (err) => res.destroy(err));

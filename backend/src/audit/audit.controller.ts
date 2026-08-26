@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
@@ -34,8 +35,9 @@ export class AuditController {
   })
   @ApiErrors('unauthorized', 'forbidden')
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
   @Roles('admin')
+  @RequirePermissions('audit:read')
   async list(
     @CurrentUser() user?: JWTPayload,
     @Query('action') action?: AuditAction,

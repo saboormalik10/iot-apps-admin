@@ -29,7 +29,6 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { parseDemoOnly } from '../utils/demo-scope.util';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto, BulkSamplesDto } from './dto';
 
@@ -57,7 +56,6 @@ export class SessionsController {
   @ApiQuery({ name: 'probeRange', required: false, enum: ['R1', 'R2', 'R3'], description: 'R1 | R2 | R3 — filter to one probe range' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
-  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Paginated sessions', schema: { example: { data: [SESSION_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
   @ApiErrors('unauthorized')
   @Get()
@@ -69,7 +67,6 @@ export class SessionsController {
     @Query('probeRange') probeRange?: 'R1' | 'R2' | 'R3',
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.sessionsService.listSessions({
@@ -80,7 +77,6 @@ export class SessionsController {
       probeRange,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? Math.min(parseInt(limit, 10), 100) : 20,
-      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -96,7 +92,7 @@ export class SessionsController {
       'readings with `POST /v1/sessions/{id}/samples`. The session is saved with the logged-in ' +
       'user\'s id, so the admin panel shows who recorded it.\n\n' +
       '### Demo mode\n' +
-      'Set `isDemoMode: true` **and** send the `deviceId` of your demo device (register it with `POST /v1/devices` using `bleId: "demo"`). Demo data is hidden from the admin panel by default and only appears when the operator switches to demo mode — it is never mixed into real readings. A hard-coded placeholder `deviceId` will be rejected with **404**.',
+      'Send the `deviceId` of a registered device. A hard-coded placeholder `deviceId` will be rejected with **404**.',
   })
   @Consumers('nep-link')
   @ApiBody({
@@ -116,7 +112,6 @@ export class SessionsController {
           temperatureEnabled: true,
           locationEnabled: true,
           comment: 'River sampling at intake',
-          isDemoMode: false,
         },
       },
     },

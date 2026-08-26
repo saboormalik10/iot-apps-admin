@@ -13,6 +13,8 @@ import { MetRecord } from '../models/MetRecord';
 import { NepSession } from '../models/NepSession';
 import { DailySummaryService } from '../analytics/daily-summary.service';
 import { daysInSpan } from '../analytics/daily-summary.util';
+import { localDayBounds, localDaysInSpan } from '../utils/tz.util';
+import { Organization } from '../models/Organization';
 
 /** Collect the unique (orgId, deviceId, dayStartMs) triples from a list of spans. */
 function collectDays(
@@ -36,26 +38,44 @@ async function backfill(): Promise<void> {
   const svc = new DailySummaryService();
 
   // ── MET ──
-  const records = await MetRecord.find({ deletedAt: null, isDemoMode: false })
+  // Walked in LOCAL days, matching how the ingest path keys summaries. Using UTC
+  // days here would write a second, differently-keyed summary for every day and
+  // put the two paths permanently out of step.
+  const records = await MetRecord.find({ deletedAt: null })
     .select('organizationId deviceId dateStartMs dateEndMs')
     .lean();
-  const metDays = collectDays(
-    records.map((r) => ({
-      organizationId: r.organizationId,
-      deviceId: r.deviceId,
-      fromMs: r.dateStartMs,
-      toMs: r.dateEndMs ?? r.dateStartMs,
-    })),
-  );
+
+  const tzCache = new Map<string, string>();
+  const timezoneFor = async (orgId: string): Promise<string> => {
+    const hit = tzCache.get(orgId);
+    if (hit) return hit;
+    const org = await Organization.findById(orgId).select('timezone').lean();
+    const tz = org?.timezone || 'UTC';
+    tzCache.set(orgId, tz);
+    return tz;
+  };
+
+  const metSeen = new Set<string>();
   let metWritten = 0;
-  for (const d of metDays) {
-    const res = await svc.populateMetDay(d.orgId, d.deviceId, d.dayStartMs);
-    if (res) metWritten++;
+  let metCandidates = 0;
+  for (const r of records) {
+    const orgId = String(r.organizationId);
+    const deviceId = String(r.deviceId);
+    const tz = await timezoneFor(orgId);
+    for (const dayKey of localDaysInSpan(r.dateStartMs, r.dateEndMs ?? r.dateStartMs, tz)) {
+      const key = `${deviceId}|${dayKey}`;
+      if (metSeen.has(key)) continue;
+      metSeen.add(key);
+      metCandidates++;
+      const { startMs, endMs } = localDayBounds(dayKey, tz);
+      const res = await svc.populateMetDay(orgId, deviceId, startMs, endMs, dayKey);
+      if (res) metWritten++;
+    }
   }
-  console.log(`MET:  ${metWritten} day-summaries written across ${metDays.length} candidate days.`);
+  console.log(`MET:  ${metWritten} day-summaries written across ${metCandidates} candidate local days.`);
 
   // ── NEP ──
-  const sessions = await NepSession.find({ deletedAt: null, isDemoMode: false })
+  const sessions = await NepSession.find({ deletedAt: null })
     .select('organizationId deviceId startTimestamp endTimestamp')
     .lean();
   const nepDays = collectDays(

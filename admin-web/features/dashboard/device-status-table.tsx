@@ -19,7 +19,7 @@ export function DeviceStatusTable() {
 
   return (
     <Card className="p-4">
-      <h3 className="mb-3 text-sm font-medium">Fleet status</h3>
+      <h2 className="mb-3 text-sm font-medium">Fleet status</h2>
       {isLoading ? (
         <TableSkeleton rows={4} cols={3} />
       ) : !devices || devices.length === 0 ? (

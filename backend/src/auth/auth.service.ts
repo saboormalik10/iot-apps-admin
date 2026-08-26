@@ -9,9 +9,12 @@ import { RefreshToken } from '../models/RefreshToken';
 import { PasswordResetToken } from '../models/PasswordResetToken';
 import { AuditLog } from '../models/AuditLog';
 import { signAccessToken, signWsTicket, JWTPayload } from '../utils/jwt';
+import { Role } from '../models/Role';
+import { resolveRoleId } from '../common/resolve-role';
+import { SEEDED_ROLES, sanitizePermissions } from '../common/permissions';
 import { slugify } from '../utils/slug';
 
-const BCRYPT_COST = 12;
+import { BCRYPT_COST } from '../common/bcrypt';
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 // Password-reset OTP: a 6-digit code, then a single-use reset token after verify.
 const RESET_CODE_EXPIRY_MINUTES = 15;
@@ -67,12 +70,40 @@ export class AuthService {
     return crypto.randomBytes(32).toString('hex');
   }
 
-  private async buildAuthResult(user: IUser, userAgent = ''): Promise<AuthResult> {
+  /**
+   * Resolve a user's permission grants from their assigned role.
+   *
+   * Falls back to the seeded set for their legacy `role` key when no roleId is
+   * attached — a user created before the migration, or one whose role was
+   * deleted, still gets exactly what their role key always implied.
+   */
+  private async resolvePermissions(user: IUser): Promise<string[]> {
+    if (user.roleId) {
+      const role = await Role.findOne({ _id: user.roleId, deletedAt: null }).select('permissions').lean();
+      if (role) return sanitizePermissions(role.permissions);
+    }
+    const seeded = SEEDED_ROLES.find((r) => r.key === user.role);
+    return seeded ? sanitizePermissions(seeded.permissions) : [];
+  }
+
+  private async buildAuthResult(
+    user: IUser,
+    userAgent = '',
+    assumedOrganizationId: Types.ObjectId | null = null,
+  ): Promise<AuthResult> {
+    const home = user.organizationId.toString();
+    // RE-POINTED, not bypassed: `organizationId` becomes the customer's, so every
+    // existing filter in the codebase scopes correctly with no change at all.
+    const acting = assumedOrganizationId ? assumedOrganizationId.toString() : home;
+
     const payload: Omit<JWTPayload, 'iat' | 'exp'> = {
       userId: (user._id as unknown as string).toString(),
-      organizationId: user.organizationId.toString(),
+      organizationId: acting,
       role: user.role,
       email: user.email,
+      perms: await this.resolvePermissions(user),
+      sup: user.isSuperAdmin === true,
+      ...(acting !== home ? { homeOrganizationId: home } : {}),
     };
     const accessToken = signAccessToken(payload);
 
@@ -80,7 +111,7 @@ export class AuthService {
     const tokenHash = this.hashToken(raw);
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-    await RefreshToken.create({ userId: user._id, tokenHash, expiresAt, userAgent });
+    await RefreshToken.create({ userId: user._id, tokenHash, expiresAt, userAgent, assumedOrganizationId });
 
     return {
       user: {
@@ -89,11 +120,76 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
-        organizationId: user.organizationId.toString(),
+        organizationId: acting,
       },
       accessToken,
       refreshToken: raw,
     };
+  }
+
+  /**
+   * Switch a super admin into another organisation (or back to their own).
+   *
+   * Issues a NEW refresh token carrying the assumed org, and revokes the one
+   * presented. Re-minting both is what makes the switch survive the 15-minute
+   * refresh instead of silently reverting.
+   *
+   * `isSuperAdmin` is re-read from the DATABASE, never trusted from the token:
+   * this is a tenancy boundary, and a demoted admin holding a valid token must
+   * not be able to walk into a customer's data.
+   */
+  async switchOrganization(
+    userId: string,
+    targetOrganizationId: string | null,
+    rawRefreshToken: string,
+    userAgent = '',
+  ): Promise<AuthResult> {
+    const user = await User.findById(userId);
+    if (!user || !user.isActive) {
+      throw Object.assign(new Error('User not found or suspended'), { statusCode: 401, code: 'UNAUTHORIZED' });
+    }
+    if (user.isSuperAdmin !== true) {
+      throw Object.assign(new Error('Only a platform administrator can switch organisation'), {
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    }
+
+    let assumed: Types.ObjectId | null = null;
+    if (targetOrganizationId && targetOrganizationId !== user.organizationId.toString()) {
+      if (!Types.ObjectId.isValid(targetOrganizationId)) {
+        throw Object.assign(new Error('Organisation not found'), { statusCode: 404, code: 'NOT_FOUND' });
+      }
+      const org = await Organization.findOne({ _id: targetOrganizationId, deletedAt: null }).select('_id name').lean();
+      if (!org) {
+        throw Object.assign(new Error('Organisation not found'), { statusCode: 404, code: 'NOT_FOUND' });
+      }
+      assumed = org._id as Types.ObjectId;
+    }
+
+    // Revoke the presented token so a switched session cannot be resumed from an
+    // older one still pointing at the previous organisation.
+    if (rawRefreshToken) {
+      await RefreshToken.updateOne(
+        { tokenHash: this.hashToken(rawRefreshToken), revokedAt: null },
+        { $set: { revokedAt: new Date() } },
+      ).catch(() => void 0);
+    }
+
+    const result = await this.buildAuthResult(user, userAgent, assumed);
+
+    AuditLog.create({
+      organizationId: assumed ?? user.organizationId,
+      userId: user._id,
+      userEmail: user.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(assumed ?? user.organizationId),
+      resourceName: assumed ? 'switched into' : 'switched back to own organisation',
+      changes: null,
+    }).catch(() => void 0);
+
+    return result;
   }
 
   async register(input: RegisterInput): Promise<AuthResult> {
@@ -125,6 +221,7 @@ export class AuthService {
       firstName: input.firstName,
       lastName: input.lastName,
       role: 'admin',
+      roleId: await resolveRoleId('admin', org._id as Types.ObjectId),
       isActive: true,
     });
 
@@ -169,6 +266,7 @@ export class AuthService {
       firstName: input.firstName,
       lastName: input.lastName,
       role: 'operator',
+      roleId: await resolveRoleId('operator', org._id as Types.ObjectId),
       mobileAppType: input.appType === 'MET-LINK' || input.appType === 'NEP-LINK' ? input.appType : null,
       isActive: true,
     });
@@ -227,10 +325,34 @@ export class AuthService {
       throw Object.assign(new Error('User not found or suspended'), { statusCode: 401, code: 'INVALID_REFRESH_TOKEN' });
     }
 
+    const home = user.organizationId.toString();
+    // Honour the organisation this session switched into. Reading
+    // `user.organizationId` here is what used to teleport a super admin back to
+    // their own org at the first refresh, mid-session and with no warning.
+    //
+    // Guarded by a LIVE super-admin check: if the switch happened and the user
+    // was demoted afterwards, the assumption is dropped rather than carried, so
+    // a revoked platform admin cannot keep browsing a customer's data for the
+    // remaining lifetime of the refresh token.
+    const stillSuper = user.isSuperAdmin === true;
+    const acting = stillSuper && record.assumedOrganizationId ? record.assumedOrganizationId.toString() : home;
+
+    if (record.assumedOrganizationId && !stillSuper) {
+      await RefreshToken.updateOne({ _id: record._id }, { $set: { assumedOrganizationId: null } }).catch(() => void 0);
+    }
+
     const accessToken = signAccessToken({
       userId: (user._id as unknown as string).toString(),
-      organizationId: user.organizationId.toString(),
+      organizationId: acting,
       role: user.role,
+      // `email` was previously dropped here — every AuditLog written after a
+      // refresh recorded an empty actor email as a result.
+      email: user.email,
+      // Re-resolved rather than copied, so a permission change takes effect at
+      // the next refresh (≤15 minutes) without forcing a re-login.
+      perms: await this.resolvePermissions(user),
+      sup: stillSuper,
+      ...(acting !== home ? { homeOrganizationId: home } : {}),
     });
 
     return { accessToken };

@@ -50,3 +50,27 @@ export interface DeviceStatusPayload {
   lastSeenAt: string | null;
   batteryPct: number | null;
 }
+
+/**
+ * Payload of `met:latest`, mirrored from backend/src/realtime/realtime.events.ts.
+ *
+ * A deliberate SUBSET of the REST `MetLatest`: it carries what changes every
+ * minute, not what does not (deviceName, headingOffsetDeg). Consumers MERGE it
+ * into the cached reading rather than replacing — replacing would blank the
+ * fields the socket does not send.
+ *
+ * The backend suppresses this event for backfills, so anything arriving here is
+ * genuinely live and safe to show as "now".
+ */
+export interface MetLatestPayload {
+  measuredAtMs: number;
+  recordId: string;
+  windSpeedMs: number | null;
+  windSpeedKmh: number | null;
+  windDirTrueDeg: number | null;
+  windDirRelDeg: number | null;
+  tempC: number | null;
+  humidityPct: number | null;
+  pressureHpa: number | null;
+  dewPointC: number | null;
+}

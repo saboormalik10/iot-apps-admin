@@ -1,0 +1,22 @@
+{
+  "name": "observator-ingest-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reads weather-station CSV drops from an SFTP directory and posts them to the Observator API.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "dev": "ts-node src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "once": "node dist/main.js --once",
+    "test": "node --test --require ts-node/register src/watcher.test.ts src/watcher-tree.test.ts src/retention.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

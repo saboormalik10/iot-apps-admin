@@ -36,8 +36,20 @@ export function UserMenu({ user }: { user: SessionUser }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('userMenu')} className="rounded-full">
-          <Avatar>
+        {/**
+         * The name LEADS with the initials (M24 W2). The avatar's initials are
+         * visible text, and WCAG 2.5.3 requires the accessible name to contain
+         * what is visibly shown — `aria-hidden` does not help, because the rule
+         * exists for speech-input users, who say what they see. "User menu" alone
+         * failed on every route, since this button lives in the shell.
+         */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`${initials} — ${t('userMenu')}`}
+          className="rounded-full"
+        >
+          <Avatar aria-hidden>
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
         </Button>

@@ -9,6 +9,12 @@ import { Response } from 'express';
 interface AppError extends Error {
   statusCode?: number;
   code?: string;
+  /**
+   * Extra machine-readable context for the client, e.g. how many users hold a
+   * role that cannot be deleted. An explicit field rather than spreading the
+   * error object, so an internal property can never leak into a response.
+   */
+  details?: Record<string, unknown>;
 }
 
 @Catch()
@@ -55,6 +61,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       console.error('[ERROR]', exception);
     }
 
-    response.status(statusCode).json({ error: { code, message } });
+    response
+      .status(statusCode)
+      .json({ error: { code, message, ...(err.details ? { details: err.details } : {}) } });
   }
 }

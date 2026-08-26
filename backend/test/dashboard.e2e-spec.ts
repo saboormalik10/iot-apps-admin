@@ -26,7 +26,7 @@ describe('Dashboard summary (e2e)', () => {
 
     const login = await request(http)
       .post('/v1/auth/login')
-      .send({ email: 'admin@observator.com', password: 'Admin@1234' });
+      .send({ email: 'admin@observator.com', password: process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234' });
     token = login.body.accessToken ?? login.body.data?.accessToken;
   });
 

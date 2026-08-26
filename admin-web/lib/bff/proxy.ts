@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { NextResponse, type NextRequest } from 'next/server';
 import { backendFetch } from './backend';
 import { refreshAccessToken, RefreshFailedError } from './refresh';
+import { withClaims } from './claims';
 import { isCsrfSafe } from './csrf';
 import { getSession, isSessionLive, touchSession, type SessionData } from '../session';
 import type { IronSession } from 'iron-session';
@@ -122,6 +123,9 @@ export async function forwardToBackend(request: NextRequest, backendPath: string
     try {
       const newAccess = await refreshAccessToken(session.refreshToken!);
       session.accessToken = newAccess;
+      // Re-read the grants: a role edited mid-session takes effect on the next
+      // refresh rather than lingering until the user signs out.
+      if (session.user) session.user = withClaims(session.user, newAccess);
       await session.save();
       res = await attempt(newAccess);
     } catch (err) {

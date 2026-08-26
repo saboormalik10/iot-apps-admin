@@ -15,6 +15,18 @@ export interface SessionUser {
   lastName: string;
   role: Role;
   organizationId: string;
+  /**
+   * Grants from the access token, refreshed with it. Present from M18 W2 on;
+   * optional because a session cookie minted before that carries neither, and
+   * those users must keep working until their next refresh.
+   */
+  permissions?: string[];
+  isSuperAdmin?: boolean;
+  /**
+   * The platform administrator's OWN organisation, set only while they are
+   * acting inside a customer's. Its presence is what raises the banner.
+   */
+  homeOrganizationId?: string | null;
 }
 
 /** Full profile — GET/PATCH /users/me. */
@@ -138,6 +150,9 @@ export interface DashboardSummary {
 
 /** GET /dashboard/devices — one row per device with live-ish status. */
 export interface DashboardDevice {
+  /** Sensors this device actually reports; empty when it has not ingested yet. */
+  availableSensors?: string[];
+  headingOffsetDeg?: number;
   _id: string;
   name: string;
   bleId: string;
@@ -151,6 +166,8 @@ export interface DashboardDevice {
 
 /** GET /dashboard/met/latest — all-sensor snapshot (any field may be null). */
 export interface MetLatest {
+  /** Mast heading offset in degrees; 0 means the bearing is relative, not true. */
+  headingOffsetDeg: number;
   recordId: string;
   deviceName: string;
   measuredAtMs: number;
@@ -267,6 +284,11 @@ export interface FleetMapPoint {
 
 /** GET /devices/:id (+ list rows). */
 export interface Device {
+  /** Sensor keys this device has actually reported, maintained by the ingester. */
+  availableSensors?: string[];
+  sensorsUpdatedAt?: string | null;
+  /** Mast heading offset; 0 means bearings are relative, not true. */
+  headingOffsetDeg?: number;
   _id: string;
   bleId: string;
   name: string;
@@ -513,7 +535,6 @@ export interface MetRecordRow {
   comment: string;
   measureCount: number;
   hasHeaderRow: boolean;
-  isDemoMode: boolean;
   createdAt: string;
 }
 
@@ -793,7 +814,6 @@ export interface NepSessionRow {
   temperatureMax: number | null;
   hasTempData: boolean;
   hasGpsData: boolean;
-  isDemoMode: boolean;
   syncedAt: string;
   createdAt: string;
 }
@@ -945,7 +965,23 @@ export interface PublicMetSnapshot {
   };
   photos: PublicSnapshotPhoto[];
 }
-export type PublicSnapshot = PublicNepSnapshot | PublicMetSnapshot;
+/**
+ * Branding attached to a PUBLIC share payload.
+ *
+ * Name, logo and accent only — `supportEmail` is deliberately absent, because a
+ * share link can be forwarded to anyone and publishing a customer's support
+ * address is a spam vector they never opted into.
+ */
+export interface PublicBranding {
+  displayName: string;
+  logoUrl: string;
+  accentColor: string;
+  accentForeground: string;
+}
+
+export type PublicSnapshot = (PublicNepSnapshot | PublicMetSnapshot) & {
+  branding?: PublicBranding | null;
+};
 
 /** One tile of a saved dashboard preset (GET/POST /dashboard-layouts). Per-device. */
 export interface DashboardTile {
@@ -978,3 +1014,228 @@ export interface ImportSummary {
   /** Row-level messages; the backend stops collecting after 50. */
   errors: string[];
 }
+
+
+/** A role and how many people hold it (M18). */
+export interface RoleRow {
+  _id: string;
+  organizationId: string | null;
+  key: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  isSystem: boolean;
+  isDefault: boolean;
+  userCount: number;
+}
+
+export interface PermissionGroup {
+  group: string;
+  permissions: { key: string; label: string }[];
+}
+
+/** A role offered as a replacement when deleting another. */
+export interface RoleReplacement {
+  _id: string;
+  name: string;
+  permissions: string[];
+  isSystem: boolean;
+}
+
+export interface RoleUsage {
+  roleId: string;
+  name: string;
+  userCount: number;
+  users: { _id: string; email: string; firstName: string; lastName: string }[];
+  /** Candidates for the reassignment dropdown, excluding the role itself. */
+  replacements: RoleReplacement[];
+}
+
+export interface RoleInput {
+  name: string;
+  description?: string;
+  permissions: string[];
+}
+
+/** A customer organisation, as the super-admin switcher lists them. */
+export interface OrganizationSummary {
+  _id: string;
+  name: string;
+  slug: string;
+  timezone: string;
+  country: string | null;
+  deviceCount: number;
+  userCount: number;
+  createdAt?: string;
+}
+
+/** One customer's row in the cross-customer overview. */
+export interface PlatformCustomerRow {
+  organizationId: string;
+  name: string;
+  timezone: string;
+  stations: number;
+  online: number;
+  users: number;
+  alertRules: number;
+  readings24h: number;
+  lastDataAt: string | null;
+  uploadFolders: string[];
+}
+
+/** Cross-customer totals. Platform administrators only. */
+export interface PlatformOverview {
+  customers: number;
+  stations: number;
+  online: number;
+  users: number;
+  readings24h: number;
+  /** Customers that own stations but sent nothing in 24 hours. */
+  silent: number;
+  rows: PlatformCustomerRow[];
+  generatedAt: string;
+}
+
+/** Payload for creating a customer and its first administrator. */
+export interface CreateCustomerInput {
+  name: string;
+  contactEmail?: string;
+  country?: string;
+  timezone?: string;
+  uploadFolder?: string;
+  admin: { email: string; password: string; firstName: string; lastName: string };
+}
+
+export interface CreatedCustomer {
+  organizationId: string;
+  name: string;
+  slug: string;
+  uploadFolder: string;
+  timezone: string;
+  admin: { id: string; email: string };
+}
+
+/** An organisation's branding, with server-side fallbacks already applied. */
+export interface Branding {
+  displayName: string;
+  logoUrl: string;
+  accentColor: string;
+  /** Readable text colour for controls filled with the accent. Derived server-side. */
+  accentForeground: string;
+  supportEmail: string;
+  /** False when nothing has been set — the shell then uses the platform default. */
+  isCustomised: boolean;
+  updatedAt: string | null;
+}
+
+export type BrandingInput = Partial<Pick<Branding, 'displayName' | 'logoUrl' | 'accentColor' | 'supportEmail'>>;
+
+/** A provisioned station and the state of its most recent provisioning job. */
+export interface PlatformStation {
+  stationAccountId: string;
+  account: string;
+  folderPath: string;
+  deviceId: string;
+  /** The truth. `status` only explains why this is still false. */
+  isActive: boolean;
+  lastIngestAt: string | null;
+  notes: string;
+  status: 'active' | 'queued' | 'claimed' | 'succeeded' | 'failed' | 'unknown';
+  jobError: string | null;
+  createdAt: string;
+}
+
+export interface ProvisionStationInput {
+  organizationId: string;
+  towerName: string;
+  account?: string;
+  notes?: string;
+}
+
+export interface ProvisionedStation {
+  stationAccountId: string;
+  deviceId: string;
+  account: string;
+  folderPath: string;
+  status: 'pending';
+  jobId: string;
+}
+
+/** One column a stream type understands. */
+export interface StreamColumn {
+  field: string;
+  aliases: string[];
+  numeric: boolean;
+  fixedUnit: string | null;
+}
+
+export interface StreamTypeRow {
+  id: string;
+  key: string;
+  parserKey: string;
+  name: string;
+  description: string;
+  isEnabled: boolean;
+  isBuiltIn: boolean;
+  /** False when no parser answers to `parserKey` — the type is unusable. */
+  parserAvailable: boolean;
+  stationCount: number;
+  columns: StreamColumn[];
+  filenameHint: string | null;
+}
+
+/** What a sample file WOULD produce. Nothing is written. */
+export interface StreamPreview {
+  streamKey: string;
+  parserKey: string;
+  filename: string | null;
+  ok: boolean;
+  rejectReason: string | null;
+  header: string[];
+  recognisedColumns: string[];
+  /** Named, not silently dropped — this is why a sensor is missing. */
+  ignoredColumns: string[];
+  sensorsSeen: string[];
+  unitCode: string | null;
+  stats: {
+    totalLines: number;
+    dataLines: number;
+    skipped: number;
+    truncatedTail: boolean;
+    firstTsMs: number | null;
+    lastTsMs: number | null;
+  };
+  sampleRows: Array<{
+    timestampMs: number;
+    timestamp: string;
+    windSpeedMs: number | null;
+    windDirRelDeg: number | null;
+    tempC: number | null;
+    humidityPct: number | null;
+    pressureHpa: number | null;
+  }>;
+  totalRows: number;
+  persisted: false;
+}
+
+/** What an import WOULD do, computed by the server. Nothing is written. */
+export type ImportDryRun =
+  | { ok: false; reason: string; stats?: Record<string, number | boolean | null> }
+  | {
+      ok: true;
+      filename: string;
+      deviceId: string;
+      deviceName: string;
+      timezone: string;
+      streamType: string;
+      /** Non-null when these exact bytes were already ingested. */
+      duplicateOf: { filename: string; receivedAt: string; rows: number } | null;
+      rowsWouldInsert: number;
+      rowsParsed: number;
+      sensorsSeen: string[];
+      unitCode: string | null;
+      firstTsMs: number | null;
+      lastTsMs: number | null;
+      days: Array<{ dayKey: string; existingMeasures: number; action: 'create' | 'append' }>;
+      persisted: false;
+    };

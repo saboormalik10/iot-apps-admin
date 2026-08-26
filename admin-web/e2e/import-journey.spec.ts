@@ -12,11 +12,14 @@ import AxeBuilder from '@axe-core/playwright';
  * anything if something proves the two still agree.
  */
 const ADMIN_EMAIL = 'admin@observator.com';
-const ADMIN_PASSWORD = 'Admin@1234';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234';
 
 // A fixed epoch, as the MET exporter writes it (bare ms). Re-importing this shape
 // used to silently restamp every row to "now" — see parse-import-timestamp.ts.
-const T0 = 1737000000000;
+// Unique per run. The ingest core deduplicates on content hash (M15 W4), so a
+// fixed timestamp would make every run after the first a `duplicate` with zero
+// rows — which is correct behaviour, but not what this test is exercising.
+const T0 = Date.now() - 7 * 24 * 60 * 60 * 1000 + Math.floor(Math.random() * 86_400_000);
 const MET_HEADER =
   'Timestamp,Temp_C,Humidity_%,Pressure_hPa,WindSpeed_ms,WindSpeed_kmh,WindDir_deg,DewPoint_C,Precip_mm,Solar_Wm2,Voltage_V,Lat,Lng';
 

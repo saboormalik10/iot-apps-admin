@@ -1,0 +1,34 @@
+[Unit]
+Description=Observator provisioning agent (job-polling, outbound only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=obsprov
+Group=obsprov
+WorkingDirectory=/opt/observator/provision-agent
+EnvironmentFile=/etc/observator/provision-agent.env
+ExecStart=/usr/bin/node /opt/observator/provision-agent/dist/main.js
+Restart=always
+RestartSec=15
+
+# ── Hardening ───────────────────────────────────────────────────────────────
+# NOTE: NoNewPrivileges is deliberately ABSENT and must stay absent. It and
+# `sudo` are mutually exclusive — with it set, the single sudo rule this agent
+# depends on silently fails. That is precisely why provisioning is a SEPARATE
+# unit from the ingest agent, which does set it and keeps the stronger sandbox.
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=false
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+# No inbound sockets are needed: the agent only ever dials out.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

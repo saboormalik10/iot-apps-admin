@@ -12,6 +12,10 @@ import { UnitsToggle } from '@/components/units-toggle';
 import { LiveIndicator } from '@/components/live-indicator';
 import { NotificationBell } from '@/features/notifications/notification-bell';
 import { ScopeBar } from '@/components/scope/scope-bar';
+import { BrandMark } from './brand-mark';
+import { BrandAccent } from './brand-accent';
+import { OrgSwitcher } from '@/features/tenancy/org-switcher';
+import { ActingAsBanner } from '@/features/tenancy/acting-as-banner';
 import { CommandPalette } from './command-palette';
 import { isFeatureEnabled } from '@/lib/config/flags';
 import type { SessionUser } from '@/lib/api/types';
@@ -28,13 +32,12 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
 
   return (
     <div className="flex min-h-screen">
+      {/* Repaints the primary tokens for this customer; renders nothing without one. */}
+      <BrandAccent />
       {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
         <div className="flex h-14 items-center gap-2 border-b px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded bg-primary text-primary-foreground">
-            <span className="text-sm font-bold">O</span>
-          </div>
-          <span className="text-sm font-semibold">{t('shortName')}</span>
+          <BrandMark fallbackName={t('shortName')} initial={t('shortName').slice(0, 1)} />
         </div>
         <SidebarNav />
       </aside>
@@ -53,12 +56,19 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           </Button>
           {isFeatureEnabled('commandPalette') && <CommandPalette />}
           <div className="flex-1" />
+          {/* Renders nothing unless the signed-in user is a platform admin. */}
+          <OrgSwitcher />
           <LiveIndicator />
           <UnitsToggle />
           <ThemeToggle />
           <NotificationBell />
           <UserMenu user={user} />
         </header>
+
+        {/* Above the scope bar and on EVERY route, including the admin ones the
+            scope bar hides itself on — that is exactly where a forgotten switch
+            does the most damage. */}
+        <ActingAsBanner />
 
         {/* Global Scope Bar (plan §3.6) — self-hides on non-data routes. */}
         <ScopeBar />

@@ -41,7 +41,6 @@ export interface SyncUploadPayload {
   temperatureEnabled?: boolean;
   locationEnabled?: boolean;
   comment?: string;
-  isDemoMode?: boolean;
   samples?: Array<{
     timestamp: number;
     turbidityValue?: number | null;
@@ -245,7 +244,6 @@ export class SyncService {
       temperatureEnabled: payload.temperatureEnabled ?? true,
       locationEnabled: payload.locationEnabled ?? false,
       comment: payload.comment ?? '',
-      isDemoMode: payload.isDemoMode ?? false,
       syncedAt: now,
     };
 
@@ -339,7 +337,6 @@ export class SyncService {
       comment: payload.comment ?? '',
       urlMaps: payload.urlMaps ?? null,
       localRecordId: payload.localRecordId ?? null,
-      isDemoMode: payload.isDemoMode ?? false,
       syncedAt: now,
     };
 
@@ -395,7 +392,6 @@ export class SyncService {
           gpsQuality: parsed.gpsQuality,
           phoneLat: parsed.phoneLat,
           phoneLng: parsed.phoneLng,
-          isDemoMode: payload.isDemoMode ?? false,
         };
       });
       await MetMeasure.insertMany(docs, { ordered: false });

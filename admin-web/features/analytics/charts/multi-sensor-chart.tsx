@@ -5,6 +5,7 @@ import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { SERIES_ROLES } from '@/components/charts/chart-utils';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import { MET_SENSORS, sensorLabel } from '../sensors';
 import { IntervalSelect } from './interval-select';
 import { useMetMultiSensor } from '../use-analytics';
@@ -23,6 +24,7 @@ const MAX_SENSORS = 5;
  * sensors from the shared 15-sensor allow-list (§10.5).
  */
 export function MultiSensorChart({ deviceId }: { deviceId?: string }) {
+  const sensors = useDeviceSensors(deviceId);
   const [selected, setSelected] = useState<string[]>(DEFAULT_SENSORS);
   const [interval, setInterval] = useState('5min');
   const { data, isLoading } = useMetMultiSensor(deviceId, selected, interval);
@@ -32,6 +34,10 @@ export function MultiSensorChart({ deviceId }: { deviceId?: string }) {
       cur.includes(key) ? cur.filter((k) => k !== key) : cur.length >= MAX_SENSORS ? cur : [...cur, key],
     );
 
+  // Offer only the sensors this station reports. A wind-only device otherwise
+  // lists 15 options, 13 of which return an empty chart.
+  const availableSensorOptions = MET_SENSORS.filter((option) => sensors.has(option.key));
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -39,7 +45,7 @@ export function MultiSensorChart({ deviceId }: { deviceId?: string }) {
         <IntervalSelect value={interval} onChange={setInterval} options={INTERVALS} />
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sensors">
-        {MET_SENSORS.map((s) => {
+        {availableSensorOptions.map((s) => {
           const on = selected.includes(s.key);
           return (
             <Button

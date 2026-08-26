@@ -37,3 +37,12 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
       dispatchEvent: () => false,
     }) as unknown as MediaQueryList;
 }
+
+// jsdom lacks the Pointer Capture API, which Radix's Select uses to track a
+// press. Without these the trigger throws on click and the listbox never opens,
+// so any test that picks an option fails with a confusing "option not found".
+if (typeof Element !== 'undefined' && !Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}

@@ -5,13 +5,23 @@
         "http://localhost:3001/login",
         "http://localhost:3001/",
         "http://localhost:3001/devices",
-        "http://localhost:3001/sessions"
+        "http://localhost:3001/records",
+        "http://localhost:3001/analytics",
+        "http://localhost:3001/map",
+        "http://localhost:3001/roles",
+        "http://localhost:3001/platform",
+        "http://localhost:3001/stream-types"
       ],
       "numberOfRuns": 1,
       "settings": {
         "preset": "desktop",
-        "skipAudits": ["uses-http2", "canonical", "is-crawlable"]
-      }
+        "skipAudits": [
+          "uses-http2",
+          "canonical",
+          "is-crawlable"
+        ]
+      },
+      "_comment": "Routes as they actually ship. `/sessions` was dropped in M24 W2: NEP was switched off in M15 W4 and the nav entry is flag-gated off, so the budget was gating a page no user can reach while every route built in M16-M23 (records, analytics, map, roles, platform, stream-types) had no budget at all."
     },
     "assert": {
       "assertMatrix": [
@@ -19,24 +29,84 @@
           "_comment": "Every route EXCEPT the bare dashboard root. LHCI applies every matching entry, so this must not also match '/' or its strict CLS rule would override the documented carve-out below.",
           "matchingUrlPattern": "^http://localhost:3001/.+",
           "assertions": {
-            "categories:performance": ["error", { "minScore": 0.8 }],
-            "categories:accessibility": ["error", { "minScore": 0.95 }],
-            "categories:best-practices": ["warn", { "minScore": 0.9 }],
-            "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
-            "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }],
-            "total-blocking-time": ["error", { "maxNumericValue": 400 }],
-            "unused-javascript": ["warn", { "maxNumericValue": 250000 }]
+            "categories:performance": [
+              "error",
+              {
+                "minScore": 0.8
+              }
+            ],
+            "categories:accessibility": [
+              "error",
+              {
+                "minScore": 0.95
+              }
+            ],
+            "categories:best-practices": [
+              "warn",
+              {
+                "minScore": 0.9
+              }
+            ],
+            "largest-contentful-paint": [
+              "error",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "cumulative-layout-shift": [
+              "error",
+              {
+                "maxNumericValue": 0.1
+              }
+            ],
+            "total-blocking-time": [
+              "error",
+              {
+                "maxNumericValue": 400
+              }
+            ],
+            "unused-javascript": [
+              "warn",
+              {
+                "maxNumericValue": 250000
+              }
+            ]
           }
         },
         {
-          "_comment": "The live dashboard: charts + a WebGL map + a socket, so it is both the heaviest route and the noisiest to measure. Its budgets carry headroom over the observed run-to-run spread deliberately — a gate that fails at random gets switched off, which is worse than a looser one that means something. CLS is a warn: a known, documented gap (see LIGHTHOUSE.md).",
+          "_comment": "The live dashboard: charts + a WebGL map + a socket, so it is both the heaviest route and the noisiest to measure. Its budgets carry headroom over the observed run-to-run spread deliberately \u2014 a gate that fails at random gets switched off, which is worse than a looser one that means something. CLS is a warn: a known, documented gap (see LIGHTHOUSE.md).",
           "matchingUrlPattern": "^http://localhost:3001/$",
           "assertions": {
-            "categories:performance": ["error", { "minScore": 0.7 }],
-            "categories:accessibility": ["error", { "minScore": 0.95 }],
-            "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
-            "total-blocking-time": ["error", { "maxNumericValue": 800 }],
-            "cumulative-layout-shift": ["warn", { "maxNumericValue": 0.1 }]
+            "categories:performance": [
+              "error",
+              {
+                "minScore": 0.7
+              }
+            ],
+            "categories:accessibility": [
+              "error",
+              {
+                "minScore": 0.95
+              }
+            ],
+            "largest-contentful-paint": [
+              "error",
+              {
+                "maxNumericValue": 3000
+              }
+            ],
+            "total-blocking-time": [
+              "error",
+              {
+                "maxNumericValue": 800
+              }
+            ],
+            "cumulative-layout-shift": [
+              "warn",
+              {
+                "maxNumericValue": 0.1
+              }
+            ]
           }
         }
       ]

@@ -8,8 +8,6 @@ import { useDashboardDevices } from '@/features/dashboard/use-dashboard';
 import { DeviceSelect } from '@/components/data/device-select';
 import { DateRangePicker } from '@/components/data/date-range-picker';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -28,7 +26,7 @@ const ALL_TYPES = '__all_types__';
  * no device-type select (each tab is locked to one family) — so the global bar
  * steps aside there. That bar carries its own demo toggle.
  */
-const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import', '/analytics'];
+const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import', '/analytics', '/roles', '/platform', '/stream-types'];
 
 /**
  * ScopeBar — the persistent, URL-synced filter row inherited by every data page
@@ -77,19 +75,6 @@ export function ScopeBar() {
       />
 
       <DateRangePicker value={scope.range} onChange={(range) => setScope({ range })} className="h-8 w-[150px]" />
-
-      <div className="flex items-center gap-2 pl-1">
-        <Switch
-          id="scope-demo"
-          checked={scope.demoOnly}
-          onCheckedChange={(v) => setScope({ demoOnly: v })}
-        />
-        <Label htmlFor="scope-demo" className="text-xs text-muted-foreground">
-          {/* A mode, not an "include": on shows demo-device data INSTEAD of real,
-              so the two are never mixed into the same chart or count. */}
-          Show demo devices
-        </Label>
-      </div>
 
       {!isDefault ? (
         <Button variant="ghost" size="sm" className="ml-auto h-8 gap-1 text-xs" onClick={reset}>

@@ -11,11 +11,13 @@ import { cn } from '@/lib/utils';
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const t = useTranslations();
-  const { can } = useRbac();
+  const { can, isSuperAdmin } = useRbac();
 
   const visible = NAV_ITEMS.filter((item) => {
     if (item.flag && !isFeatureEnabled(item.flag)) return false;
     if (item.capability && !can(item.capability)) return false;
+    // A customer must not even see that a cross-customer view exists.
+    if (item.superAdminOnly && !isSuperAdmin) return false;
     return true;
   });
 

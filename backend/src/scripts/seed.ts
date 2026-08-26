@@ -23,7 +23,7 @@ import { ShareToken } from '../models/ShareToken';
 
 const ADMIN_EMAIL = 'admin@observator.com';
 const ADMIN_PASSWORD = 'Admin@1234';
-const BCRYPT_COST = 12;
+import { BCRYPT_COST } from '../common/bcrypt';
 
 // Extra org members so the admin Users page + audit log have realistic data on staging.
 const EXTRA_USERS: Array<{ email: string; password: string; firstName: string; lastName: string; role: 'operator' | 'viewer' }> = [
@@ -279,7 +279,6 @@ async function seedMetSeries(
     comment: 'Seed demo record',
     measureCount: count,
     hasHeaderRow: true,
-    isDemoMode: false,
     syncedAt: new Date(),
   });
 
@@ -317,7 +316,6 @@ async function seedMetSeries(
       gpsLat: round6(BASE_LAT + (Math.random() - 0.5) * 0.0005),
       gpsLng: round6(BASE_LNG + (Math.random() - 0.5) * 0.0005),
       gpsAltM: round2(40 + Math.random() * 2),
-      isDemoMode: false,
     });
   }
   await MetMeasure.insertMany(docs, { ordered: false });
@@ -390,7 +388,6 @@ async function seedNepSessions(
       temperatureMax: tempVals.length ? round2(Math.max(...tempVals)) : null,
       hasTempData: tempVals.length > 0,
       hasGpsData: true,
-      isDemoMode: false,
       syncedAt: new Date(),
     });
     await NepSample.insertMany(samples, { ordered: false });

@@ -55,7 +55,7 @@ export class AlertRulesController {
   @ApiQuery({ name: 'deviceId', required: false, description: 'Filter by device ObjectId' })
   @ApiQuery({ name: 'isActive', required: false, description: 'true | false' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20)' })
   @ApiOkResponse({
     description: 'Paginated alert rules',
     schema: { example: { data: [ALERT_RULE_EXAMPLE], pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } } },

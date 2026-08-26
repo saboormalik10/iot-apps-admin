@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { isFeatureEnabled } from '@/lib/config/flags';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
 import { useDashboardDevices } from '@/features/dashboard/use-dashboard';
 import { listUsers } from '@/lib/api/endpoints';
@@ -60,7 +61,7 @@ export function AlertRuleDialog({
 
   // ── Form state (seeded from `rule` in edit mode) ──
   const [name, setName] = useState(rule?.name ?? '');
-  const [appType, setAppType] = useState<AlertAppType>(rule?.appType ?? 'NEP');
+  const [appType, setAppType] = useState<AlertAppType>(rule?.appType ?? 'MET');
   const [deviceIds, setDeviceIds] = useState<string[]>(rule ? [rule.deviceId] : []);
   const [sensor, setSensor] = useState(rule?.sensor ?? '');
   const [condition, setCondition] = useState<AlertCondition>(rule?.condition ?? 'gt');
@@ -71,7 +72,24 @@ export function AlertRuleDialog({
   const [isActive, setIsActive] = useState(rule?.isActive ?? true);
   const [errors, setErrors] = useState<FieldErrors>({});
 
-  const sensorOptions = sensorOptionsFor(appType);
+  /**
+   * Offer only sensors every selected device actually reports.
+   *
+   * The static list has six MET sensors; the wind station reports two. Offering
+   * the other four lets an operator build a rule that can never fire — it would
+   * simply sit there looking armed. The INTERSECTION is used rather than the
+   * union because the dialog creates one rule per selected device.
+   *
+   * Fails open: with nothing selected yet, or for devices that have not ingested,
+   * every sensor is offered.
+   */
+  const sensorOptions = useMemo(() => {
+    const all = sensorOptionsFor(appType);
+    const chosen = devices.filter((d) => deviceIds.includes(d._id));
+    const withKnownSensors = chosen.filter((d) => (d.availableSensors?.length ?? 0) > 0);
+    if (withKnownSensors.length === 0) return all;
+    return all.filter((opt) => withKnownSensors.every((d) => d.availableSensors!.includes(opt.key)));
+  }, [appType, devices, deviceIds]);
   const eligibleDevices = useMemo(
     () => devices.filter((d) => d.type === APP_TYPE_TO_DEVICE_TYPE[appType]),
     [devices, appType],
@@ -177,8 +195,13 @@ export function AlertRuleDialog({
             <Select value={appType} onValueChange={(v) => onAppTypeChange(v as AlertAppType)} disabled={isEdit}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="NEP">NEP-LINK (water quality)</SelectItem>
                 <SelectItem value="MET">MET-LINK (weather)</SelectItem>
+                {/* NEP is switched off (M15 W4) — it has no live data source, so a
+                    rule built against it could never fire. The option returns with
+                    the feature. */}
+                {isFeatureEnabled('nepAnalytics') ? (
+                  <SelectItem value="NEP">NEP-LINK (water quality)</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
           </div>

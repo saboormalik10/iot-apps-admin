@@ -4,6 +4,7 @@ import { KpiRow } from './kpi-row';
 import { DeviceStatusTable } from './device-status-table';
 import { MetDeviceTabs } from './met-device-tabs';
 import { NepLiveTile } from './nep-live-tile';
+import { isFeatureEnabled } from '@/lib/config/flags';
 // import { ActiveAlertsPanel } from './active-alerts-panel';   ← alerts disabled
 import { FleetMapPanel } from '@/features/maps/fleet-map-panel';
 import { useScopedDevice, useEffectiveDeviceType } from './use-scoped-device';
@@ -25,10 +26,16 @@ export function DashboardHome() {
   // A MET scope hides the NEP panels and vice-versa; "All" shows both.
   const effectiveType = useEffectiveDeviceType();
   const showMet = !effectiveType || effectiveType === 'MET-LINK';
-  const showNep = !effectiveType || effectiveType === 'NEP-LINK';
+  // NEP is switched off (M15 W4) — its dashboard endpoints are disabled, so the
+  // tile would render an error rather than an empty state.
+  const showNep = isFeatureEnabled('nepAnalytics') && (!effectiveType || effectiveType === 'NEP-LINK');
 
   return (
     <div className="space-y-4">
+      {/* The dashboard's visual design has no page title, but a route with no h1
+          leaves screen-reader users with no top of the outline to land on — and
+          every card heading below is an h2. Visually hidden, structurally real. */}
+      <h1 className="sr-only">Dashboard</h1>
       <KpiRow />
 
       {/* Alerts are switched off, so the right-hand "Recent alerts" column is

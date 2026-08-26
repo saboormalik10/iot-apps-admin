@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Device, IDevice } from '../models/Device';
-import { demoDeviceSelfFilter } from '../utils/demo-scope.util';
 import { AuditLog } from '../models/AuditLog';
 import { NepSession } from '../models/NepSession';
 import { DeviceSettings } from '../models/DeviceSettings';
@@ -33,7 +32,6 @@ export interface ListDevicesOptions {
   page?: number;
   limit?: number;
   /** true → demo devices ONLY; false/undefined → real devices only. */
-  demoOnly?: boolean;
 }
 
 export interface ListDevicesResult {
@@ -51,7 +49,6 @@ export class DevicesService {
       deletedAt: null,
       // A demo device is a device — the list has to honour the mode too, or the
       // toggle would be visible but inert on /devices.
-      ...(await demoDeviceSelfFilter(orgId, !!opts.demoOnly)),
     };
     if (type) query.type = type;
     if (bleId) query.bleId = bleId;

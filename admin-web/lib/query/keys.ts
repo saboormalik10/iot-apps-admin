@@ -93,6 +93,14 @@ export const queryKeys = {
 
   // ── Devices (Month 8) ──
   devices: (q: DevicesQuery) => ['devices', q] as const,
+  roles: ['roles'] as const,
+  organizations: ['organizations'] as const,
+  branding: ['branding'] as const,
+  platformOverview: ['platform', 'overview'] as const,
+  stations: (organizationId: string) => ['platform', 'stations', organizationId] as const,
+  streamTypes: ['platform', 'stream-types'] as const,
+  permissionGroups: ['roles', 'permissions'] as const,
+  roleUsage: (id: string) => ['roles', id, 'usage'] as const,
   device: (id: string) => ['devices', id] as const,
   deviceStats: (id: string) => ['devices', id, 'stats'] as const,
   deviceHealth: (id: string) => ['devices', id, 'health'] as const,

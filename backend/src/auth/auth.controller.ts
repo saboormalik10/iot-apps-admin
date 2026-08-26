@@ -16,7 +16,7 @@ import {
   ApiCreatedResponse,
   ApiNoContentResponse,
 } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
@@ -34,6 +34,7 @@ import {
   ForgotPasswordDto,
   VerifyResetCodeDto,
   ResetPasswordDto,
+  SwitchOrgDto,
 } from './dto';
 
 const REFRESH_COOKIE = 'refreshToken';
@@ -56,6 +57,23 @@ function validationError(message: string, code = 'VALIDATION_ERROR'): Error {
 
 @ApiTags('Auth')
 @Controller('auth')
+/**
+ * ThrottlerGuard is applied HERE because it is not registered globally in this
+ * app (the same note appears on ingest, provision and the public share routes).
+ *
+ * Without it the `@Throttle` decorators below are inert metadata: they configure
+ * a guard that never runs. Measured before this line existed — 30 consecutive
+ * failed logins all returned 401 and not one 429, so `POST /auth/login` accepted
+ * unlimited password guesses while the Swagger description claimed it was
+ * "rate-limited to 10 requests/min". `throttle-coverage.e2e-spec.ts` now fails
+ * the build if any route carries @Throttle without a guard in scope.
+ *
+ * Guard order matters: this is listed FIRST so a request is counted before any
+ * authentication work happens. Behind it, bcrypt runs at cost 12 (~250 ms) on
+ * every attempt, which is itself the thing an attacker would use to exhaust the
+ * event loop.
+ */
+@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -80,10 +98,12 @@ export class AuthController {
   @ApiBody({ type: RegisterDto })
   @ApiCreatedResponse({ description: 'Org + admin created (auto-login)', schema: { example: AUTH_RESULT_EXAMPLE } })
   @ApiErrors('badRequest')
+  // Account-creation spam, and each one costs a bcrypt-12 hash.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @HttpCode(201)
   async register(
-    @Body() body: RegisterInput,
+    @Body() body: RegisterDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ data: AuthResult }> {
     if (!body.orgName || !body.email || !body.password || !body.firstName || !body.lastName || !body.country) {
@@ -115,7 +135,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   async login(
-    @Body() body: LoginInput,
+    @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ data: AuthResult }> {
@@ -155,24 +175,24 @@ export class AuthController {
       'The account joins the organisation configured on the server, so everything this user uploads ' +
       'shows up in that organisation\'s dashboard, tagged with their user id.',
   })
-  @Consumers('nep-link', 'met-link')
-  @ApiBody({ type: MobileSignupDto })
-  @ApiCreatedResponse({ description: 'User created (auto-login)', schema: { example: AUTH_RESULT_EXAMPLE } })
-  @ApiErrors('badRequest', 'unauthorized')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @Post('mobile/signup')
-  @HttpCode(201)
-  async mobileSignup(@Body() body: MobileSignupInput, @Req() req: Request): Promise<{ data: AuthResult }> {
-    if (!body.email || !body.password || !body.firstName || !body.lastName) {
-      throw validationError('email, password, firstName and lastName are required');
-    }
-    if (!EMAIL_RE.test(body.email)) throw validationError('A valid email is required', 'INVALID_EMAIL');
-    if (body.password.length < 8) throw validationError('Password must be at least 8 characters', 'WEAK_PASSWORD');
-
-    const userAgent = req.headers['user-agent'] ?? '';
-    const result = await this.authService.mobileSignup({ ...body, userAgent });
-    return { data: result };
-  }
+//   @Consumers('nep-link', 'met-link')
+//   @ApiBody({ type: MobileSignupDto })
+//   @ApiCreatedResponse({ description: 'User created (auto-login)', schema: { example: AUTH_RESULT_EXAMPLE } })
+//   @ApiErrors('badRequest', 'unauthorized')
+//   @Throttle({ default: { limit: 10, ttl: 60000 } })
+//   @Post('mobile/signup')
+//   @HttpCode(201)
+//   async mobileSignup(@Body() body: MobileSignupInput, @Req() req: Request): Promise<{ data: AuthResult }> {
+//     if (!body.email || !body.password || !body.firstName || !body.lastName) {
+//       throw validationError('email, password, firstName and lastName are required');
+//     }
+//     if (!EMAIL_RE.test(body.email)) throw validationError('A valid email is required', 'INVALID_EMAIL');
+//     if (body.password.length < 8) throw validationError('Password must be at least 8 characters', 'WEAK_PASSWORD');
+//
+//     const userAgent = req.headers['user-agent'] ?? '';
+//     const result = await this.authService.mobileSignup({ ...body, userAgent });
+//     return { data: result };
+//   }
 
   @ApiOperation({
     summary: 'Mobile login — sign an existing user in',
@@ -184,23 +204,23 @@ export class AuthController {
       'Wrong email/password returns **401** — show a friendly "check your details" message. ' +
       'Login attempts are limited to 10 per minute per device.',
   })
-  @Consumers('nep-link', 'met-link')
-  @ApiBody({ type: LoginDto })
-  @ApiOkResponse({ description: 'Authenticated', schema: { example: AUTH_RESULT_EXAMPLE } })
-  @ApiErrors('badRequest', 'unauthorized', 'tooManyRequests')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @Post('mobile/login')
-  @HttpCode(200)
-  async mobileLogin(@Body() body: LoginInput, @Req() req: Request): Promise<{ data: AuthResult }> {
-    if (!body.email || !body.password) throw validationError('email and password are required');
-    const userAgent = req.headers['user-agent'] ?? '';
-    const ipAddress =
-      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      '';
-    const result = await this.authService.login({ ...body, userAgent, ipAddress });
-    return { data: result };
-  }
+//   @Consumers('nep-link', 'met-link')
+//   @ApiBody({ type: LoginDto })
+//   @ApiOkResponse({ description: 'Authenticated', schema: { example: AUTH_RESULT_EXAMPLE } })
+//   @ApiErrors('badRequest', 'unauthorized', 'tooManyRequests')
+//   @Throttle({ default: { limit: 10, ttl: 60000 } })
+//   @Post('mobile/login')
+//   @HttpCode(200)
+//   async mobileLogin(@Body() body: LoginInput, @Req() req: Request): Promise<{ data: AuthResult }> {
+//     if (!body.email || !body.password) throw validationError('email and password are required');
+//     const userAgent = req.headers['user-agent'] ?? '';
+//     const ipAddress =
+//       (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+//       req.socket.remoteAddress ??
+//       '';
+//     const result = await this.authService.login({ ...body, userAgent, ipAddress });
+//     return { data: result };
+//   }
 
   @ApiOperation({
     summary: 'Mobile refresh — get a new access token without logging in again',
@@ -214,17 +234,17 @@ export class AuthController {
       'with 401, the refresh token has expired or been revoked — clear both stored tokens and ' +
       'send the user back to the login screen.',
   })
-  @Consumers('nep-link', 'met-link')
-  @ApiBody({ type: MobileRefreshDto })
-  @ApiOkResponse({ description: 'New access token', schema: { example: { data: { accessToken: 'eyJhbGci…' } } } })
-  @ApiErrors('badRequest', 'unauthorized')
-  @Post('mobile/refresh')
-  @HttpCode(200)
-  async mobileRefresh(@Body() body: { refreshToken?: string }): Promise<{ data: { accessToken: string } }> {
-    if (!body.refreshToken) throw validationError('refreshToken is required');
-    const result = await this.authService.refreshAccessToken(body.refreshToken);
-    return { data: result };
-  }
+//   @Consumers('nep-link', 'met-link')
+//   @ApiBody({ type: MobileRefreshDto })
+//   @ApiOkResponse({ description: 'New access token', schema: { example: { data: { accessToken: 'eyJhbGci…' } } } })
+//   @ApiErrors('badRequest', 'unauthorized')
+//   @Post('mobile/refresh')
+//   @HttpCode(200)
+//   async mobileRefresh(@Body() body: { refreshToken?: string }): Promise<{ data: { accessToken: string } }> {
+//     if (!body.refreshToken) throw validationError('refreshToken is required');
+//     const result = await this.authService.refreshAccessToken(body.refreshToken);
+//     return { data: result };
+//   }
 
   @ApiOperation({
     summary: 'Mobile logout — sign the user out',
@@ -233,14 +253,14 @@ export class AuthController {
       'revokes it so it can never be used again. Then delete both tokens from the phone\'s ' +
       'storage. Always returns 204, even if the token was already gone — safe to call.',
   })
-  @Consumers('nep-link', 'met-link')
-  @ApiBody({ type: MobileRefreshDto })
-  @ApiNoContentResponse({ description: 'Refresh token revoked' })
-  @Post('mobile/logout')
-  @HttpCode(204)
-  async mobileLogout(@Body() body: { refreshToken?: string }): Promise<void> {
-    if (body.refreshToken) await this.authService.logout(body.refreshToken);
-  }
+//   @Consumers('nep-link', 'met-link')
+//   @ApiBody({ type: MobileRefreshDto })
+//   @ApiNoContentResponse({ description: 'Refresh token revoked' })
+//   @Post('mobile/logout')
+//   @HttpCode(204)
+//   async mobileLogout(@Body() body: { refreshToken?: string }): Promise<void> {
+//     if (body.refreshToken) await this.authService.logout(body.refreshToken);
+//   }
 
   @ApiOperation({
     summary: 'Refresh access token using refresh token',
@@ -249,10 +269,12 @@ export class AuthController {
   @ApiBody({ type: RefreshDto })
   @ApiOkResponse({ description: 'New access token', schema: { example: { data: { accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…' } } } })
   @ApiErrors('badRequest', 'unauthorized')
+  // Several tabs can refresh near-simultaneously when an access token expires.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('refresh')
   @HttpCode(200)
   async refresh(
-    @Body() body: { refreshToken?: string },
+    @Body() body: RefreshDto,
     @Req() req: Request,
   ): Promise<{ data: { accessToken: string } }> {
     const rawToken: string | undefined =
@@ -269,6 +291,40 @@ export class AuthController {
     return { data: result };
   }
 
+  @ApiOperation({
+    summary: 'Switch the acting organisation (platform administrator only)',
+    description:
+      'Re-points the token\'s `organizationId` at another customer so every existing filter scopes to them — it does ' +
+      'NOT bypass tenancy. Returns a fresh access AND refresh token; the presented refresh token is revoked, and the ' +
+      'new one carries the assumption so a later refresh does not revert to the administrator\'s own organisation. ' +
+      'Pass `organizationId: null` to switch back. `isSuperAdmin` is re-read from the database, never taken from the token.',
+  })
+  @ApiBearerAuth()
+  @ApiBody({ type: SwitchOrgDto })
+  @ApiOkResponse({ description: 'New session acting as the target organisation', schema: { example: AUTH_RESULT_EXAMPLE } })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden', 'notFound')
+  @UseGuards(JwtAuthGuard)
+  @Post('switch-org')
+  @HttpCode(200)
+  async switchOrg(
+    @Body() body: SwitchOrgDto,
+    @CurrentUser() user: JWTPayload,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ data: AuthResult }> {
+    const rawToken: string =
+      body.refreshToken ?? (req.cookies as Record<string, string | undefined>)?.[REFRESH_COOKIE] ?? '';
+
+    const result = await this.authService.switchOrganization(
+      user.userId,
+      body.organizationId ?? null,
+      rawToken,
+      req.headers['user-agent'] ?? '',
+    );
+    this.setRefreshCookie(res, result.refreshToken);
+    return { data: result };
+  }
+
   @ApiOperation({ summary: 'Logout and revoke refresh token', description: 'Admin-panel only. Clears the httpOnly `refreshToken` cookie.' })
   @ApiBody({ type: LogoutDto })
   @ApiBearerAuth()
@@ -277,7 +333,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(204)
   async logout(
-    @Body() body: { refreshToken?: string },
+    @Body() body: LogoutDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
@@ -301,10 +357,15 @@ export class AuthController {
   @ApiBody({ type: ForgotPasswordDto })
   @ApiNoContentResponse({ description: 'If the email exists, a reset code was sent' })
   @ApiErrors('badRequest')
+  // Tighter than the default on purpose. This sends mail to a third party, so
+  // it is both an email-bombing vector and the way an attacker mints fresh reset
+  // codes — each new code buys another 5 verify attempts, so an unbounded mint
+  // rate would defeat the attempt ceiling on the code itself.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(204)
   async forgotPassword(
-    @Body() body: { email?: string },
+    @Body() body: ForgotPasswordDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void | object> {
@@ -345,9 +406,12 @@ export class AuthController {
   @ApiBody({ type: VerifyResetCodeDto })
   @ApiOkResponse({ description: 'Code valid — reset token issued', schema: { example: { data: { resetToken: 'a1b2c3…' } } } })
   @ApiErrors('badRequest')
+  // The code is 6 digits from a CSPRNG with a 5-attempt ceiling per record;
+  // this bounds guessing ACROSS records, which that ceiling does not.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('verify-reset-code')
   @HttpCode(200)
-  async verifyResetCode(@Body() body: { email?: string; code?: string }, @Req() req: Request): Promise<{ data: { resetToken: string } }> {
+  async verifyResetCode(@Body() body: VerifyResetCodeDto, @Req() req: Request): Promise<{ data: { resetToken: string } }> {
     if (!body.email || !body.code) {
       const err = new Error('email and code are required') as NodeJS.ErrnoException & { statusCode: number; code: string };
       err.statusCode = 400;
@@ -378,10 +442,11 @@ export class AuthController {
   @ApiBody({ type: ResetPasswordDto })
   @ApiNoContentResponse({ description: 'Password reset' })
   @ApiErrors('badRequest')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('reset-password')
   @HttpCode(204)
   async resetPassword(
-    @Body() body: { resetToken?: string; newPassword?: string },
+    @Body() body: ResetPasswordDto,
   ): Promise<void> {
     if (!body.resetToken || !body.newPassword) {
       const err = new Error('resetToken and newPassword are required');
@@ -409,6 +474,9 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiCreatedResponse({ description: 'Ticket minted', schema: { example: { data: { ticket: 'eyJhbGci…', expiresInSec: 60 } } } })
   @ApiErrors('unauthorized')
+  // Looser: a flaky connection legitimately re-tickets on reconnect backoff,
+  // and throttling that would break realtime for the user who can least afford it.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('ws-ticket')
   @HttpCode(201)
   @UseGuards(JwtAuthGuard)

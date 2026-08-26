@@ -29,7 +29,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { parseDemoOnly } from '../utils/demo-scope.util';
+import { brandedFilename, csvProvenance, exportLabel } from '../utils/export-branding.util';
 import { RecordsService, CreateRecordInput, MeasureInput } from './records.service';
 import { CreateRecordDto, UpdateRecordDto, BulkMeasuresDto } from './dto';
 
@@ -56,7 +56,6 @@ export class RecordsController {
   @ApiQuery({ name: 'to', required: false, description: 'Unix ms — end of range' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (default 1)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 20, max 100)' })
-  @ApiQuery({ name: 'demoOnly', required: false, description: 'true → demo-device data ONLY; omitted/false → real-device data only' })
   @ApiOkResponse({ description: 'Paginated records', schema: { example: { data: [RECORD_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
   @ApiErrors('unauthorized')
   @Get()
@@ -67,7 +66,6 @@ export class RecordsController {
     @Query('to') to?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('demoOnly') demoOnly?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
     return this.recordsService.listRecords({
@@ -77,7 +75,6 @@ export class RecordsController {
       to: to ? Number(to) : undefined,
       page: page ? Number(page) : 1,
       limit: limit ? Math.min(Number(limit), 100) : 20,
-      demoOnly: parseDemoOnly(demoOnly),
     });
   }
 
@@ -90,11 +87,8 @@ export class RecordsController {
       'nothing is duplicated. **Save the returned `_id`** — you need it to push the readings with ' +
       '`POST /v1/records/{id}/measures` and pictures with `POST /v1/records/{id}/pictures`. The ' +
       'record is saved with the logged-in user\'s id, so the admin panel shows who uploaded it.\n\n' +
-      '### Demo mode\n' +
-      'Set `isDemoMode: true` **and** send the `deviceId` of your demo device (register it with ' +
-      '`POST /v1/devices` using `bleId: "demo"`, `type: "MET-LINK"`). Demo data is hidden from the ' +
-      'admin panel by default and only appears when the operator switches to demo mode — it is ' +
-      'never mixed into real readings. A hard-coded placeholder `deviceId` will be rejected with **404**.',
+      'Send the `deviceId` of a registered device. A hard-coded placeholder `deviceId` will be ' +
+      'rejected with **404**.',
   })
   @Consumers('met-link')
   @ApiBody({
@@ -110,7 +104,6 @@ export class RecordsController {
           comment: 'Rooftop station — manual inspection',
           urlMaps: null,
           localRecordId: 42,
-          isDemoMode: false,
         },
       },
     },
@@ -120,7 +113,7 @@ export class RecordsController {
   @Post()
   @HttpCode(201)
   @UseGuards(JwtOrApiKeyGuard)
-  async createRecord(@Body() body: CreateRecordInput, @CurrentUser() user?: JWTPayload) {
+  async createRecord(@Body() body: CreateRecordDto, @CurrentUser() user?: JWTPayload) {
     const record = await this.recordsService.createRecord(
       user!.organizationId,
       body,
@@ -147,7 +140,7 @@ export class RecordsController {
   @UseGuards(JwtAuthGuard)
   async updateRecord(
     @Param('id') id: string,
-    @Body() body: { comment?: string },
+    @Body() body: UpdateRecordDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const record = await this.recordsService.updateRecord(user!.organizationId, id, body);
@@ -209,7 +202,7 @@ export class RecordsController {
   @UseGuards(JwtOrApiKeyGuard)
   async bulkInsertMeasures(
     @Param('id') id: string,
-    @Body() body: { measures: MeasureInput[] },
+    @Body() body: BulkMeasuresDto,
     @CurrentUser() user?: JWTPayload,
   ) {
     const result = await this.recordsService.bulkInsertMeasures(
@@ -252,10 +245,17 @@ export class RecordsController {
     @Res() res: Response,
     @CurrentUser() user?: JWTPayload,
   ): Promise<void> {
-    const csv = await this.recordsService.exportRecordCsv(user!.organizationId, id);
+    const [csv, label] = await Promise.all([
+      this.recordsService.exportRecordCsv(user!.organizationId, id),
+      exportLabel(user!.organizationId),
+    ]);
     const dateStr = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="MET-Link-${dateStr}.csv"`);
-    res.send(csv);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${brandedFilename(label, `MET-Link-${dateStr}`, 'csv')}"`,
+    );
+    // Provenance line first: the file outlives the session it came from.
+    res.send(label ? `${csvProvenance(label)}\n${csv}` : csv);
   }
 }

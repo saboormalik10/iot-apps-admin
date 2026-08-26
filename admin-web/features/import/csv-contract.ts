@@ -33,6 +33,16 @@ export const NEP_HEADER = [
   'Battery_%',
 ] as const;
 
+/**
+ * Header cells the MET import understands.
+ *
+ * TWO FORMATS, deliberately: our own export (`Temp_C`, `WindSpeed_ms`, …) and
+ * the STATION's own (`timestamp,direction,speed,units,status`). The station
+ * format was missing, so every real WindSonic file was reported here as having
+ * all of its columns ignored — while the server parsed them perfectly. Two
+ * panels telling the operator opposite things is worse than either being wrong
+ * alone.
+ */
 export const MET_HEADER = [
   'Timestamp',
   'Temp_C',
@@ -47,6 +57,14 @@ export const MET_HEADER = [
   'Voltage_V',
   'Lat',
   'Lng',
+  // The station's own header, as the SFTP logger writes it.
+  'timestamp',
+  'direction',
+  'direction_deg',
+  'dir',
+  'speed',
+  'units',
+  'status',
 ] as const;
 
 export const HEADERS: Record<ImportKind, readonly string[]> = { nep: NEP_HEADER, met: MET_HEADER };
@@ -159,7 +177,21 @@ export function dryRun(kind: ImportKind, text: string): DryRunResult {
 
   const missingRequired = required.filter((c) => at(c) < 0);
   const unknownColumns = header.filter((h) => !contract.some((c) => c.toLowerCase() === h.toLowerCase()));
-  const absentOptional = contract.filter((c) => !required.includes(c) && at(c) < 0);
+  /**
+   * Alternative spellings of the same column, so only ONE of each group is ever
+   * expected. Without this, a file using `direction` was told that
+   * `direction_deg` and `dir` were "not in this file, will import as empty" —
+   * technically true, and completely misleading.
+   */
+  const ALIAS_GROUPS: string[][] = [['direction', 'direction_deg', 'dir', 'WindDir_deg']];
+  const satisfiedByAlias = (column: string): boolean => {
+    const group = ALIAS_GROUPS.find((g) => g.some((a) => a.toLowerCase() === column.toLowerCase()));
+    return Boolean(group?.some((a) => at(a) >= 0));
+  };
+
+  const absentOptional = contract.filter(
+    (c) => !required.includes(c) && at(c) < 0 && !satisfiedByAlias(c),
+  );
 
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -258,8 +290,19 @@ export function detectKind(text: string): ImportKind | null {
   const first = splitCsv(text)[0];
   if (!first) return null;
   const lower = first.map((h) => h.toLowerCase());
+
   if (lower.includes('sessionid') && lower.includes('turbidity_ntu')) return 'nep';
+
+  // Our own MET export header.
   if (lower.includes('temp_c') || lower.includes('windspeed_ms') || lower.includes('pressure_hpa')) return 'met';
+
+  // The STATION's own header — `timestamp,direction,speed,units,status`. This is
+  // the format the client actually sends, and it was not detected at all: every
+  // real WindSonic file fell through to "unknown" and had to be classified by
+  // hand. Both direction spellings are accepted, as everywhere else.
+  const hasDirection = lower.includes('direction') || lower.includes('direction_deg') || lower.includes('dir');
+  if (lower.includes('timestamp') && hasDirection && lower.includes('speed')) return 'met';
+
   if (lower.includes('sessionid')) return 'nep';
   return null;
 }

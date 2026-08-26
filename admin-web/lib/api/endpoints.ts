@@ -2,6 +2,10 @@ import { http } from './http';
 import { uploadWithProgress } from './upload';
 import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
+  RoleRow,
+  PermissionGroup,
+  RoleUsage,
+  RoleInput,
   AlertRule,
   AppNotification,
   AuditEntry,
@@ -57,6 +61,18 @@ import type {
   Role,
   SessionFile,
   SessionUser,
+  OrganizationSummary,
+  PlatformOverview,
+  CreateCustomerInput,
+  CreatedCustomer,
+  PlatformStation,
+  ProvisionStationInput,
+  ProvisionedStation,
+  StreamTypeRow,
+  StreamPreview,
+  ImportDryRun,
+  Branding,
+  BrandingInput,
   ShareLink,
   ShareResourceType,
   ShareTokenRow,
@@ -155,29 +171,26 @@ export const markNotificationRead = (id: string) => http.patch<unknown>(`/notifi
 export const markAllNotificationsRead = () => http.post<{ updated: number }>('/notifications/read-all', {});
 
 // ── Dashboard (Month 8) ─────────────────────────────────────────────────────
-const demoParam = (demoOnly?: boolean) => (demoOnly ? '&demoOnly=true' : '');
 
 export interface SummaryScope {
-  demoOnly?: boolean;
   type?: DeviceType;
   deviceId?: string;
 }
 export const getSummary = (scope: SummaryScope = {}, signal?: AbortSignal) => {
   const params = new URLSearchParams();
-  if (scope.demoOnly) params.set('demoOnly', 'true');
   if (scope.type) params.set('type', scope.type);
   if (scope.deviceId) params.set('deviceId', scope.deviceId);
   const qs = params.toString();
   return http.get<DashboardSummary>(`/dashboard/summary${qs ? `?${qs}` : ''}`, signal);
 };
-export const getDashboardDevices = (demoOnly?: boolean, signal?: AbortSignal) =>
-  http.get<DashboardDevice[]>(`/dashboard/devices${demoOnly ? '?demoOnly=true' : ''}`, signal);
-export const getMetLatest = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
-  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
-export const getMetWindrose = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
-  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
+export const getDashboardDevices = (signal?: AbortSignal) =>
+  http.get<DashboardDevice[]>(`/dashboard/devices`, signal);
+export const getMetLatest = (deviceId: string, signal?: AbortSignal) =>
+  http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}`, signal);
+export const getMetWindrose = (deviceId: string, signal?: AbortSignal) =>
+  http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}`, signal);
 export const getMetHistory = (
-  params: { deviceId: string; sensor: string; from: number; to: number; demoOnly?: boolean },
+  params: { deviceId: string; sensor: string; from: number; to: number; },
   signal?: AbortSignal,
 ) => {
   const qs = new URLSearchParams({
@@ -186,13 +199,12 @@ export const getMetHistory = (
     from: String(params.from),
     to: String(params.to),
   });
-  if (params.demoOnly) qs.set('demoOnly', 'true');
   // getRaw (NOT get): the payload itself has a top-level `data` array, which the
   // `{ data }`-envelope unwrapper in http.get would wrongly strip to just the array.
   return http.getRaw<MetHistory>(`/dashboard/met/history?${qs.toString()}`, signal);
 };
 export const getMetHistoryMulti = (
-  params: { deviceId: string; sensors: string[]; from: number; to: number; demoOnly?: boolean },
+  params: { deviceId: string; sensors: string[]; from: number; to: number; },
   signal?: AbortSignal,
 ) => {
   const qs = new URLSearchParams({
@@ -201,11 +213,10 @@ export const getMetHistoryMulti = (
     from: String(params.from),
     to: String(params.to),
   });
-  if (params.demoOnly) qs.set('demoOnly', 'true');
   return http.getRaw<MetHistoryMulti>(`/dashboard/met/history-multi?${qs.toString()}`, signal);
 };
-export const getNepLatest = (deviceId: string, demoOnly = false, signal?: AbortSignal) =>
-  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}${demoParam(demoOnly)}`, signal);
+export const getNepLatest = (deviceId: string, signal?: AbortSignal) =>
+  http.get<NepLatest | null>(`/dashboard/nep/latest?deviceId=${deviceId}`, signal);
 export const getOrgDeviceMap = (signal?: AbortSignal) =>
   http.get<FleetMapPoint[]>('/dashboard/org/device-map', signal);
 
@@ -216,7 +227,6 @@ export interface DevicesQuery {
   page?: number;
   limit?: number;
   /** true → demo-device data ONLY; false/undefined → real-device data only. */
-  demoOnly?: boolean;
 }
 export const listDevices = async (q: DevicesQuery = {}, signal?: AbortSignal): Promise<Page<Device>> => {
   const params = new URLSearchParams();
@@ -264,7 +274,6 @@ export interface AnalyticsWindow {
   deviceId: string;
   from?: number;
   to?: number;
-  demoOnly?: boolean;
 }
 
 function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefined> = {}): string {
@@ -273,7 +282,6 @@ function analyticsQs(w: AnalyticsWindow, extra: Record<string, string | undefine
   // fall back to "last 24h", which silently truncates the "All time" preset.
   p.set('from', String(w.from ?? 0));
   if (w.to != null) p.set('to', String(w.to));
-  if (w.demoOnly) p.set('demoOnly', 'true');
   for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') p.set(k, v);
   return p.toString();
 }
@@ -318,7 +326,6 @@ export interface RecordsQuery {
   page?: number;
   limit?: number;
   /** true → demo-device data ONLY; false/undefined → real-device data only. */
-  demoOnly?: boolean;
 }
 
 export const listRecords = async (q: RecordsQuery = {}, signal?: AbortSignal): Promise<Page<MetRecordRow>> => {
@@ -407,14 +414,13 @@ export const getNepCrossSessionTrend = (
 
 // ── Org rollups (Month 10) ──────────────────────────────────────────────────
 export const getOrgDeviceComparison = (
-  params: { deviceIds: string[]; sensor: string; from?: number; to?: number; interval?: string; demoOnly?: boolean },
+  params: { deviceIds: string[]; sensor: string; from?: number; to?: number; interval?: string; },
   signal?: AbortSignal,
 ) => {
   const p = new URLSearchParams({ sensor: params.sensor });
   if (params.from != null) p.set('from', String(params.from));
   if (params.to != null) p.set('to', String(params.to));
   if (params.interval) p.set('interval', params.interval);
-  if (params.demoOnly) p.set('demoOnly', 'true');
   const ids = params.deviceIds.map((id) => `deviceIds[]=${encodeURIComponent(id)}`).join('&');
   return http.get<OrgDeviceComparison>(`/analytics/org/device-comparison?${p.toString()}&${ids}`, signal);
 };
@@ -432,7 +438,6 @@ export interface SessionsQuery {
   page?: number;
   limit?: number;
   /** true → demo-device data ONLY; false/undefined → real-device data only. */
-  demoOnly?: boolean;
 }
 
 export const listSessions = async (q: SessionsQuery = {}, signal?: AbortSignal): Promise<Page<NepSessionRow>> => {
@@ -623,4 +628,78 @@ export const sessionsZipHref = (q: { deviceId: string; from?: number; to?: numbe
   if (q.from !== undefined) p.set('from', String(q.from));
   if (q.to !== undefined) p.set('to', String(q.to));
   return `/api/export/sessions.zip?${p.toString()}`;
+};
+
+
+// ── Roles (M18) ─────────────────────────────────────────────────────────────
+export const listRoles = (signal?: AbortSignal) => http.get<RoleRow[]>('/roles', signal);
+export const listPermissionGroups = (signal?: AbortSignal) => http.get<PermissionGroup[]>('/roles/permissions', signal);
+export const getRoleUsage = (id: string, signal?: AbortSignal) => http.get<RoleUsage>(`/roles/${id}/usage`, signal);
+export const createRole = (input: RoleInput) => http.post<RoleRow>('/roles', input);
+export const updateRole = (id: string, input: Partial<RoleInput>) => http.patch<RoleRow>(`/roles/${id}`, input);
+export const deleteRole = (id: string, replacementRoleId?: string) =>
+  http.delete<{ deleted: string; usersMoved: number; replacementRoleId: string | null }>(
+    `/roles/${id}${replacementRoleId ? `?replacementRoleId=${encodeURIComponent(replacementRoleId)}` : ''}`,
+  );
+
+/** Every customer organisation. Platform administrators only (403 otherwise). */
+export const listOrganizations = (signal?: AbortSignal) =>
+  http.get<OrganizationSummary[]>('/organizations', signal);
+
+/** Cross-customer overview. Platform administrators only (403 otherwise). */
+export const getPlatformOverview = (signal?: AbortSignal) =>
+  http.get<PlatformOverview>('/platform/overview', signal);
+
+/** Create a customer and its first administrator. Platform administrators only. */
+export const createCustomer = (input: CreateCustomerInput) =>
+  http.post<CreatedCustomer>('/platform/customers', input);
+
+export const getBranding = (signal?: AbortSignal) => http.get<Branding>('/organizations/me/branding', signal);
+export const updateBranding = (input: BrandingInput) => http.patch<Branding>('/organizations/me/branding', input);
+
+/**
+ * Upload a logo.
+ *
+ * Reuses the same multipart path as the CSV import — `http` detects `FormData`
+ * and leaves the Content-Type alone, because setting it by hand strips the
+ * multipart boundary and the server then sees no file at all.
+ */
+export const uploadLogo = (file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  return http.post<Branding>('/organizations/me/branding/logo', form);
+};
+
+export const removeLogo = () => http.delete<Branding>('/organizations/me/branding/logo');
+
+/** Stations for a customer. Platform administrators only. */
+export const listStations = (organizationId: string, signal?: AbortSignal) =>
+  http.get<PlatformStation[]>(`/platform/stations/${organizationId}`, signal);
+
+export const provisionStation = (input: ProvisionStationInput) =>
+  http.post<ProvisionedStation>('/platform/stations', input);
+
+/** Stream types with their column specs. Platform administrators only. */
+export const listStreamTypes = (signal?: AbortSignal) =>
+  http.get<StreamTypeRow[]>('/platform/stream-types', signal);
+
+/** Parse a sample and report what WOULD be stored. Writes nothing. */
+export const previewStream = (input: { streamKey: string; content: string; filename?: string }) =>
+  http.post<StreamPreview>('/platform/stream-types/preview', input);
+
+export const setStreamTypeEnabled = (id: string, isEnabled: boolean) =>
+  http.patch<{ id: string; key: string; isEnabled: boolean }>(`/platform/stream-types/${id}/enabled`, { isEnabled });
+
+/**
+ * Ask the server what a MET import would do. Writes nothing.
+ *
+ * The wizard's own review is computed in the browser and cannot know two things
+ * the server does: whether these exact bytes were already ingested, and which
+ * local days already hold data.
+ */
+export const dryRunMetImport = (file: File, deviceId: string) => {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('deviceId', deviceId);
+  return http.post<ImportDryRun>('/import/met/dry-run', form);
 };

@@ -9,7 +9,6 @@ import { useScope } from '@/lib/hooks/use-scope';
 import { DataTable } from '@/components/data/data-table';
 import { ExportMenu } from '@/components/data/export-menu';
 import { sessionsZipHref } from '@/lib/api/endpoints';
-import { StatusBadge } from '@/components/charts/status-badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NTU_CLASSES, ntuClassIndex, cssVar } from '@/lib/api/scales';
@@ -44,7 +43,6 @@ export function SessionsList() {
     limit: 20,
     // Demo mode is part of the query, so it is part of the react-query key too —
     // without it the toggle would serve the other mode's cached page.
-    demoOnly: scope.demoOnly || undefined,
   });
 
   const columns = useMemo<ColumnDef<NepSessionRow, unknown>[]>(
@@ -78,11 +76,6 @@ export function SessionsList() {
       {
         header: 'Probe',
         cell: ({ row }) => (row.original.probeRange ? <span className="text-xs tabular-nums">{row.original.probeRange}</span> : '—'),
-      },
-      {
-        header: '',
-        id: 'demo',
-        cell: ({ row }) => (row.original.isDemoMode ? <StatusBadge tone="info" label="Demo" /> : null),
       },
     ],
     [],

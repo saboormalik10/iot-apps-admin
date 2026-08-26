@@ -1,13 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsEmail,
-  IsIn,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { UserRole } from '../models/User';
 
 const ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
@@ -77,4 +69,38 @@ export class AcceptInviteDto {
   @IsString()
   @MinLength(8)
   password!: string;
+}
+
+/**
+ * Branding. Every field optional, and an EMPTY STRING clears it back to the
+ * platform default — that is how a customer removes a logo or accent without a
+ * separate reset endpoint.
+ *
+ * NOTE: the global ValidationPipe runs with `whitelist: true`, so a property
+ * with no class-validator decorator is silently STRIPPED.
+ */
+export class UpdateBrandingDto {
+  @ApiPropertyOptional({ example: 'Acme Marine', description: 'Shown in the app shell instead of the organisation name.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  displayName?: string;
+
+  @ApiPropertyOptional({ example: '', description: 'Set by the logo upload (M20 W2).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  logoUrl?: string;
+
+  @ApiPropertyOptional({ example: '#1f6feb', description: 'Hex only, `#rrggbb`.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(7)
+  accentColor?: string;
+
+  @ApiPropertyOptional({ example: 'support@acme.example' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  supportEmail?: string;
 }

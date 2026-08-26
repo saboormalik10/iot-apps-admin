@@ -35,7 +35,9 @@ export interface IDeviceSettings extends Document {
 
 const deviceSettingsSchema = new Schema<IDeviceSettings>(
   {
-    deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true, unique: true },
+    // Uniqueness is declared once, at the `schema.index()` call below — see the
+    // note there.
+    deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     qqEnabled: { type: Boolean, default: false },
     qqGpsHeight: { type: Boolean, default: true },
@@ -59,6 +61,9 @@ const deviceSettingsSchema = new Schema<IDeviceSettings>(
   { timestamps: { createdAt: false, updatedAt: true } },
 );
 
+// The ONLY declaration of this index. It was previously also declared inline as
+// `unique: true` on the field, which builds the same index from two places: a
+// change here would have looked applied while the field quietly kept it alive.
 deviceSettingsSchema.index({ deviceId: 1 }, { unique: true });
 deviceSettingsSchema.index({ organizationId: 1 });
 

@@ -138,4 +138,42 @@ describe('dryRun — MET', () => {
     expect(r.errors).toEqual([]);
     expect(r.validRows).toBe(1);
   });
+
+  describe("the station's own header", () => {
+    it('detects a real WindSonic file as MET', () => {
+      // `timestamp,direction,speed,units,status` is what the client actually
+      // sends. It was not detected at all — every real file fell through to
+      // "unknown" and had to be classified by hand.
+      expect(detectKind('timestamp,direction,speed,units,status\n')).toBe('met');
+    });
+
+    it('accepts both direction spellings, as everywhere else', () => {
+      expect(detectKind('timestamp,direction_deg,speed,units,status\n')).toBe('met');
+      expect(detectKind('timestamp,dir,speed,units,status\n')).toBe('met');
+    });
+
+    it('still detects our own MET export header', () => {
+      expect(detectKind('Timestamp,Temp_C,Humidity_%,Pressure_hPa\n')).toBe('met');
+    });
+
+    it('does not claim a header that merely has a timestamp', () => {
+      expect(detectKind('timestamp,value\n')).toBeNull();
+    });
+  });
+
+  describe('alias spellings', () => {
+    it('does not report the other spellings as missing', () => {
+      // A file using `direction` was told `direction_deg` and `dir` were "not in
+      // this file, will import as empty" — true, and completely misleading.
+      const r = dryRun('met', 'timestamp,direction,speed,units,status\n2026-08-25T09:00:00+10:00,350,0.5,K,A\n');
+      const absent = r.warnings.find((w) => w.includes('will import as empty')) ?? '';
+      expect(absent).not.toMatch(/direction_deg/);
+      expect(absent).not.toMatch(/\bdir\b/);
+    });
+
+    it('still reports genuinely absent optional columns', () => {
+      const r = dryRun('met', 'timestamp,direction,speed,units,status\n2026-08-25T09:00:00+10:00,350,0.5,K,A\n');
+      expect(r.warnings.join(' ')).toMatch(/Temp_C/);
+    });
+  });
 });

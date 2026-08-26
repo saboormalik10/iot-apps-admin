@@ -39,7 +39,8 @@ export interface IMetMeasure extends Document {
   // Phone GPS
   phoneLat: number | null;
   phoneLng: number | null;
-  isDemoMode: boolean;
+  /** Where the row came from. Scopes the 30-day TTL to SFTP data only (M14). */
+  source: 'sftp' | 'mobile' | null;
   createdAt: Date;
 }
 
@@ -51,6 +52,7 @@ const metMeasureSchema = new Schema<IMetMeasure>(
     dataSentence: { type: String, required: true },
     timeStamp: { type: String, required: true },
     timestampMs: { type: Number, required: true },
+    source: { type: String, enum: ['sftp', 'mobile', null], default: null },
     windSpeedMs: { type: Number, default: null },
     windSpeedKmh: { type: Number, default: null },
     windSpeedKnots: { type: Number, default: null },
@@ -79,16 +81,33 @@ const metMeasureSchema = new Schema<IMetMeasure>(
     gpsQuality: { type: Number, default: null },
     phoneLat: { type: Number, default: null },
     phoneLng: { type: Number, default: null },
-    isDemoMode: { type: Boolean, default: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
 metMeasureSchema.index({ recordId: 1, timestampMs: 1 });
 metMeasureSchema.index({ organizationId: 1, timestampMs: -1 });
-metMeasureSchema.index({ organizationId: 1, tempC: 1 });
-metMeasureSchema.index({ recordId: 1, rowType: 1 });
+// REMOVED (M23 W1): `{recordId, rowType}` was a strict PREFIX of the compound
+// index below, and neither is unique — so it could never be the better plan,
+// while still costing a write on every one of 4.3M daily inserts at 50 stations.
+// Dropping it from the database alone was not enough: `autoIndex` recreated it
+// from this declaration on the next connect.
 // Dashboard query: latest data row per record, windrose lookback
 metMeasureSchema.index({ recordId: 1, rowType: 1, timestampMs: -1 });
+
+// 30-day retention for station data, as agreed with the client.
+//
+// PARTIAL on `source: 'sftp'`, never blanket: a plain TTL here would also delete
+// every mobile-era row. Keys on `createdAt` (ingest time) rather than
+// `timestampMs`, because TTL requires a Date field and because a backfilled
+// historical file should then live 30 days from ingest rather than being deleted
+// the moment it lands.
+//
+// MetRecord carries a companion TTL at 35 days so a day-record always outlives
+// the measures it counts — see models/MetRecord.ts.
+metMeasureSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 2_592_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+);
 
 export const MetMeasure = model<IMetMeasure>('MetMeasure', metMeasureSchema);

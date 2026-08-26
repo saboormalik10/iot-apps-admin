@@ -18,7 +18,13 @@ export type AuditResourceType =
   | 'alertRule'
   | 'shareToken'
   | 'org'
-  | 'settings';
+  | 'settings'
+  // M18: roles are audited like any other governed resource — who changed who
+  // could do what is exactly the question an audit log exists to answer.
+  | 'role'
+  // M21: station provisioning creates OS-level logins, so it is audited too.
+  | 'serviceCredential'
+  | 'station';
 
 export interface IAuditLog extends Document {
   organizationId: Types.ObjectId;
@@ -46,7 +52,7 @@ const auditLogSchema = new Schema<IAuditLog>(
     },
     resourceType: {
       type: String,
-      enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'],
+      enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings', 'role', 'serviceCredential', 'station'],
       required: true,
     },
     resourceId: { type: String, default: null },

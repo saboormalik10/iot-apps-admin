@@ -16,7 +16,22 @@ export interface IMetRecord extends Document {
   hasHeaderRow: boolean;
   syncedAt: Date;
   localRecordId: number | null;
-  isDemoMode: boolean;
+  /** Local calendar day (YYYY-MM-DD) this record groups. SFTP ingest only. */
+  dayKey: string | null;
+  source: 'sftp' | 'mobile' | null;
+  /**
+   * The unit code the sensor actually reported for wind speed, e.g. `K` (km/h).
+   *
+   * The client requires the display to show "whatever data comes from the
+   * sensor", so the native unit must survive ingestion. Normalised m/s stays the
+   * base for alarms and aggregates — you cannot average km/h with knots — and
+   * this says which unit to render.
+   *
+   * Stored per DAY, not per measure: it is file-level metadata, effectively
+   * constant for a station, and a per-row copy would add a string to every one of
+   * ~2.6M rows per station per TTL window for no extra fidelity.
+   */
+  speedUnitCode: string | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -38,7 +53,9 @@ const metRecordSchema = new Schema<IMetRecord>(
     hasHeaderRow: { type: Boolean, default: true },
     syncedAt: { type: Date, required: true, default: Date.now },
     localRecordId: { type: Number, default: null },
-    isDemoMode: { type: Boolean, default: false },
+    dayKey: { type: String, default: null },
+    source: { type: String, enum: ['sftp', 'mobile', null], default: null },
+    speedUnitCode: { type: String, default: null },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
@@ -59,7 +76,47 @@ metRecordSchema.index(
   { organizationId: 1, localRecordId: 1 },
   { unique: true, partialFilterExpression: { localRecordId: { $type: 'number' } } },
 );
-metRecordSchema.index({ organizationId: 1, isDemoMode: 1 }, { sparse: true });
-metRecordSchema.index({ organizationId: 1, userId: 1 }, { sparse: true });
+// REMOVED (M23 W1): no read path queries records by userId. The field is still
+// written (mobile-era attribution), but nothing has ever looked it up.
+
+
+// One MetRecord per device per LOCAL day for SFTP ingest. PARTIAL, not sparse:
+// `dayKey` defaults to null on every mobile-synced record, and a sparse index only
+// skips ABSENT fields — so every null would collide and exactly one such record
+// could exist per device. `$type: 'string'` excludes the nulls properly. This is
+// the same trap documented on the localRecordId index above.
+/**
+ * The ingest day lookup: `{deviceId, dayKey, deletedAt}`, once per uploaded file.
+ *
+ * SEPARATE from the unique index below, deliberately. That one is PARTIAL on
+ * `{dayKey: {$type: 'string'}}`, and MongoDB will not use a partial index unless
+ * the query provably matches its filter — an equality on a string literal does
+ * not satisfy `$type`, so the planner never even considered it. Every ingested
+ * file therefore fell back to `{deviceId, dateStartMs}` and scanned that
+ * device's whole day history: ~365 keys after a year, 1,440 times a day per
+ * station. Measured 8 keys examined → 1 with this index (M23 W1).
+ *
+ * The partial one stays because it is the CONSTRAINT: a plain unique index would
+ * collide on the mobile-era `dayKey: null` rows, which is the trap M14 hit.
+ */
+metRecordSchema.index({ deviceId: 1, dayKey: 1, deletedAt: 1 });
+
+metRecordSchema.index(
+  { deviceId: 1, dayKey: 1 },
+  { unique: true, partialFilterExpression: { dayKey: { $type: 'string' } } },
+);
+
+// Companion to the MetMeasure TTL: without this, one empty day-record per station
+// per day accumulates forever and `measureCount` drifts into meaning "rows ever
+// ingested" rather than "rows retained".
+//
+// 35 days, deliberately LONGER than the 30-day measure TTL, so a record always
+// outlives its own measures (the last measure of a day expires ~31 days after the
+// record is created). MetDailySummary keys on deviceId, not recordId, so the
+// daily aggregates survive the record's removal.
+metRecordSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: 3_024_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+);
 
 export const MetRecord = model<IMetRecord>('MetRecord', metRecordSchema);

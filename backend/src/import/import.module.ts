@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { SyncModule } from '../sync/sync.module';
+import { IngestModule } from '../ingest/ingest.module';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
 
 @Module({
-  imports: [SyncModule],
+  imports: [IngestModule],
   controllers: [ImportController],
   providers: [ImportService],
 })

@@ -7,6 +7,8 @@ import { Gauge, type GaugeBand } from '@/components/charts/gauge';
 import { Thermometer } from '@/components/charts/thermometer';
 import { BatteryGauge } from '@/components/charts/battery-gauge';
 import { CompassTile } from '@/components/charts/compass-tile';
+import { WindDial } from '@/components/charts/wind-dial';
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import { StatTile } from '@/components/charts/stat-tile';
 import { BeaufortBadge } from '@/components/charts/beaufort-scale';
 import { LoadingState, EmptyState } from '@/components/screen-states';
@@ -16,7 +18,7 @@ import { DataFreshness } from './data-freshness';
 import { useMetLatest } from './use-dashboard';
 import { PresetMenu } from './presets/preset-menu';
 import { useDashboardLayouts } from './presets/use-layouts';
-import { ALL_WIDGET_KEYS, tilesToKeys } from './presets/tile-catalog';
+import { ALL_WIDGET_KEYS, MET_STATION_WIDGETS, tilesToKeys } from './presets/tile-catalog';
 
 /** Pressure threshold bands (hPa) — low/normal/high on the reserved status roles. */
 const PRESSURE_BANDS: GaugeBand[] = [
@@ -48,6 +50,7 @@ const WIND_BANDS: GaugeBand[] = [
 export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto?: boolean }) {
   const { data, isLoading } = useMetLatest(deviceId);
   const { data: layouts } = useDashboardLayouts(deviceId);
+  const sensors = useDeviceSensors(deviceId);
 
   const [visibleKeys, setVisibleKeys] = useState<string[]>(ALL_WIDGET_KEYS);
   const [appliedId, setAppliedId] = useState<string | null>(null);
@@ -67,21 +70,54 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
     }
   }, [deviceId, layouts]);
 
-  if (!deviceId) return <EmptyState title="No MET-LINK device" body="Pair a MET-LINK station to see the live dashboard." />;
-  if (isLoading) return <LoadingState label="Loading live station…" />;
-  if (!data) return <EmptyState title="No live MET data" body="This device has not reported measurements yet." />;
+  /**
+   * A tile shows when the user's saved view includes it AND the device actually
+   * reports it. Without the second clause a wind-only station renders five
+   * permanently empty gauges — the dashboard looks broken rather than accurate.
+   *
+   * `sensors.has()` fails open, so before the device list lands nothing is hidden.
+   *
+   * Declared ABOVE the loading guard on purpose: it depends only on `visibleKeys`
+   * and `sensors`, both of which are known before `data` arrives, so the skeleton
+   * can render the exact same tile set. That is what makes the loaded view drop
+   * in at the same height instead of shifting the page (M24 W2).
+   */
+  const SENSORLESS = new Set(['battery', 'wind_dial']);
+  const show = (key: string) => {
+    if (!visibleKeys.includes(key)) return false;
+    // `wind_dial` covers speed AND bearing; battery is hardware, not a sensor
+    // the ingester ever sees in a file.
+    if (SENSORLESS.has(key)) return key === 'wind_dial' ? sensors.has('wind_speed') : true;
+    return sensors.has(key);
+  };
 
-  const show = (key: string) => visibleKeys.includes(key);
+  if (!deviceId) return <EmptyState title="No MET-LINK device" body="Pair a MET-LINK station to see the live dashboard." />;
+  /**
+   * Order matters here, and getting it wrong is measurable.
+   *
+   * `show()` fails open, so BEFORE the devices list lands it reports every tile.
+   * Rendering the tile-shaped skeleton at that point paints all eleven tiles
+   * (1158px) and then shrinks to whatever the station actually reports (960px) —
+   * a bigger shift than the plain spinner it replaced. Measured exactly that way
+   * on the first attempt.
+   *
+   * So: spinner until the sensor list resolves and the tile count is KNOWN, then
+   * the shaped skeleton at the final size, then the real grid dropping into the
+   * same height with no shift at all.
+   */
+  if (!sensors.resolved) return <LoadingState label="Loading live station…" />;
+  if (isLoading) return <StationSkeleton show={show} />;
+  if (!data) return <EmptyState title="No live MET data" body="This device has not reported measurements yet." />;
 
   return (
     <div className="space-y-4">
       <Card className="space-y-4 p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-0.5">
-            <h3 className="text-sm font-medium">
+            <h2 className="text-sm font-medium">
               Live station · {data.deviceName}
               {isAuto ? <span className="ml-2 text-xs font-normal text-muted-foreground">(auto-selected)</span> : null}
-            </h3>
+            </h2>
             <DataFreshness tsMs={data.measuredAtMs} />
           </div>
           <div className="flex items-center gap-2">
@@ -98,6 +134,16 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
 
         {/* Instrument grid — gauges + thermometers + battery + compass. */}
         <div className="grid grid-cols-2 items-end gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          {show('wind_dial') ? (
+            <Widget>
+              <WindDial
+                speedMs={data.windSpeedMs}
+                speedKmh={data.windSpeedKmh}
+                dirDeg={data.windDirTrueDeg}
+                headingOffsetDeg={data.headingOffsetDeg ?? 0}
+              />
+            </Widget>
+          ) : null}
           {show('wind_speed') ? (
             <Widget>
               <Gauge value={data.windSpeedKmh} min={0} max={100} label="Wind speed" unit="km/h" valueRole="seq-3" bands={WIND_BANDS} />
@@ -173,6 +219,93 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
 
 function Widget({ children }: { children: React.ReactNode }) {
   return <div className="flex justify-center">{children}</div>;
+}
+
+/**
+ * Loading state for the live station — the fix for the dashboard's CLS gap
+ * (M24 W2; the gap was documented in LIGHTHOUSE.md from the month this shipped).
+ *
+ * It previously rendered a small centred spinner and then swapped in a ~1000px
+ * instrument grid, so everything below jumped down: CLS 0.12 against a 0.1 budget.
+ *
+ * A `min-h-*` on the spinner was tried first and made it WORSE (0.12 → 0.16): a
+ * reserved height that does not match the loaded height just trades a downward
+ * shift for an upward one, and the loaded height genuinely varies with how many
+ * tiles the device's preset shows.
+ *
+ * So this does not guess a height. It renders THE SAME primitives, at the same
+ * sizes, for the same tiles — chosen by the same `show()` the loaded view uses —
+ * with `value={null}`, which every instrument already renders as an empty widget
+ * rather than a fabricated zero. The height therefore matches by construction,
+ * and stays matching when a tile is added to the catalogue.
+ *
+ * It is `aria-hidden` with a live-region label beside it: to a screen reader this
+ * is "loading", not eleven unlabelled empty gauges.
+ */
+function StationSkeleton({ show }: { show: (key: string) => boolean }) {
+  const instruments = MET_STATION_WIDGETS.filter((w) => w.type !== 'stat' && show(w.key));
+  const stats = MET_STATION_WIDGETS.filter((w) => w.type === 'stat' && show(w.key));
+
+  const Bar = ({ className }: { className: string }) => (
+    <div className={`animate-pulse rounded bg-muted ${className}`} />
+  );
+
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <span className="sr-only" role="status">
+        Loading live station…
+      </span>
+
+      <Card className="space-y-4 p-4" aria-hidden="true">
+        {/* Mirrors the loaded header: an h3 line over a DataFreshness line. */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <Bar className="h-5 w-48" />
+            <Bar className="h-4 w-28" />
+          </div>
+          <Bar className="h-8 w-32" />
+        </div>
+
+        <div className="grid grid-cols-2 items-end gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          {instruments.map((w) => (
+            <Widget key={w.key}>
+              {w.type === 'compass' && w.key === 'wind_dial' ? (
+                <WindDial speedMs={null} speedKmh={null} dirDeg={null} headingOffsetDeg={0} />
+              ) : w.type === 'compass' ? (
+                <CompassTile deg={null} label={w.label} />
+              ) : w.type === 'thermometer' ? (
+                <Thermometer value={null} min={-10} max={50} label={w.label} />
+              ) : w.type === 'battery' ? (
+                <BatteryGauge value={null} min={10} max={15} label={w.label} />
+              ) : (
+                <Gauge value={null} min={0} max={100} label={w.label} unit={w.unit} valueRole="seq-3" />
+              )}
+            </Widget>
+          ))}
+        </div>
+
+        {stats.length ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {stats.map((w) => (
+              <StatTile
+                key={w.key}
+                label={w.label}
+                icon={<span className="[&_svg]:h-4 [&_svg]:w-4"><CloudRain /></span>}
+                value={<Value v={null} unit={w.unit} />}
+              />
+            ))}
+          </div>
+        ) : null}
+      </Card>
+
+      {/* The wind rose card below is what the shift used to push down. */}
+      <Card className="p-4" aria-hidden="true">
+        {/* Matches WindRosePanel's pinned 454px block, so the rose does not
+            resize the card when it lands. */}
+        <Bar className="h-[454px] w-full" />
+      </Card>
+    </div>
+  );
 }
 
 function Value({ v, unit }: { v: number | null; unit: string }) {

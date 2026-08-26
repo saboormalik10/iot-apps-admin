@@ -1,0 +1,10 @@
+[Unit]
+Description=Report Observator ingest archive size (deletes nothing)
+Documentation=https://github.com/observator/iot-apps-admin
+
+[Service]
+Type=oneshot
+User=wxstation
+# Reports only. There is deliberately NO prune unit: the client requires
+# uploaded files to be kept permanently.
+ExecStart=/opt/observator/ingest-agent/deploy/archive-report.sh

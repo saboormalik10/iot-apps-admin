@@ -76,7 +76,18 @@ const metDailySummarySchema = new Schema<IMetDailySummary>({
   computedAt: { type: Date, required: true, default: Date.now },
 });
 
-metDailySummarySchema.index({ deviceId: 1, dateMs: -1 }, { unique: true });
+// Keyed on the LOCAL date string, not on `dateMs`.
+//
+// `dateMs` is a millisecond instant, so two callers computing the day-start even
+// slightly differently — one from localDayBounds, one from a record's first
+// reading — produced TWO summary rows for the same calendar day instead of
+// updating one. Observed in the live database: 2026-08-21 existed twice, at
+// 14:00:00 and 14:02:00.
+//
+// `date` is 'YYYY-MM-DD' in the organisation's timezone: stable, and it compares
+// lexicographically, so range queries need no timezone arithmetic at all.
+metDailySummarySchema.index({ deviceId: 1, date: 1 }, { unique: true });
+metDailySummarySchema.index({ deviceId: 1, dateMs: -1 });
 metDailySummarySchema.index({ organizationId: 1, dateMs: -1 });
 
 export const MetDailySummary = model<IMetDailySummary>('MetDailySummary', metDailySummarySchema);

@@ -8,6 +8,7 @@ import { formatDateTime, formatDate } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { PublicNepSnapshot, PublicMetSnapshot } from '@/lib/api/types';
 import { usePublicSnapshot } from './use-share';
+import { hexToHslTriple, strongStepFor } from '@/lib/branding/color';
 
 const TURBIDITY: SeriesDef = { key: 'turbidity', label: 'Turbidity (NTU)', role: 'chart-1' };
 const TEMPERATURE: SeriesDef = { key: 'temperature', label: 'Temperature (°C)', role: 'chart-8' };
@@ -20,10 +21,35 @@ const TEMPERATURE: SeriesDef = { key: 'temperature', label: 'Temperature (°C)',
 export function PublicSnapshotView({ token }: { token: string }) {
   const { data, isLoading, isError } = usePublicSnapshot(token);
 
+  const accent = data?.branding?.accentColor?.trim();
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
-      <header className="mb-6 flex items-center justify-between">
-        <span className="text-sm font-semibold">ObservatorNepLink</span>
+      {accent ? (
+        <style
+          // Same token override as the signed-in shell, so a shared page looks
+          // like the customer's panel rather than a generic one.
+          dangerouslySetInnerHTML={{
+            __html: `:root{--primary:${hexToHslTriple(accent)};--primary-foreground:${hexToHslTriple(
+              data?.branding?.accentForeground || '#ffffff',
+            )};--primary-strong:${hexToHslTriple(strongStepFor(accent))};--ring:${hexToHslTriple(accent)};}`,
+          }}
+        />
+      ) : null}
+      <header className="mb-6 flex items-center justify-between gap-3">
+        {/* The customer's identity, not the platform's: whoever receives this
+            link is the customer's contact, and a page badged with someone
+            else's name reads as the wrong company sending it. Falls back to the
+            platform wordmark when the customer has set no branding. */}
+        <span className="flex min-w-0 items-center gap-2">
+          {data?.branding?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.branding.logoUrl} alt="" className="h-6 w-6 shrink-0 rounded object-contain" />
+          ) : null}
+          <span className="truncate text-sm font-semibold">
+            {data?.branding?.displayName?.trim() || 'ObservatorNepLink'}
+          </span>
+        </span>
         <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
           <Lock className="h-3 w-3" /> Read-only shared view
         </span>

@@ -29,7 +29,7 @@ describe.skip('Alert rules (e2e)', () => {
     await app.init();
     httpServer = app.getHttpServer();
 
-    const admin = await request(httpServer).post('/v1/auth/login').send({ email: 'admin@observator.com', password: 'Admin@1234' });
+    const admin = await request(httpServer).post('/v1/auth/login').send({ email: 'admin@observator.com', password: process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234' });
     adminToken = admin.body.data?.accessToken ?? admin.body.accessToken;
 
     const devices = await request(httpServer).get('/v1/devices').query({ type: 'NEP-LINK' }).set('Authorization', `Bearer ${adminToken}`);

@@ -55,6 +55,13 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   // ─── NEP Session Files ──────────────────────────────────────────────────────
+  /* ─────────────────────────────────────────────────────────────────────────
+   * NEP SESSION FILES — SWITCHED OFF (M15 W4)
+   *
+   * Disabled with the rest of NEP. FilesModule stays registered because it also
+   * serves MET record pictures, so the seam here is the routes, not the module.
+   * ───────────────────────────────────────────────────────────────────────── */
+
 
   @ApiOperation({
     summary: 'Upload a file to a NEP session (photo, map screenshot, thumbnail)',
@@ -89,117 +96,117 @@ export class FilesController {
       },
     },
   })
-  @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
-  @Post('sessions/:id/files')
-  @HttpCode(201)
-  @UseGuards(JwtOrApiKeyGuard)
-  @UseInterceptors(FileInterceptor('file', multerOptions))
-  async uploadSessionFile(
-    @Param('id') id: string,
-    @Body() body: { fileType?: string; capturedAt?: string },
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user?: JWTPayload,
-  ) {
-    if (!file) {
-      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
-    }
-    const fileType = (body.fileType ?? 'photo') as 'map' | 'photo' | 'thumbnail';
-    const allowed = ['map', 'photo', 'thumbnail'];
-    if (!allowed.includes(fileType)) {
-      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: `fileType must be one of: ${allowed.join(', ')}` } });
-    }
-    const result = await this.filesService.uploadSessionFile(
-      user!.organizationId,
-      id,
-      file,
-      fileType,
-      body.capturedAt,
-      user!.userId,
-    );
-    return { data: result };
-  }
-
-  @ApiOperation({ summary: 'List all files for a NEP session (admin dashboard)' })
-  @ApiOkResponse({ description: 'Files for the session' })
-  @ApiErrors('unauthorized', 'notFound')
-  @Get('sessions/:id/files')
-  @UseGuards(JwtAuthGuard)
-  async listSessionFiles(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
-    const files = await this.filesService.listSessionFiles(user!.organizationId, id);
-    return { data: files };
-  }
-
-  @ApiOperation({ summary: 'Delete a file from a NEP session (admin dashboard)' })
-  @ApiNoContentResponse({ description: 'File deleted' })
-  @ApiErrors('unauthorized', 'notFound')
-  @Delete('sessions/:id/files/:fileId')
-  @HttpCode(204)
-  @UseGuards(JwtAuthGuard)
-  async deleteSessionFile(
-    @Param('id') id: string,
-    @Param('fileId') fileId: string,
-    @CurrentUser() user?: JWTPayload,
-  ): Promise<void> {
-    await this.filesService.deleteSessionFile(user!.organizationId, id, fileId);
-  }
-
-  // ─── MET Record Pictures ────────────────────────────────────────────────────
-
-  @ApiOperation({
-    summary: 'Upload a picture to a MET record',
-    description:
-      '**Call this to attach a photo to a logging record** (e.g. a shot of the station site). `:id` ' +
-      'is the record `_id` from the record upload. Send the file as ordinary `multipart/form-data` ' +
-      'with an optional `takenAt` timestamp. Allowed: jpeg/png/webp/gif/csv/pdf, up to 10 MB. You ' +
-      'get back a permanent `url`; the admin panel shows the same picture on the record, tagged ' +
-      'with the uploading user.',
-  })
-  @Consumers('met-link')
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['file'],
-      properties: {
-        file: { type: 'string', format: 'binary' },
-        takenAt: { type: 'string', description: 'ISO timestamp the picture was taken' },
-      },
-    },
-  })
-  @ApiCreatedResponse({
-    description: 'Uploaded picture',
-    schema: {
-      example: {
-        data: {
-          picture: { _id: '664a1f2e3c4d5e6f7a8b9c31', mimeType: 'image/jpeg', sizeBytes: 245678, url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg' },
-          url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg',
-        },
-      },
-    },
-  })
-  @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
-  @Post('records/:id/pictures')
-  @HttpCode(201)
-  @UseGuards(JwtOrApiKeyGuard)
-  @UseInterceptors(FileInterceptor('file', multerOptions))
-  async uploadRecordPicture(
-    @Param('id') id: string,
-    @Body() body: { takenAt?: string },
-    @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user?: JWTPayload,
-  ) {
-    if (!file) {
-      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
-    }
-    const result = await this.filesService.uploadRecordPicture(
-      user!.organizationId,
-      id,
-      file,
-      body.takenAt,
-      user!.userId,
-    );
-    return { data: result };
-  }
+// // //   @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
+// // //   @Post('sessions/:id/files')
+// // //   @HttpCode(201)
+// // //   @UseGuards(JwtOrApiKeyGuard)
+// // //   @UseInterceptors(FileInterceptor('file', multerOptions))
+// // //   async uploadSessionFile(
+// // //     @Param('id') id: string,
+// // //     @Body() body: { fileType?: string; capturedAt?: string },
+// // //     @UploadedFile() file: Express.Multer.File,
+// // //     @CurrentUser() user?: JWTPayload,
+// // //   ) {
+// // //     if (!file) {
+// // //       throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
+// // //     }
+// // //     const fileType = (body.fileType ?? 'photo') as 'map' | 'photo' | 'thumbnail';
+// // //     const allowed = ['map', 'photo', 'thumbnail'];
+// // //     if (!allowed.includes(fileType)) {
+// // //       throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: `fileType must be one of: ${allowed.join(', ')}` } });
+// // //     }
+// // //     const result = await this.filesService.uploadSessionFile(
+// // //       user!.organizationId,
+// // //       id,
+// // //       file,
+// // //       fileType,
+// // //       body.capturedAt,
+// // //       user!.userId,
+// // //     );
+// // //     return { data: result };
+// // //   }
+// //
+// //   @ApiOperation({ summary: 'List all files for a NEP session (admin dashboard)' })
+// //   @ApiOkResponse({ description: 'Files for the session' })
+// //   @ApiErrors('unauthorized', 'notFound')
+// //   @Get('sessions/:id/files')
+// //   @UseGuards(JwtAuthGuard)
+// //   async listSessionFiles(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
+// //     const files = await this.filesService.listSessionFiles(user!.organizationId, id);
+// //     return { data: files };
+// //   }
+//
+//   @ApiOperation({ summary: 'Delete a file from a NEP session (admin dashboard)' })
+//   @ApiNoContentResponse({ description: 'File deleted' })
+//   @ApiErrors('unauthorized', 'notFound')
+//   @Delete('sessions/:id/files/:fileId')
+//   @HttpCode(204)
+//   @UseGuards(JwtAuthGuard)
+//   async deleteSessionFile(
+//     @Param('id') id: string,
+//     @Param('fileId') fileId: string,
+//     @CurrentUser() user?: JWTPayload,
+//   ): Promise<void> {
+//     await this.filesService.deleteSessionFile(user!.organizationId, id, fileId);
+//   }
+//
+//   // ─── MET Record Pictures ────────────────────────────────────────────────────
+//
+//   @ApiOperation({
+//     summary: 'Upload a picture to a MET record',
+//     description:
+//       '**Call this to attach a photo to a logging record** (e.g. a shot of the station site). `:id` ' +
+//       'is the record `_id` from the record upload. Send the file as ordinary `multipart/form-data` ' +
+//       'with an optional `takenAt` timestamp. Allowed: jpeg/png/webp/gif/csv/pdf, up to 10 MB. You ' +
+//       'get back a permanent `url`; the admin panel shows the same picture on the record, tagged ' +
+//       'with the uploading user.',
+//   })
+//   @Consumers('met-link')
+//   @ApiConsumes('multipart/form-data')
+//   @ApiBody({
+//     schema: {
+//       type: 'object',
+//       required: ['file'],
+//       properties: {
+//         file: { type: 'string', format: 'binary' },
+//         takenAt: { type: 'string', description: 'ISO timestamp the picture was taken' },
+//       },
+//     },
+//   })
+//   @ApiCreatedResponse({
+//     description: 'Uploaded picture',
+//     schema: {
+//       example: {
+//         data: {
+//           picture: { _id: '664a1f2e3c4d5e6f7a8b9c31', mimeType: 'image/jpeg', sizeBytes: 245678, url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg' },
+//           url: 'https://res.cloudinary.com/observator/image/upload/v1/met-pictures/…jpg',
+//         },
+//       },
+//     },
+//   })
+//   @ApiErrors('badRequest', 'unauthorized', 'notFound', 'unsupportedMediaType')
+//   @Post('records/:id/pictures')
+//   @HttpCode(201)
+//   @UseGuards(JwtOrApiKeyGuard)
+//   @UseInterceptors(FileInterceptor('file', multerOptions))
+//   async uploadRecordPicture(
+//     @Param('id') id: string,
+//     @Body() body: { takenAt?: string },
+//     @UploadedFile() file: Express.Multer.File,
+//     @CurrentUser() user?: JWTPayload,
+//   ) {
+//     if (!file) {
+//       throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
+//     }
+//     const result = await this.filesService.uploadRecordPicture(
+//       user!.organizationId,
+//       id,
+//       file,
+//       body.takenAt,
+//       user!.userId,
+//     );
+//     return { data: result };
+//   }
 
   @ApiOperation({ summary: 'List all pictures for a MET record (admin dashboard)' })
   @ApiOkResponse({ description: 'Pictures for the record' })

@@ -33,6 +33,7 @@ import {
 import { LoadingState, ErrorState, EmptyState, TableSkeleton } from '@/components/screen-states';
 import { RoleLabel, UserStatusBadge } from './role-badge';
 import { InviteDialog } from './invite-dialog';
+import { isFeatureEnabled } from '@/lib/config/flags';
 import { useUsers, useUpdateUser } from './use-users';
 import { useCurrentUser } from '@/lib/rbac/context';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
@@ -170,11 +171,11 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
           className="max-w-xs"
           aria-label={t('subtitle')}
         />
-        <InviteDialog />
+        {isFeatureEnabled('userInvites') ? <InviteDialog /> : null}
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title={t('title')} body={t('subtitle')} action={<InviteDialog />} />
+        <EmptyState title={t('title')} body={t('subtitle')} action={isFeatureEnabled('userInvites') ? <InviteDialog /> : undefined} />
       ) : (
         <Table>
           <TableHeader>

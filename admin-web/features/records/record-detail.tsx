@@ -103,7 +103,7 @@ export function RecordDetail({ id }: { id: string }) {
           <p className="text-sm text-muted-foreground">
             {fmtDate(record.dateStartMs)}
             {record.dateEndMs != null ? ` – ${fmtDate(record.dateEndMs)}` : ''} · {record.measureCount.toLocaleString()}{' '}
-            measures{record.isDemoMode ? ' · demo' : ''}
+            measures
           </p>
           {record.comment ? <p className="mt-1 text-sm">{record.comment}</p> : null}
         </div>

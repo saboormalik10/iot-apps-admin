@@ -27,7 +27,7 @@ describe('Analytics & Sync (e2e)', () => {
     await app.init();
     http = app.getHttpServer();
 
-    const login = await request(http).post('/v1/auth/login').send({ email: 'admin@observator.com', password: 'Admin@1234' });
+    const login = await request(http).post('/v1/auth/login').send({ email: 'admin@observator.com', password: process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234' });
     token = login.body.accessToken ?? login.body.data?.accessToken;
 
     const devices = await request(http).get('/v1/dashboard/devices').set('Authorization', `Bearer ${token}`);

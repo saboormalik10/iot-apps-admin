@@ -1,0 +1,7 @@
+# Install as /etc/sudoers.d/observator-provision, mode 0440, root:root.
+# Validate with `visudo -c -f` BEFORE installing — a malformed sudoers file can
+# lock every user out of sudo on the box.
+#
+# ONE command, no wildcards on the binary itself. The agent may run this exact
+# script and nothing else; the script validates its own arguments as root.
+obsprov ALL=(root) NOPASSWD: /opt/observator/provision-agent/deploy/provision.sh

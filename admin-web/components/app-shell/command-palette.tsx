@@ -28,7 +28,7 @@ export function CommandPalette() {
   // translator — resolving them through the 'shell' namespace yields the raw key.
   const tRoot = useTranslations();
   const router = useRouter();
-  const { can } = useRbac();
+  const { can, isSuperAdmin } = useRbac();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -58,7 +58,12 @@ export function CommandPalette() {
 
   const destinations = useMemo<CommandHit[]>(
     () =>
-      NAV_ITEMS.filter((i) => (!i.flag || isFeatureEnabled(i.flag)) && (!i.capability || can(i.capability))).map(
+      NAV_ITEMS.filter(
+        (i) =>
+          (!i.flag || isFeatureEnabled(i.flag)) &&
+          (!i.capability || can(i.capability)) &&
+          (!i.superAdminOnly || isSuperAdmin),
+      ).map(
         (i) => ({
           id: `nav:${i.key}`,
           group: 'destinations',
@@ -128,19 +133,38 @@ export function CommandPalette() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-9 items-center gap-2 rounded-md border bg-background px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted md:w-56"
-        // WCAG 2.5.3: the accessible name must CONTAIN the visible label, so this
-        // starts with the same word the button shows. It also has to survive the
-        // label being hidden at < md, which is why it isn't just the text node.
-        aria-label={t('searchLabel')}
-      >
-        <Search className="h-4 w-4 shrink-0" aria-hidden />
-        <span className="hidden md:inline">{t('searchShort')}</span>
-        <kbd className="ml-auto hidden rounded border bg-muted px-1.5 font-mono text-[10px] md:inline">⌘K</kbd>
-      </button>
+      {/**
+       * The shortcut hint sits OUTSIDE the button (M24 W2).
+       *
+       * WCAG 2.5.3 requires the accessible name to contain the VISIBLE label, and
+       * "visible" means visually rendered — `aria-hidden` does not exempt it,
+       * because the rule protects speech-input users, who say what they can see.
+       * With the `⌘K` inside, the button's visible text was "Search ⌘K" while its
+       * name was "Search devices, sessions and records", and axe failed it on
+       * every route in the app.
+       *
+       * Positioned absolutely so the appearance is unchanged, and
+       * `pointer-events-none` so it never swallows the click.
+       */}
+      <div className="relative md:w-56">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
+          // Still needed: below `md` the visible label is hidden, so without this
+          // the button would have no accessible name at all.
+          aria-label={t('searchLabel')}
+        >
+          <Search className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="hidden md:inline">{t('searchShort')}</span>
+        </button>
+        <kbd
+          aria-hidden
+          className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border bg-muted px-1.5 font-mono text-[10px] md:inline-block"
+        >
+          ⌘K
+        </kbd>
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="top-[20%] max-w-xl translate-y-0 gap-0 p-0">

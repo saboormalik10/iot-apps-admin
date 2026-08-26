@@ -7,7 +7,6 @@ import { FileText } from 'lucide-react';
 import type { MetRecordRow } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
 import { DataTable } from '@/components/data/data-table';
-import { StatusBadge } from '@/components/charts/status-badge';
 import { useRecords } from './use-records';
 
 const fmt = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -30,7 +29,6 @@ export function RecordsList() {
     limit: 20,
     // Demo mode is part of the query, so it is part of the react-query key too —
     // without it the toggle would serve the other mode's cached page.
-    demoOnly: scope.demoOnly || undefined,
   });
 
   const columns = useMemo<ColumnDef<MetRecordRow, unknown>[]>(
@@ -47,11 +45,6 @@ export function RecordsList() {
       { header: 'Started', cell: ({ row }) => fmt(row.original.dateStartMs) },
       { header: 'Duration', cell: ({ row }) => duration(row.original) },
       { header: 'Measures', cell: ({ row }) => row.original.measureCount.toLocaleString() },
-      {
-        header: '',
-        id: 'demo',
-        cell: ({ row }) => (row.original.isDemoMode ? <StatusBadge tone="info" label="Demo" /> : null),
-      },
     ],
     [],
   );

@@ -7,7 +7,6 @@ import { ArrowLeft } from 'lucide-react';
 import type { NepSampleRow } from '@/lib/api/types';
 import { sessionCsvHref, sessionsZipHref } from '@/lib/api/endpoints';
 import { StatTile } from '@/components/charts/stat-tile';
-import { StatusBadge } from '@/components/charts/status-badge';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { DataTable } from '@/components/data/data-table';
 import { Button } from '@/components/ui/button';
@@ -95,7 +94,6 @@ export function SessionDetail({ id }: { id: string }) {
           {backLink}
           <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
             {session.deviceName}
-            {session.isDemoMode ? <StatusBadge tone="info" label="Demo" /> : null}
           </h1>
           <p className="text-sm text-muted-foreground">
             {fmtDate(session.startTimestamp)}

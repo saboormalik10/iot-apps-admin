@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { Organization } from '../models/Organization';
+import { Organization, IOrganization } from '../models/Organization';
 import { User, IUser, UserRole } from '../models/User';
 import { Device } from '../models/Device';
 import { MetRecord } from '../models/MetRecord';
@@ -10,13 +10,26 @@ import { NepSession } from '../models/NepSession';
 import { RefreshToken } from '../models/RefreshToken';
 import { InviteToken } from '../models/InviteToken';
 import { AuditLog } from '../models/AuditLog';
+import { uploadFile, deleteFile } from '../utils/storage.util';
+import { checkAccent, foregroundFor } from '../utils/contrast.util';
+import { resolveRoleId } from '../common/resolve-role';
 import { sendInviteEmail } from '../utils/mailer';
 import { signAccessToken, JWTPayload } from '../utils/jwt';
 
-const BCRYPT_COST = 12;
+import { BCRYPT_COST } from '../common/bcrypt';
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 const INVITE_TOKEN_EXPIRY_DAYS = 7;
 const VALID_ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
+
+export interface BrandingInput {
+  displayName: string;
+  logoUrl: string;
+  accentColor: string;
+  supportEmail: string;
+}
+
+const badRequest = (msg: string, code = 'VALIDATION_ERROR') =>
+  Object.assign(new Error(msg), { statusCode: 400, code });
 
 interface ActorMeta {
   userId: string;
@@ -108,6 +121,173 @@ export class OrganizationsService {
       throw Object.assign(new Error('Organization not found'), { statusCode: 404, code: 'NOT_FOUND' });
     }
     return org;
+  }
+
+  /**
+   * Read this organisation's branding, with the fallbacks already applied.
+   *
+   * Resolved SERVER-SIDE so every surface — the shell, exports (W4), the public
+   * share page — sees the same values. Doing it in each client would guarantee
+   * they eventually disagree.
+   */
+  async getBranding(organizationId: string) {
+    const org = await this.getOrganization(organizationId);
+    const b = org.branding ?? ({} as IOrganization['branding']);
+    const accentColor = b.accentColor ?? '';
+    return {
+      displayName: b.displayName?.trim() || org.name,
+      logoUrl: b.logoUrl ?? '',
+      accentColor,
+      /**
+       * The readable text colour for controls filled with the accent, DERIVED
+       * here rather than stored. Deriving it server-side means the shell,
+       * exports and share pages cannot each pick a different one — and the
+       * customer is never asked to choose a foreground, which is one more way to
+       * end up with an unreadable button.
+       */
+      accentForeground: accentColor ? foregroundFor(accentColor) : '',
+      supportEmail: b.supportEmail ?? '',
+      // `false` here is what tells the shell to render the platform default
+      // rather than a half-applied theme.
+      isCustomised: Boolean(b.displayName || b.logoUrl || b.accentColor),
+      updatedAt: b.updatedAt ?? null,
+    };
+  }
+
+  /**
+   * Update branding. A customer may change their own; a platform administrator
+   * switched into them edits theirs, because `organizationId` is re-pointed.
+   *
+   * Passing an empty string CLEARS a field back to the platform default — that
+   * is deliberate, and is how a customer removes a logo or accent without a
+   * separate "reset" endpoint.
+   */
+  async updateBranding(organizationId: string, input: Partial<BrandingInput>, actor: ActorMeta) {
+    const org = await this.getOrganization(organizationId);
+    const changes: Record<string, unknown> = {};
+
+    if (input.displayName !== undefined) {
+      const v = input.displayName.trim();
+      if (v.length > 60) throw badRequest('The display name must be 60 characters or fewer');
+      changes.displayName = v;
+    }
+    if (input.supportEmail !== undefined) {
+      const v = input.supportEmail.trim();
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw badRequest('Enter a valid support email');
+      changes.supportEmail = v;
+    }
+    if (input.accentColor !== undefined) {
+      const v = input.accentColor.trim().toLowerCase();
+      // Stored as `#rrggbb` only. A named colour or `rgb()` would have to be
+      // parsed again by every surface that renders it; W3 adds the contrast check.
+      if (v && !/^#[0-9a-f]{6}$/.test(v)) throw badRequest('The accent colour must be a hex value like #1f6feb');
+      if (v) {
+        // Checked in BOTH themes. A colour that works in light mode and vanishes
+        // in dark is still a broken panel, and whoever picked it is usually not
+        // the person who finds out.
+        const check = checkAccent(v);
+        if (!check.passes) {
+          throw badRequest(
+            `That colour will not be readable: ${check.reasons.join('; ')}. Try a darker or more saturated shade.`,
+            'ACCENT_CONTRAST',
+          );
+        }
+      }
+      changes.accentColor = v;
+    }
+    if (input.logoUrl !== undefined) {
+      const v = input.logoUrl.trim();
+      if (v.length > 512) throw badRequest('That logo URL is too long');
+      changes.logoUrl = v;
+    }
+
+    if (Object.keys(changes).length === 0) return this.getBranding(organizationId);
+
+    await Organization.updateOne(
+      { _id: org._id },
+      { $set: Object.fromEntries(Object.entries({ ...changes, updatedAt: new Date() }).map(([k, v]) => [`branding.${k}`, v])) },
+    );
+
+    AuditLog.create({
+      organizationId: org._id,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(org._id),
+      resourceName: org.name,
+      changes,
+    }).catch(() => void 0);
+
+    return this.getBranding(organizationId);
+  }
+
+  /**
+   * Store a logo and point the branding at it.
+   *
+   * The PREVIOUS logo is deleted from storage after the new one is saved — in
+   * that order, so a failed upload never leaves the customer with no logo at
+   * all. A failed delete is swallowed: an orphaned file costs pennies, a failed
+   * request costs the customer their branding.
+   */
+  async uploadLogo(
+    organizationId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+    actor: ActorMeta,
+  ) {
+    const org = await this.getOrganization(organizationId);
+    const previous = org.branding?.logoStorageKey ?? '';
+
+    const uploaded = await uploadFile(`branding/${organizationId}`, file.originalname, file.buffer, file.mimetype);
+
+    await Organization.updateOne(
+      { _id: org._id },
+      { $set: { 'branding.logoUrl': uploaded.url, 'branding.logoStorageKey': uploaded.storageKey, 'branding.updatedAt': new Date() } },
+    );
+
+    if (previous && previous !== uploaded.storageKey) {
+      await deleteFile(previous, 'image').catch(() => void 0);
+    }
+
+    AuditLog.create({
+      organizationId: org._id,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(org._id),
+      resourceName: org.name,
+      changes: { logoUrl: uploaded.url },
+    }).catch(() => void 0);
+
+    return this.getBranding(organizationId);
+  }
+
+  /** Remove the logo and fall back to the wordmark. */
+  async removeLogo(organizationId: string, actor: ActorMeta) {
+    const org = await this.getOrganization(organizationId);
+    const key = org.branding?.logoStorageKey ?? '';
+
+    await Organization.updateOne(
+      { _id: org._id },
+      { $set: { 'branding.logoUrl': '', 'branding.logoStorageKey': '', 'branding.updatedAt': new Date() } },
+    );
+    // Cleared in the database FIRST: if the storage delete fails the customer
+    // still sees the logo gone, which is what they asked for.
+    if (key) await deleteFile(key, 'image').catch(() => void 0);
+
+    AuditLog.create({
+      organizationId: org._id,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(org._id),
+      resourceName: org.name,
+      changes: { logoUrl: '' },
+    }).catch(() => void 0);
+
+    return this.getBranding(organizationId);
   }
 
   async updateOrganization(organizationId: string, input: UpdateOrgInput, actor: ActorMeta) {
@@ -261,6 +441,7 @@ export class OrganizationsService {
       firstName: input.firstName?.trim() || email.split('@')[0],
       lastName: input.lastName?.trim() || '',
       role,
+      roleId: await resolveRoleId(role, organizationId),
       isActive: false,
       invitedAt: new Date(),
       invitedBy: new Types.ObjectId(actor.userId),
@@ -309,6 +490,55 @@ export class OrganizationsService {
       result.devToken = rawToken;
     }
     return result;
+  }
+
+  /**
+   * Every customer organisation. PLATFORM ADMINISTRATORS ONLY.
+   *
+   * This is one of the very few queries that deliberately spans tenants, so the
+   * super-admin check is re-read from the database rather than taken from the
+   * token — a demoted admin holding a valid token must not be able to enumerate
+   * the customer list.
+   */
+  async listAll(actorUserId: string) {
+    const actor = await User.findById(actorUserId).select('isSuperAdmin isActive').lean();
+    if (!actor || actor.isActive === false || actor.isSuperAdmin !== true) {
+      throw Object.assign(new Error('Only a platform administrator can list organisations'), {
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    }
+
+    const orgs = await Organization.find({ deletedAt: null })
+      .select('name slug timezone country createdAt')
+      .sort({ name: 1 })
+      .lean();
+
+    // One grouped query each rather than two per organisation.
+    const ids = orgs.map((o) => o._id);
+    const [devices, users] = await Promise.all([
+      Device.aggregate<{ _id: Types.ObjectId; n: number }>([
+        { $match: { organizationId: { $in: ids }, deletedAt: null } },
+        { $group: { _id: '$organizationId', n: { $sum: 1 } } },
+      ]),
+      User.aggregate<{ _id: Types.ObjectId; n: number }>([
+        { $match: { organizationId: { $in: ids } } },
+        { $group: { _id: '$organizationId', n: { $sum: 1 } } },
+      ]),
+    ]);
+    const dev = new Map(devices.map((d) => [String(d._id), d.n]));
+    const usr = new Map(users.map((u) => [String(u._id), u.n]));
+
+    return orgs.map((o) => ({
+      _id: String(o._id),
+      name: o.name,
+      slug: o.slug,
+      timezone: o.timezone,
+      country: o.country ?? null,
+      deviceCount: dev.get(String(o._id)) ?? 0,
+      userCount: usr.get(String(o._id)) ?? 0,
+      createdAt: o.createdAt,
+    }));
   }
 
   async updateUser(
@@ -362,6 +592,9 @@ export class OrganizationsService {
       }
       changes.role = input.role;
       user.role = input.role;
+      // `roleId` must move with the key, or the two drift: the guard would read
+      // permissions from the role the user USED to hold.
+      user.roleId = await resolveRoleId(input.role, user.organizationId);
     }
     if (input.isActive !== undefined) {
       changes.isActive = input.isActive;

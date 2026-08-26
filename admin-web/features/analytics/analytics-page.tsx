@@ -1,5 +1,6 @@
 'use client';
 
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import Link from 'next/link';
 import { CalendarRange } from 'lucide-react';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
@@ -33,6 +34,10 @@ export function AnalyticsPage() {
     );
   }
   const deviceId = met.deviceId;
+  // Comfort, fog risk and pressure tendency are derived from temperature,
+  // humidity, dew point and pressure. A wind-only station has none of those, so
+  // these three panels rendered permanently empty — three dead cards on the page.
+  const sensors = useDeviceSensors(deviceId);
 
   return (
     <div className="space-y-4">
@@ -56,7 +61,7 @@ export function AnalyticsPage() {
       <div className="grid gap-4 xl:grid-cols-3">
         <AnalyticsWindRose deviceId={deviceId} />
         <div className="space-y-4 xl:col-span-2">
-          <PressureTendencyWidget deviceId={deviceId} />
+          {sensors.has('pressure') ? <PressureTendencyWidget deviceId={deviceId} /> : null}
           <StatisticsPanel deviceId={deviceId} />
         </div>
       </div>
@@ -65,10 +70,10 @@ export function AnalyticsPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <WindGustChart deviceId={deviceId} />
-        <ComfortIndicesChart deviceId={deviceId} />
+        {sensors.has('temperature') && sensors.has('humidity') ? <ComfortIndicesChart deviceId={deviceId} /> : null}
       </div>
 
-      <FogRiskChart deviceId={deviceId} />
+      {sensors.has('temperature') && sensors.has('dew_point') ? <FogRiskChart deviceId={deviceId} /> : null}
     </div>
   );
 }

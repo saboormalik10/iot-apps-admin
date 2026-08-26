@@ -5,7 +5,7 @@ import { User } from '../models/User';
 import { RefreshToken } from '../models/RefreshToken';
 import { AuditLog } from '../models/AuditLog';
 
-const BCRYPT_COST = 12;
+import { BCRYPT_COST } from '../common/bcrypt';
 
 export interface UpdateProfileInput {
   firstName?: string;

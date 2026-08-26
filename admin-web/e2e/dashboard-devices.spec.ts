@@ -8,7 +8,7 @@ import AxeBuilder from '@axe-core/playwright';
  * opens a device, and checks the settings editor + axe on the new screens.
  */
 const ADMIN_EMAIL = 'admin@observator.com';
-const ADMIN_PASSWORD = 'Admin@1234';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'Admin@1234';
 
 async function signIn(page: import('@playwright/test').Page) {
   await page.goto('/login');
@@ -47,7 +47,12 @@ test('devices module: list → detail, with admin actions and settings link', as
   await expect(page.getByText(/firmware status/i)).toBeVisible();
 
   // Open the first device row → detail.
-  await page.getByRole('row').nth(1).click();
+  // Wait for the row to actually CARRY a device before clicking: under load the
+  // table renders skeleton rows first, and clicking one navigates nowhere — a
+  // flake that only ever showed up in the full suite.
+  const firstRow = page.getByRole('row').nth(1);
+  await expect(firstRow).toContainText(/\w/);
+  await firstRow.click();
   await expect(page).toHaveURL(/\/devices\/[a-f0-9]+/i);
   await expect(page.getByRole('link', { name: /settings/i })).toBeVisible();
   // `exact` matters: the empty state's own "No firmware history" heading also

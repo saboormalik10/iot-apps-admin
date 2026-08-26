@@ -10,13 +10,17 @@ import type { Capability } from './capabilities';
  */
 export function Can({
   capability,
+  permission,
   children,
   fallback = null,
 }: {
-  capability: Capability;
+  capability?: Capability;
+  /** Backend permission key (M18). Both must pass when given alongside `capability`. */
+  permission?: string;
   children: ReactNode;
   fallback?: ReactNode;
 }) {
-  const { can } = useRbac();
-  return <>{can(capability) ? children : fallback}</>;
+  const { can, has } = useRbac();
+  const allowed = (capability ? can(capability) : true) && (permission ? has(permission) : true);
+  return <>{allowed ? children : fallback}</>;
 }

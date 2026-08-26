@@ -97,8 +97,11 @@
     "import": "Import data",
     "org": "Organization",
     "users": "Users",
+    "roles": "Roles",
+    "platform": "All customers",
     "audit": "Audit log",
-    "settings": "Settings"
+    "settings": "Settings",
+    "streamTypes": "Stream types"
   },
   "shell": {
     "toggleSidebar": "Toggle sidebar",
@@ -152,7 +155,38 @@
     "country": "Country",
     "timezone": "Timezone",
     "settingsSaved": "Organization settings saved",
-    "adminOnly": "Only admins can change organization settings."
+    "adminOnly": "Only admins can change organization settings.",
+    "branding": {
+      "title": "Branding",
+      "subtitle": "How your organisation is named and coloured throughout the panel. Leave a field empty to use the default.",
+      "displayName": "Display name",
+      "displayNameHint": "Shown in the sidebar and on exports. Defaults to your organisation name.",
+      "accent": "Accent colour",
+      "accentHint": "Hex value, for example #1f6feb. Used for buttons and highlights.",
+      "support": "Support email",
+      "supportHint": "Where your own people are told to go for help.",
+      "save": "Save branding",
+      "saving": "Saving…",
+      "saved": "Branding updated",
+      "readOnly": "Only an administrator can change branding.",
+      "errors": {
+        "displayName": "Use 60 characters or fewer.",
+        "accent": "Use a hex value like #1f6feb.",
+        "support": "Enter a valid email address.",
+        "save": "Could not save your branding.",
+        "logoType": "Use a PNG, JPEG or WebP image.",
+        "logoSize": "That image is larger than 2 MB.",
+        "accentContrast": "This colour will not be readable."
+      },
+      "logo": "Logo",
+      "logoHint": "PNG, JPEG or WebP, up to 2 MB. Shown in the sidebar. Leave empty to show the wordmark.",
+      "logoUpload": "Upload logo",
+      "logoReplace": "Replace logo",
+      "logoRemove": "Remove",
+      "logoUploading": "Uploading…",
+      "accentOk": "Readable in both light and dark mode.",
+      "accentPreview": "Preview"
+    }
   },
   "mobileUsers": {
     "title": "Users",

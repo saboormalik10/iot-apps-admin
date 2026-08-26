@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily report on the Observator ingest archive
+
+[Timer]
+# Daily, shortly after midnight local time. `Persistent=true` means a report
+# missed while the box was off runs at the next boot, so a disk that filled
+# overnight is still noticed.
+OnCalendar=daily
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

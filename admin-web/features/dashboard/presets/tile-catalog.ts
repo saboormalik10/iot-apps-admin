@@ -15,6 +15,9 @@ export interface StationWidget {
 }
 
 export const MET_STATION_WIDGETS: StationWidget[] = [
+  // The live dial combines speed and bearing in one instrument. It sits first
+  // because it is the reading the client asked to lead with.
+  { key: 'wind_dial', label: 'Wind (live)', unit: 'km/h', type: 'compass' },
   { key: 'wind_speed', label: 'Wind speed', unit: 'km/h', type: 'gauge' },
   { key: 'humidity', label: 'Humidity', unit: '%', type: 'gauge' },
   { key: 'pressure', label: 'Pressure', unit: 'hPa', type: 'gauge' },

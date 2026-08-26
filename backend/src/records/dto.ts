@@ -1,15 +1,23 @@
 /**
- * Swagger documentation DTOs for the MET Records endpoints (OpenAPI only —
- * controllers keep their existing typed bodies, behaviour unchanged).
+ * Request DTOs for the MET Records endpoints.
+ *
+ * `CreateRecordDto` was OpenAPI-only until M24 W1 — the controller bound the
+ * `CreateRecordInput` INTERFACE, which erases at runtime, so `ValidationPipe`
+ * had nothing to check and every field arrived unvalidated.
  */
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { ArrayMinSize, IsArray, IsInt, IsMongoId, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateRecordDto {
   @ApiProperty({ description: 'Device ObjectId' })
+  @IsMongoId()
   deviceId!: string;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
   deviceName?: string;
 
   @ApiProperty({
@@ -19,18 +27,29 @@ export class CreateRecordDto {
       '**server\'s** timezone (UTC in production) — append an offset (e.g. `+05:00`) if you are ' +
       'sending phone-local time. An unparseable value silently falls back to the time of upload.',
   })
+  @IsString()
+  @MaxLength(64)
   dateStart!: string;
 
   @ApiPropertyOptional({
     example: '2026-06-23 12:00:00',
     description: 'Record end, same format and timezone rules as `dateStart`. Omit while still logging.',
   })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
   dateEnd?: string | null;
 
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
   comment?: string;
 
   @ApiPropertyOptional({ description: 'URL of an attached map/screenshot' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
   urlMaps?: string | null;
 
   @ApiPropertyOptional({
@@ -44,14 +63,16 @@ export class CreateRecordDto {
       'organisation (e.g. derive it from the device id), or omit the field to disable the guard.',
     example: 42,
   })
+  @IsOptional()
+  @IsInt()
   localRecordId?: number | null;
-
-  @ApiPropertyOptional({ default: false })
-  isDemoMode?: boolean;
 }
 
 export class UpdateRecordDto {
   @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
   comment?: string;
 }
 
@@ -81,6 +102,12 @@ export class MeasureDto {
 }
 
 export class BulkMeasuresDto {
+  // Nested validation is explicit: without @ValidateNested + @Type the elements
+  // are plain objects and MeasureDto's own rules never run.
   @ApiProperty({ type: [MeasureDto], description: 'Batch of measures to append' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => MeasureDto)
   measures!: MeasureDto[];
 }

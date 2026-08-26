@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { DeviceSelect } from '@/components/data/device-select';
+import { DryRunPanel } from './dry-run-panel';
 import { formatDateTime } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { ImportSummary } from '@/lib/api/types';
@@ -51,15 +52,20 @@ const formatBytes = (n: number) => (n < 1024 * 1024 ? `${Math.round(n / 1024)} K
 /**
  * CSV import wizard (plan §Month 12): select → review → done.
  *
- * The backend has NO dry-run endpoint, so "review" is computed entirely in the
- * browser by `csv-contract.ts`, which mirrors the backend parser. Submitting from
- * the review step always commits: NEP upserts by SessionId (safe to re-run), MET
- * creates a new record per file (re-running duplicates it) — the review step says
- * so before the user commits.
+ * "Review" is computed in the BROWSER by `csv-contract.ts`, which mirrors the
+ * backend parser — that gives instant feedback while a file is being chosen.
+ *
+ * Since M22 W4 it is joined by a SERVER dry-run (`DryRunPanel`), which answers
+ * the two questions the browser cannot: whether these exact bytes have already
+ * been ingested, and which local days already hold data. Neither writes
+ * anything; submitting from the review step is still what commits.
  */
 export function ImportWizard() {
   const [step, setStep] = useState<Step>('select');
-  const [kind, setKind] = useState<ImportKind>('nep');
+  // MET, not NEP: NEP import was switched off platform-wide in M15 W4, so
+  // defaulting to it meant every user landed on a dead option and had to click
+  // away from it. Detection overrides this whenever the header is recognisable.
+  const [kind, setKind] = useState<ImportKind>('met');
   const [file, setFile] = useState<File | null>(null);
   const [deviceId, setDeviceId] = useState<string | undefined>();
   const [text, setText] = useState('');
@@ -377,6 +383,16 @@ function ReviewStep({
                 Only {KIND_DEVICE_TYPE[kind]} devices — the backend rejects a mismatched type.
               </p>
             </div>
+
+            {/* The SERVER's answer, alongside the browser's. The review above is
+                computed locally and cannot know whether these exact bytes were
+                already ingested, nor which local days already hold data. */}
+            {kind === 'met' ? (
+              <div className="space-y-1">
+                <Label>What this will do</Label>
+                <DryRunPanel file={file} deviceId={deviceId} />
+              </div>
+            ) : null}
           </div>
 
           <Findings analysis={analysis} />
@@ -496,8 +512,14 @@ function Findings({ analysis }: { analysis: DryRunResult }) {
             </>
           ) : (
             <>
-              This creates <strong>one new record</strong> containing {validRows.toLocaleString()} measures.
-              MET imports are not de-duplicated — importing this file twice creates two records.
+              {/* WAS: "MET imports are not de-duplicated — importing this file
+                  twice creates two records." That stopped being true in M15 W4,
+                  when the admin upload was unified onto the ingest core and its
+                  content-hash ledger. It then contradicted the server's own
+                  dry-run panel, which correctly reported the same file as
+                  already imported. */}
+              Measures are added to the day they belong to. Re-importing the same file changes nothing — it is
+              matched by content, not by name.
             </>
           )}
         </Note>

@@ -120,3 +120,73 @@ export async function sendInviteEmail(
 </html>`,
   });
 }
+
+export interface AlertEmailFields {
+  ruleName: string;
+  deviceName: string;
+  /** Human-readable condition, e.g. "Wind speed > 12 m/s". */
+  summary: string;
+  reading: string;
+  triggeredAt: Date;
+  dashboardUrl: string;
+}
+
+/**
+ * Threshold-alert email.
+ *
+ * The in-app feed and push notification only reach someone already looking at a
+ * screen. For a wind alarm — the product the client sells — the alert has to reach
+ * a person who is not. This is that channel.
+ *
+ * Sent per recipient rather than BCC'd: a wind-alarm list is small, and a
+ * per-recipient send means one bad address cannot suppress everyone else's alert.
+ */
+export async function sendAlertEmail(to: string, fields: AlertEmailFields): Promise<void> {
+  const from = process.env.EMAIL_FROM ?? process.env.EMAIL_MAILER;
+  const transporter = createTransporter();
+  const when = fields.triggeredAt.toISOString().replace('T', ' ').slice(0, 19);
+
+  await transporter.sendMail({
+    from,
+    to,
+    // The device name leads: a recipient watching several stations needs to know
+    // WHICH one before anything else.
+    subject: `[Alert] ${fields.deviceName} — ${fields.ruleName}`,
+    text: [
+      `${fields.deviceName} has crossed an alert threshold.`,
+      '',
+      `Rule:    ${fields.ruleName}`,
+      `Trigger: ${fields.summary}`,
+      `Reading: ${fields.reading}`,
+      `Time:    ${when} UTC`,
+      '',
+      `View the station: ${fields.dashboardUrl}`,
+      '',
+      'You are receiving this because you are listed as a recipient on this alert rule.',
+      '',
+      '— Observator',
+    ].join('\n'),
+    html: `<!DOCTYPE html>
+<html>
+  <body style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;line-height:1.5">
+    <h2 style="margin:0 0 4px">${escapeHtml(fields.deviceName)}</h2>
+    <p style="margin:0 0 16px;color:#64748b">has crossed an alert threshold.</p>
+    <table style="border-collapse:collapse;margin-bottom:16px">
+      <tr><td style="padding:2px 12px 2px 0;color:#64748b">Rule</td><td><strong>${escapeHtml(fields.ruleName)}</strong></td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:#64748b">Trigger</td><td>${escapeHtml(fields.summary)}</td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:#64748b">Reading</td><td><strong>${escapeHtml(fields.reading)}</strong></td></tr>
+      <tr><td style="padding:2px 12px 2px 0;color:#64748b">Time</td><td>${when} UTC</td></tr>
+    </table>
+    <p style="margin:0 0 16px"><a href="${escapeHtml(fields.dashboardUrl)}">View the station</a></p>
+    <p style="margin:0;color:#94a3b8;font-size:12px">
+      You are receiving this because you are listed as a recipient on this alert rule.
+    </p>
+  </body>
+</html>`,
+  });
+}
+
+/** Values are interpolated into HTML, so anything user-named must be escaped. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+}

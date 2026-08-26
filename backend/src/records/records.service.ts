@@ -6,7 +6,6 @@ import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { parseMeasureSentence, isHeaderSentence, parseTimestampMs } from '../utils/measure-parser.util';
-import { demoDeviceFilter } from '../utils/demo-scope.util';
 import { DomainEvent } from '../realtime/realtime.events';
 
 export interface ListRecordsOptions {
@@ -17,7 +16,6 @@ export interface ListRecordsOptions {
   page?: number;
   limit?: number;
   /** true → demo-device records ONLY; false/undefined → real-device records only. */
-  demoOnly?: boolean;
 }
 
 export interface CreateRecordInput {
@@ -28,7 +26,6 @@ export interface CreateRecordInput {
   comment?: string;
   urlMaps?: string | null;
   localRecordId?: number | null;
-  isDemoMode?: boolean;
 }
 
 export interface MeasureInput {
@@ -54,7 +51,6 @@ export class RecordsService {
       organizationId: orgId,
       deletedAt: null,
       // Demo/real is decided by the device that recorded it.
-      ...(await demoDeviceFilter(orgId, !!opts.demoOnly)),
     };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (from || to) {
@@ -88,7 +84,7 @@ export class RecordsService {
       userId: Types.ObjectId.isValid(actor.userId) ? new Types.ObjectId(actor.userId) : null,
       deviceName: input.deviceName ?? device.name, dateStart: input.dateStart, dateEnd: input.dateEnd ?? null,
       dateStartMs, dateEndMs, comment: input.comment ?? '', measureCount: 0, hasHeaderRow: true,
-      localRecordId: input.localRecordId ?? null, isDemoMode: input.isDemoMode ?? false,
+      localRecordId: input.localRecordId ?? null,
       urlMaps: input.urlMaps ?? null, syncedAt: new Date(),
     });
     // Only audit real users — a mobile/API-key actor ('mobile-device') is not an
@@ -186,7 +182,7 @@ export class RecordsService {
         gpsLat: parsed.gpsLat, gpsLng: parsed.gpsLng, gpsAltM: parsed.gpsAltM,
         gpsSatellites: parsed.gpsSatellites, gpsHorDilution: parsed.gpsHorDilution,
         gpsGeoidalSepM: parsed.gpsGeoidalSepM, gpsQuality: parsed.gpsQuality,
-        phoneLat: parsed.phoneLat, phoneLng: parsed.phoneLng, isDemoMode: record.isDemoMode,
+        phoneLat: parsed.phoneLat, phoneLng: parsed.phoneLng,
       };
     });
     await MetMeasure.insertMany(docs, { ordered: false });

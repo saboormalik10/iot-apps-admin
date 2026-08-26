@@ -67,14 +67,17 @@ export function Gauge({
   // sub-arcs clipped to [min,max]. Height reflects only the visible sweep.
   const arcHeight = arcBBoxHeight(size, cx, cy, r + strokeW / 2, startAngle, endAngle);
 
+  // `role="meter"` REQUIRES aria-valuenow (axe: aria-required-attr, CRITICAL).
+  // With no reading there is no value to report, so it is not a meter — it falls
+  // back to an image with the same accessible name. Same rule already applied in
+  // meter.tsx; it had not been propagated here.
   return (
     <div
       className={cn('flex flex-col items-center', className)}
-      role="meter"
-      aria-valuenow={hasValue ? value! : undefined}
-      aria-valuemin={min}
-      aria-valuemax={max}
       aria-label={label}
+      {...(hasValue
+        ? { role: 'meter', 'aria-valuenow': value!, 'aria-valuemin': min, 'aria-valuemax': max }
+        : { role: 'img' })}
     >
       <svg
         width="100%"

@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { WindRose } from '@/components/charts/wind-rose';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { EmptyState } from '@/components/screen-states';
 import { DataFreshness } from './data-freshness';
 import { useMetWindrose } from './use-dashboard';
 
@@ -17,20 +16,47 @@ import { useMetWindrose } from './use-dashboard';
  * contract): we just pick the matrix for the current orientation × period and hand
  * it straight to the shared WindRose primitive — no client-side bucketing.
  */
+/**
+ * The one height this panel ever occupies — measured on the live dashboard, not
+ * guessed. Shared by the loading, empty and loaded branches so the block never
+ * changes size. If the rose or its legend is resized, this moves with it.
+ */
+const ROSE_BLOCK = 'min-h-[454px]';
+
 export function WindRosePanel({ deviceId }: { deviceId?: string }) {
   const { data, isLoading } = useMetWindrose(deviceId);
   const [orient, setOrient] = useState<'true' | 'relative'>('true');
   const [period, setPeriod] = useState<'10m' | '2m'>('10m');
 
   if (!deviceId) return null;
-  if (isLoading) return <Card className="p-4"><LoadingState label="Loading wind rose…" /></Card>;
-  if (!data) return <Card className="p-4"><EmptyState title="No wind data" /></Card>;
+  /**
+   * Every state of this panel is pinned to the same height (M24 W2).
+   *
+   * The rose is a fixed 320px SVG and the legend beneath it is capped by
+   * `max-h-[320px]`, so unlike the instrument grid this block genuinely has ONE
+   * height — measured at 454px on the live dashboard. Reserving it is therefore
+   * safe rather than a guess.
+   *
+   * Before this, the loading card was a small spinner and the panel grew by
+   * ~236px when the rose arrived, pushing the whole page down. That was the last
+   * of four contributors to the dashboard's CLS.
+   */
+  if (isLoading)
+    return (
+      <div className={`${ROSE_BLOCK} animate-pulse rounded-lg bg-muted`} role="status" aria-label="Loading wind rose…" />
+    );
+  if (!data)
+    return (
+      <div className={ROSE_BLOCK}>
+        <EmptyState title="No wind data" />
+      </div>
+    );
 
   const matrix = data.matrices[orient][period];
   const total = matrix.reduce((sum, row) => sum + row.reduce((a, b) => a + b, 0), 0);
 
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${ROSE_BLOCK}`}>
       <div className="flex flex-wrap items-center gap-1">
         <Toggle active={orient === 'true'} onClick={() => setOrient('true')}>True</Toggle>
         <Toggle active={orient === 'relative'} onClick={() => setOrient('relative')}>Relative</Toggle>
@@ -44,7 +70,7 @@ export function WindRosePanel({ deviceId }: { deviceId?: string }) {
         </span>
       </div>
       {total === 0 ? (
-        <Card className="p-4"><EmptyState title="No wind data in this window" /></Card>
+        <div className="grid h-full place-items-center"><EmptyState title="No wind data in this window" /></div>
       ) : (
         <WindRose matrix={matrix} title={`Wind rose · ${orient} · ${period === '10m' ? '10 min' : '2 min'}`} />
       )}

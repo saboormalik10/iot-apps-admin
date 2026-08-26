@@ -22,7 +22,7 @@ export function useDeviceComparison(deviceIds: string[], sensor: string, interva
     queryKey: queryKeys.analytics.deviceComparison(deviceIds.join(','), sensor, interval, from, to),
     queryFn: ({ signal }) =>
       getOrgDeviceComparison(
-        { deviceIds, sensor, interval, from: window.from, to: window.to, demoOnly: scope.demoOnly },
+        { deviceIds, sensor, interval, from: window.from, to: window.to },
         signal,
       ),
     enabled: deviceIds.length > 0 && Boolean(sensor),

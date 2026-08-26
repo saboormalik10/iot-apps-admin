@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { useScope } from '@/lib/hooks/use-scope';
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import type { MetHistorySeries } from '@/lib/api/types';
 import { useMetHistoryMulti } from './use-dashboard';
 
@@ -25,9 +26,13 @@ const SENSORS: { key: string; label: string; brush?: boolean }[] = [
   { key: 'voltage', label: 'Voltage' },
 ];
 
-const SENSOR_KEYS = SENSORS.map((s) => s.key);
 
 export function MetGraphStack({ deviceId }: { deviceId?: string }) {
+  const sensors = useDeviceSensors(deviceId);
+  // Only chart what the station actually reports. This stack hard-coded eight
+  // sensors, so a wind-only device rendered seven cards of EmptyState — each one
+  // still occupying a full row in the scroll.
+  const visibleSensors = SENSORS.filter((sensor) => sensors.has(sensor.key));
   const { window, scope } = useScope();
 
   // ONE request for the whole stack — server-aggregated (min/avg/max per adaptive
@@ -37,12 +42,11 @@ export function MetGraphStack({ deviceId }: { deviceId?: string }) {
     deviceId
       ? {
           deviceId,
-          sensors: SENSOR_KEYS,
+          sensors: visibleSensors.map((sensor) => sensor.key),
           // "All time" has no lower bound (window.from undefined) → 0, so the
           // graph honours the range picker instead of silently showing 6h.
           from: window.from ?? 0,
           to: window.to,
-          demoOnly: scope.demoOnly,
         }
       : undefined,
   );
@@ -51,7 +55,7 @@ export function MetGraphStack({ deviceId }: { deviceId?: string }) {
 
   return (
     <div className="space-y-4">
-      {SENSORS.map((s) => (
+      {visibleSensors.map((s) => (
         <InViewport key={s.key} minHeight={s.brush ? 236 : 200}>
           <SensorPanel series={data?.series?.[s.key]} isLoading={isLoading} sensor={s.key} label={s.label} brush={s.brush} />
         </InViewport>
