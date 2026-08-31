@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { endsCleanly, looksComplete, minuteFromName } from './watcher';
 import { backoffMs, chunkFiles } from './uploader';
-import { AgentConfig } from './config';
+import { AgentConfig, loadConfig } from './config';
 
 /**
  * Tests for the agent's decision logic. Pure functions only — no filesystem, no
@@ -113,5 +113,28 @@ describe('chunkFiles', () => {
     const names = ['a', 'b', 'c', 'd'].map((n) => file(n, 1));
     const flat = chunkFiles(names, cfg).flat().map((f) => f.name);
     assert.deepEqual(flat, ['a', 'b', 'c', 'd']);
+  });
+});
+
+/**
+ * `OBSERVATOR_API_URL` is an ORIGIN (M24).
+ *
+ * The uploader appends `/v1/ingest/met/files`. The install guide asked for a
+ * `/v1` suffix for months, which produced `POST /v1/v1/…` → 404 — permanent, so
+ * the agent stopped with a full staging directory and no data moving.
+ */
+describe('apiBaseUrl normalisation', () => {
+  const load = (url: string): string => {
+    process.env.OBSERVATOR_API_URL = url;
+    process.env.OBSERVATOR_ACCOUNT = 'wxstation';
+    process.env.OBSERVATOR_INGEST_TOKEN = 'obsi_x_y';
+    return loadConfig([]).apiBaseUrl;
+  };
+
+  test('strips a trailing /v1 and any trailing slash', () => {
+    assert.equal(load('https://api.example.com/v1'), 'https://api.example.com');
+    assert.equal(load('https://api.example.com/v1/'), 'https://api.example.com');
+    assert.equal(load('https://api.example.com/'), 'https://api.example.com');
+    assert.equal(load('https://api.example.com'), 'https://api.example.com');
   });
 });

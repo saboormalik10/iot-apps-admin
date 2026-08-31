@@ -47,11 +47,20 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
+# MemoryDenyWriteExecute is deliberately NOT set. It forbids making memory pages
+# executable, and V8's JIT must do exactly that — with it on, node dies at
+# startup in SetPermissionsOnExecutableMemoryChunk with a SIGTRAP core dump,
+# before running a line of our code. Verified on the box (M24): the same binary
+# ran fine by hand and crashed instantly under systemd until this was removed.
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # The only paths it may write: the station's working directories.
 ReadWritePaths=/home/wxstation
+
+# Bound the agent so it can never take the box — and sshd — down with it. The
+# instance is small (416 MB) and the process is a file mover, not a parser.
+MemoryMax=300M
+MemoryHigh=240M
 
 [Install]
 WantedBy=multi-user.target

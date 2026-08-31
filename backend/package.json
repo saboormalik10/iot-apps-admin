@@ -1,7 +1,7 @@
 {
   "name": "observator-backend",
   "version": "1.0.0",
-  "description": "Observator Instruments — Cloud API Backend",
+  "description": "Observator Instruments \u2014 Cloud API Backend",
   "main": "dist/main.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
@@ -27,7 +27,8 @@
     "check:retention": "ts-node src/scripts/check-retention.ts",
     "loadtest:rollup": "ts-node src/scripts/load-test-rollup.ts",
     "loadtest:ingest": "ts-node src/scripts/load-test-ingest.ts",
-    "sync:indexes": "ts-node src/scripts/sync-indexes.ts"
+    "sync:indexes": "ts-node src/scripts/sync-indexes.ts",
+    "migrate:strip-nulls": "ts-node src/scripts/migrate-strip-null-measures.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

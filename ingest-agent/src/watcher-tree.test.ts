@@ -51,6 +51,7 @@ before(async () => {
     stableMs: 1000,
     lateMs: 2000,
     filePrefixes: ['WindSonic_'],
+    maxCandidatesPerTick: 200,
   } as AgentConfig;
   for (const d of [cfg.uploadDir, cfg.stagingDir, cfg.archiveDir, cfg.quarantineDir]) {
     await mkdir(d, { recursive: true });
@@ -187,5 +188,31 @@ describe('dry run leaves the tree untouched', () => {
     const stillThere = await readdir(join(dryCfg.uploadDir, 'Observator/Dry Tower'));
     assert.deepEqual(stillThere, ['WindSonic_20260901_0400.csv'], 'file must remain in upload/');
     assert.equal(await stagingDepth(dryCfg), before, 'a dry run must not add anything to staging');
+  });
+});
+
+/**
+ * A large backlog must not be taken in one bite (found on the live box, M24).
+ *
+ * `findStable` READS every candidate to check completeness. With 19,363 files
+ * waiting, that allocated enough in a single pass to kill the agent with a V8
+ * out-of-memory on a 416 MB instance — before one file had been sent. A backlog
+ * is precisely when the agent has to keep working.
+ */
+describe('backlog is processed in bounded slices', () => {
+  test('takes at most maxCandidatesPerTick, oldest first', async () => {
+    const cap = 5;
+    const slice = { ...cfg, maxCandidatesPerTick: cap } as AgentConfig;
+    for (let i = 0; i < 12; i += 1) {
+      const mm = String(i).padStart(2, '0');
+      await put(`Observator/Backlog Tower/WindSonic_20260901_06${mm}.csv`, COMPLETE);
+    }
+
+    const found = await new Watcher(slice).findStable(async () => COMPLETE);
+    assert.equal(found.length, cap, `expected ${cap}, got ${found.length}`);
+
+    // Oldest first: filenames encode the minute, and the walk is sorted.
+    const names = found.map((f) => f.rel.split('/').pop()!).filter((n) => n.startsWith('WindSonic_202609'));
+    assert.deepEqual(names, [...names].sort(), 'must be chronological');
   });
 });

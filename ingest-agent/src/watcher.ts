@@ -198,6 +198,15 @@ export class Watcher {
     const out: Candidate[] = [];
 
     for (const name of names) {
+      // Bounded slice per poll — see `maxCandidatesPerTick`. Breaking (not
+      // continuing) matters: `names` is sorted oldest-first, so stopping here
+      // takes the oldest files and leaves the rest for the next tick, which is
+      // the order a catch-up must replay in.
+      if (out.length >= this.cfg.maxCandidatesPerTick) {
+        log.info(`backlog: taking ${out.length} of ${names.length} this pass`);
+        break;
+      }
+
       // `name` is a RELATIVE PATH here; join handles the separators.
       const path = join(this.cfg.uploadDir, name);
       let st;

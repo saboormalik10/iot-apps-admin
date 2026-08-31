@@ -37,6 +37,19 @@ export interface AgentConfig {
    * routing lands and can then be backfilled.
    */
   filePrefixes: string[];
+  /**
+   * Most files examined in one poll.
+   *
+   * `findStable` stats and READS every candidate to check it is complete. With a
+   * large backlog that is a lot of work and a lot of allocation in one tick: on
+   * the live box, 19,363 waiting files crashed the agent with a V8 out-of-memory
+   * on a 416 MB instance before a single file was sent.
+   *
+   * A backlog is exactly when the agent must not fall over, so each pass takes a
+   * bounded slice — oldest first — and the next poll takes the next slice. It
+   * still drains, just in steady bites.
+   */
+  maxCandidatesPerTick: number;
   maxFilesPerRequest: number;
   maxBytesPerRequest: number;
   requestTimeoutMs: number;
@@ -61,7 +74,18 @@ function num(name: string, fallback: number): number {
 
 export function loadConfig(argv: string[] = process.argv): AgentConfig {
   const root = process.env.OBSERVATOR_ROOT_DIR?.trim() || '/home/wxstation';
-  const apiBaseUrl = required('OBSERVATOR_API_URL').replace(/\/+$/, '');
+  /**
+   * ORIGIN only — the uploader appends `/v1/ingest/met/files` itself.
+   *
+   * A trailing `/v1` is stripped rather than rejected: the install guide asked
+   * for one for months, so the mistake is ours and the agent should absorb it.
+   * Left in place it produced `POST /v1/v1/ingest/met/files` → 404, which the
+   * agent correctly treats as permanent and stops on — a silent stall with a
+   * full staging directory (M24, seen on the live box).
+   */
+  const apiBaseUrl = required('OBSERVATOR_API_URL')
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/i, '');
 
   if (!/^https?:\/\//.test(apiBaseUrl)) {
     throw new Error(`OBSERVATOR_API_URL must be an absolute http(s) URL, got "${apiBaseUrl}"`);
@@ -92,6 +116,7 @@ export function loadConfig(argv: string[] = process.argv): AgentConfig {
       .split(',')
       .map((p) => p.trim())
       .filter(Boolean),
+    maxCandidatesPerTick: num('OBSERVATOR_MAX_CANDIDATES', 200),
     pollIntervalMs: num('OBSERVATOR_POLL_MS', 5_000),
     stableMs: num('OBSERVATOR_STABLE_MS', 20_000),
     lateMs: num('OBSERVATOR_LATE_MS', 300_000),

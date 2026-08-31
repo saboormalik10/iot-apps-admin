@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { MetMeasure } from '../models/MetMeasure';
 import { MetDailyComputed, computeMetDaily, DAY_MS } from './daily-summary.util';
+import { BEAUFORT } from './analytics.util';
 
 /**
  * MET daily rollup, computed inside MongoDB.
@@ -31,7 +32,19 @@ const SECTORS = 16;
 const SECTOR_WIDTH = 360 / SECTORS;
 const CALM_MAX_MS = 0.5;
 /** Beaufort force lower bounds in m/s, force 0..12. */
-const BEAUFORT_BOUNDS = [0, 0.5, 1.6, 3.4, 5.5, 8.0, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7, Infinity];
+/**
+ * DERIVED from the one Beaufort table, never re-typed.
+ *
+ * These bounds were hand-written and had drifted: the table says force 1 ends at
+ * 1.5 m/s and force 2 at 3.3, while this list said 1.6 and 3.4. Every reading in
+ * 1.5–1.6 and 3.3–3.4 m/s was therefore counted in a different band by the
+ * aggregation than by the in-Node original and by the UI badge — 216 readings in
+ * one day of real data. The equivalence test caught it once the collection held
+ * enough light-wind samples to land in the gap.
+ *
+ * Deriving removes the possibility: the boundaries ARE the table's edges.
+ */
+const BEAUFORT_BOUNDS = [...BEAUFORT.map((b) => b.minMs), Infinity];
 
 interface GroupStats {
   sampleCount: number;
@@ -48,6 +61,18 @@ interface GroupStats {
 const round = (v: number | null, dp: number): number | null =>
   v === null || Number.isNaN(v) ? null : Math.round(v * 10 ** dp) / 10 ** dp;
 
+/**
+ * Counting "has a reading" must survive a MISSING field, not just a null one.
+ *
+ * `{ $ne: ['$tempC', null] }` looks like a null check and is not: in aggregation
+ * expressions a missing field resolves to `undefined`, and `undefined != null`
+ * is TRUE — so once the schema stopped writing `default: null`, every row
+ * counted as having a temperature and `tempAvgC` came out as 0 instead of null.
+ * Caught by the equivalence test against the original in-Node implementation.
+ *
+ * `$ifNull` collapses missing AND null to null first, so both shapes count the
+ * same. Every `$ne … null` in the pipeline below is wrapped for that reason.
+ */
 const avg = (sum: number, n: number, dp = 3): number | null => (n ? round(sum / n, dp) : null);
 
 export async function computeMetDailyAggregated(
@@ -76,31 +101,31 @@ export async function computeMetDailyAggregated(
         _id: null,
         sampleCount: { $sum: 1 },
         windSum: { $sum: { $ifNull: ['$windSpeedMs', 0] } },
-        windN: { $sum: { $cond: [{ $ne: ['$windSpeedMs', null] }, 1, 0] } },
+        windN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$windSpeedMs', null] }, null] }, 1, 0] } },
         windMax: { $max: '$windSpeedMs' },
-        calmN: { $sum: { $cond: [{ $and: [{ $ne: ['$windSpeedMs', null] }, { $lt: ['$windSpeedMs', CALM_MAX_MS] }] }, 1, 0] } },
+        calmN: { $sum: { $cond: [{ $and: [{ $ne: [{ $ifNull: ['$windSpeedMs', null] }, null] }, { $lt: ['$windSpeedMs', CALM_MAX_MS] }] }, 1, 0] } },
         tempSum: { $sum: { $ifNull: ['$tempC', 0] } },
-        tempN: { $sum: { $cond: [{ $ne: ['$tempC', null] }, 1, 0] } },
+        tempN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$tempC', null] }, null] }, 1, 0] } },
         tempMax: { $max: '$tempC' }, tempMin: { $min: '$tempC' },
         humSum: { $sum: { $ifNull: ['$humidityPct', 0] } },
-        humN: { $sum: { $cond: [{ $ne: ['$humidityPct', null] }, 1, 0] } },
+        humN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$humidityPct', null] }, null] }, 1, 0] } },
         humMax: { $max: '$humidityPct' }, humMin: { $min: '$humidityPct' },
         presSum: { $sum: { $ifNull: ['$pressureHpa', 0] } },
-        presN: { $sum: { $cond: [{ $ne: ['$pressureHpa', null] }, 1, 0] } },
+        presN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$pressureHpa', null] }, null] }, 1, 0] } },
         presMax: { $max: '$pressureHpa' }, presMin: { $min: '$pressureHpa' },
         rateSum: { $sum: { $ifNull: ['$precipRateMmHr', 0] } },
-        rateN: { $sum: { $cond: [{ $ne: ['$precipRateMmHr', null] }, 1, 0] } },
+        rateN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$precipRateMmHr', null] }, null] }, 1, 0] } },
         rateMax: { $max: '$precipRateMmHr' },
         solarSum: { $sum: { $ifNull: ['$solarWm2', 0] } },
-        solarN: { $sum: { $cond: [{ $ne: ['$solarWm2', null] }, 1, 0] } },
+        solarN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$solarWm2', null] }, null] }, 1, 0] } },
         solarMax: { $max: '$solarWm2' },
         dewSum: { $sum: { $ifNull: ['$dewPointC', 0] } },
-        dewN: { $sum: { $cond: [{ $ne: ['$dewPointC', null] }, 1, 0] } },
-        spreadSum: { $sum: { $cond: [{ $and: [{ $ne: ['$dewPointC', null] }, { $ne: ['$tempC', null] }] }, { $subtract: ['$tempC', '$dewPointC'] }, 0] } },
-        spreadN: { $sum: { $cond: [{ $and: [{ $ne: ['$dewPointC', null] }, { $ne: ['$tempC', null] }] }, 1, 0] } },
-        hasPressure: { $sum: { $cond: [{ $ne: ['$pressureHpa', null] }, 1, 0] } },
-        hasPrecip: { $sum: { $cond: [{ $ne: ['$precipMm', null] }, 1, 0] } },
-        hasSolar: { $sum: { $cond: [{ $ne: ['$solarWm2', null] }, 1, 0] } },
+        dewN: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$dewPointC', null] }, null] }, 1, 0] } },
+        spreadSum: { $sum: { $cond: [{ $and: [{ $ne: [{ $ifNull: ['$dewPointC', null] }, null] }, { $ne: [{ $ifNull: ['$tempC', null] }, null] }] }, { $subtract: ['$tempC', '$dewPointC'] }, 0] } },
+        spreadN: { $sum: { $cond: [{ $and: [{ $ne: [{ $ifNull: ['$dewPointC', null] }, null] }, { $ne: [{ $ifNull: ['$tempC', null] }, null] }] }, 1, 0] } },
+        hasPressure: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$pressureHpa', null] }, null] }, 1, 0] } },
+        hasPrecip: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$precipMm', null] }, null] }, 1, 0] } },
+        hasSolar: { $sum: { $cond: [{ $ne: [{ $ifNull: ['$solarWm2', null] }, null] }, 1, 0] } },
       },
     },
   ]);

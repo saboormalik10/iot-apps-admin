@@ -52,35 +52,52 @@ const metMeasureSchema = new Schema<IMetMeasure>(
     dataSentence: { type: String, required: true },
     timeStamp: { type: String, required: true },
     timestampMs: { type: Number, required: true },
+    /**
+     * SENSOR FIELDS ARE NOT DEFAULTED TO NULL.
+     *
+     * `default: null` makes Mongoose write the key on every document, so a
+     * wind-only station stored 24 explicit nulls per row — measured at 850 B
+     * against 420 B without them, i.e. **half the collection was nulls**. At
+     * 86,400 rows/day/station that was ~30 MB/day instead of ~15.
+     *
+     * Absent and null behave identically everywhere that reads them: Mongo's
+     * `{field: null}` matches missing documents too, `$avg`/`$min`/`$max` skip
+     * both, and JS `??` treats them the same. Verified before the change — no
+     * read path compares with `=== null`, nothing uses `$exists`/`$type` on
+     * these fields, and the CSV exports already use `?? ''`.
+     *
+     * `source` KEEPS its default: the 30-day TTL is a partial index filtered on
+     * it, so the key has to exist or rows would never expire.
+     */
     source: { type: String, enum: ['sftp', 'mobile', null], default: null },
-    windSpeedMs: { type: Number, default: null },
-    windSpeedKmh: { type: Number, default: null },
-    windSpeedKnots: { type: Number, default: null },
-    windSpeedRelMs: { type: Number, default: null },
-    windSpeedTrueMs: { type: Number, default: null },
-    windDirRelDeg: { type: Number, default: null },
-    windDirTrueDeg: { type: Number, default: null },
-    tempC: { type: Number, default: null },
-    humidityPct: { type: Number, default: null },
-    pressureHpa: { type: Number, default: null },
-    precipMm: { type: Number, default: null },
-    precipRateMmHr: { type: Number, default: null },
-    solarWm2: { type: Number, default: null },
-    voltageV: { type: Number, default: null },
-    batteryVoltageV: { type: Number, default: null },
-    currentA: { type: Number, default: null },
-    dewPointC: { type: Number, default: null },
-    qnhHpa: { type: Number, default: null },
-    qfeHpa: { type: Number, default: null },
-    gpsLat: { type: Number, default: null },
-    gpsLng: { type: Number, default: null },
-    gpsAltM: { type: Number, default: null },
-    gpsSatellites: { type: Number, default: null },
-    gpsHorDilution: { type: Number, default: null },
-    gpsGeoidalSepM: { type: Number, default: null },
-    gpsQuality: { type: Number, default: null },
-    phoneLat: { type: Number, default: null },
-    phoneLng: { type: Number, default: null },
+    windSpeedMs: { type: Number },
+    windSpeedKmh: { type: Number },
+    windSpeedKnots: { type: Number },
+    windSpeedRelMs: { type: Number },
+    windSpeedTrueMs: { type: Number },
+    windDirRelDeg: { type: Number },
+    windDirTrueDeg: { type: Number },
+    tempC: { type: Number },
+    humidityPct: { type: Number },
+    pressureHpa: { type: Number },
+    precipMm: { type: Number },
+    precipRateMmHr: { type: Number },
+    solarWm2: { type: Number },
+    voltageV: { type: Number },
+    batteryVoltageV: { type: Number },
+    currentA: { type: Number },
+    dewPointC: { type: Number },
+    qnhHpa: { type: Number },
+    qfeHpa: { type: Number },
+    gpsLat: { type: Number },
+    gpsLng: { type: Number },
+    gpsAltM: { type: Number },
+    gpsSatellites: { type: Number },
+    gpsHorDilution: { type: Number },
+    gpsGeoidalSepM: { type: Number },
+    gpsQuality: { type: Number },
+    phoneLat: { type: Number },
+    phoneLng: { type: Number },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );

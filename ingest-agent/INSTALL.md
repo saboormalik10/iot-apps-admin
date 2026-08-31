@@ -73,7 +73,7 @@ sudo usermod -aG sftpusers obsingest
 # 4. Credentials — root-owned, NOT readable by the station's own SFTP account
 sudo install -m 0600 -o root -g root /dev/null /etc/observator-ingest.env
 sudo tee /etc/observator-ingest.env >/dev/null <<'ENV'
-OBSERVATOR_API_URL=https://api.example.com/v1
+OBSERVATOR_API_URL=https://api.example.com
 OBSERVATOR_ACCOUNT=wxstation
 OBSERVATOR_INGEST_TOKEN=obsi_…
 ENV
@@ -108,7 +108,7 @@ them** — doing so would hand sudo to the process that parses untrusted filenam
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OBSERVATOR_API_URL` | — | **Required.** Absolute `http(s)` base URL of the API |
+| `OBSERVATOR_API_URL` | — | **Required.** The API's ORIGIN — no `/v1`, no trailing slash. The agent appends `/v1/ingest/met/files` itself. A trailing `/v1` is stripped for you, because this guide used to ask for one |
 | `OBSERVATOR_ACCOUNT` | — | **Required.** SFTP account; must match `^[a-z][a-z0-9_-]{2,31}$` |
 | `OBSERVATOR_INGEST_TOKEN` | — | **Required.** Must start with `obsi_` |
 | `OBSERVATOR_FILE_PREFIXES` | `WindSonic_` | **Comma-separated filename prefixes to pick up. Everything else is left untouched** — not claimed, not moved, not deleted. This is what stops `Environmental_*` being parsed as wind and losing humidity. Set to empty to take every `.csv` |
