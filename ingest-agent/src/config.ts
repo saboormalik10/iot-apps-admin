@@ -22,6 +22,21 @@ export interface AgentConfig {
   stableMs: number;
   /** After this, an incomplete file is accepted as permanently truncated. */
   lateMs: number;
+  /**
+   * Filename prefixes the agent will pick up. Everything else is LEFT ALONE.
+   *
+   * The station writes more than one kind of file into the same folder, and the
+   * backend resolves its parser from the folder — so a file of a different kind
+   * is parsed as wind and silently mis-stored. `Environmental_*` loses humidity
+   * that way (the alias list expects `humidity_pct`, the file says
+   * `humidity_percent`), and the retired `EnvDiagnostic_*` files inserted ~60
+   * all-null rows a minute.
+   *
+   * Filtering here is deliberately conservative: unmatched files are not
+   * touched, not moved and not deleted, so they wait on disk until per-prefix
+   * routing lands and can then be backfilled.
+   */
+  filePrefixes: string[];
   maxFilesPerRequest: number;
   maxBytesPerRequest: number;
   requestTimeoutMs: number;
@@ -73,6 +88,10 @@ export function loadConfig(argv: string[] = process.argv): AgentConfig {
     stagingDir: `${root}/staging`,
     archiveDir: `${root}/archive`,
     quarantineDir: `${root}/quarantine`,
+    filePrefixes: (process.env.OBSERVATOR_FILE_PREFIXES ?? 'WindSonic_')
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean),
     pollIntervalMs: num('OBSERVATOR_POLL_MS', 5_000),
     stableMs: num('OBSERVATOR_STABLE_MS', 20_000),
     lateMs: num('OBSERVATOR_LATE_MS', 300_000),

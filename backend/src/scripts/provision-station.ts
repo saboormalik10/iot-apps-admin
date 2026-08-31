@@ -18,8 +18,15 @@ import { hashToken } from '../common/guards/service-credential.guard';
  * unknown account is rejected by the endpoint, so a typo'd or attacker-chosen
  * account name cannot silently create an orphan station belonging to nobody.
  *
- *   npm run provision:station -- --account wxstation --name "WindSonic — Sydney"
+ *   npm run provision:station -- --account wxstation --folder "Demo Tower" --name "WindSonic — Sydney"
  *   npm run provision:station -- --account wxstation --credential-only
+ *
+ * `--folder` is the TOWER subfolder under the account's upload root. It is part
+ * of the station's identity: `StationAccount` is keyed on
+ * `(account, folderPath)` since M19 W5, because one SFTP account serves a whole
+ * customer and each tower is a subfolder beneath it. Omitting it maps the
+ * account to the flat root (`""`), which is correct only for a station that
+ * genuinely drops files directly into `upload/`.
  *
  * The credential is printed ONCE. Only its sha256 is stored.
  */
@@ -46,6 +53,13 @@ async function main(): Promise<void> {
   // too: each layer must be able to reject independently.
   if (!/^[a-z][a-z0-9_-]{2,31}$/.test(account)) {
     throw new Error(`Invalid account "${account}" — must match ^[a-z][a-z0-9_-]{2,31}$`);
+  }
+  // The tower subfolder. Normalised the same way the ingest path helper does:
+  // no leading/trailing slashes, so `"/Demo Tower/"` and `"Demo Tower"` are one
+  // station rather than two.
+  const folderPath = (argValue('--folder') ?? '').trim().replace(/^\/+|\/+$/g, '');
+  if (folderPath && !/^[A-Za-z0-9][A-Za-z0-9 _.\-\/]{0,127}$/.test(folderPath)) {
+    throw new Error(`Invalid --folder "${folderPath}"`);
   }
   const credentialOnly = process.argv.includes('--credential-only');
   const deviceName = argValue('--name') ?? `Station ${account}`;
@@ -75,19 +89,22 @@ async function main(): Promise<void> {
       console.log(`  ✅ device created: ${String(device._id)}  ${deviceName}`);
     }
 
-    const existing = await StationAccount.findOne({ account });
+    // Keyed on BOTH account and folder — see the note at the top. Looking up on
+    // `account` alone would report "already mapped" for a different tower.
+    const existing = await StationAccount.findOne({ account, folderPath });
     if (existing) {
-      console.log(`  • station account already mapped → device ${String(existing.deviceId)}`);
+      console.log(`  • station already mapped: ${account}/"${folderPath}" → device ${String(existing.deviceId)}`);
     } else {
       await StationAccount.create({
         account,
+        folderPath,
         organizationId: org._id as Types.ObjectId,
         deviceId: device._id as Types.ObjectId,
         streamType: 'met-csv',
         uploadPath: '/upload',
         isActive: true,
       });
-      console.log(`  ✅ station account mapped: ${account} → ${String(device._id)}`);
+      console.log(`  ✅ station mapped: ${account}/"${folderPath}" → ${String(device._id)}`);
     }
   }
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { Watcher } from './watcher';
-import { claim, archive, drainStaging, stagingDepth } from './paths';
+import { claim, archive, drainStaging, matchesPrefix, stagingDepth } from './paths';
 import { AgentConfig } from './config';
 
 /**
@@ -50,6 +50,7 @@ before(async () => {
     quarantineDir: join(root, 'quarantine'),
     stableMs: 1000,
     lateMs: 2000,
+    filePrefixes: ['WindSonic_'],
   } as AgentConfig;
   for (const d of [cfg.uploadDir, cfg.stagingDir, cfg.archiveDir, cfg.quarantineDir]) {
     await mkdir(d, { recursive: true });
@@ -122,5 +123,69 @@ describe('staging mirrors the tree', () => {
     const day = new Date().toISOString().slice(0, 10);
     const towers = await readdir(join(cfg.archiveDir, day, 'Observator'));
     assert.ok(towers.includes('Tower A'), `archive flattened: ${JSON.stringify(towers)}`);
+  });
+});
+
+/**
+ * Filename filtering (M24, after the client's server was inspected).
+ *
+ * The station drops several kinds of file into ONE folder, and the backend picks
+ * its parser from the folder — so anything that is not wind gets parsed as wind
+ * and quietly mis-stored. Both offenders carry a `timestamp` column, so neither
+ * is rejected; they fail by writing plausible-looking data.
+ *
+ * The agent must therefore take only what it is told to take, and must LEAVE the
+ * rest untouched so it can be backfilled once per-prefix routing exists.
+ */
+describe('Watcher only claims configured prefixes', () => {
+  test('picks up WindSonic_ and ignores Environmental_ / EnvDiagnostic_', async () => {
+    await put('Observator/Demo Tower/WindSonic_20260901_0315.csv', COMPLETE);
+    await put('Observator/Demo Tower/Environmental_20260901_0315.csv', COMPLETE);
+    await put('Observator/Demo Tower/EnvDiagnostic_20260901_0315.csv', COMPLETE);
+
+    const found = await new Watcher(cfg).findStable(async () => COMPLETE);
+    const names = found.map((f) => f.rel.split('/').pop());
+
+    assert.ok(names.includes('WindSonic_20260901_0315.csv'), `got ${JSON.stringify(names)}`);
+    assert.ok(!names.some((n) => n!.startsWith('Environmental_')), 'environmental must be skipped');
+    assert.ok(!names.some((n) => n!.startsWith('EnvDiagnostic_')), 'diagnostic must be skipped');
+  });
+
+  test('the skipped files are still on disk — nothing is moved or deleted', async () => {
+    const dir = join(cfg.uploadDir, 'Observator/Demo Tower');
+    const left = await readdir(dir);
+    assert.ok(left.includes('Environmental_20260901_0315.csv'), `got ${JSON.stringify(left)}`);
+    assert.ok(left.includes('EnvDiagnostic_20260901_0315.csv'), `got ${JSON.stringify(left)}`);
+  });
+
+  test('an empty prefix list means take everything', () => {
+    assert.equal(matchesPrefix('Environmental_1.csv', []), true);
+    assert.equal(matchesPrefix('Environmental_1.csv', ['WindSonic_']), false);
+    assert.equal(matchesPrefix('windsonic_1.csv', ['WindSonic_']), true, 'case-insensitive');
+  });
+});
+
+/**
+ * `--dry-run` must not move anything (found on the live box, M24).
+ *
+ * The flag existed to inspect a new deployment safely, and it logged "nothing
+ * will be posted or moved" — but `claim()` ran BEFORE the check, so a dry run
+ * renamed every settled file into `staging/`. On the real server that was 19,000
+ * files moved by a command whose whole purpose is to move nothing.
+ */
+describe('dry run leaves the tree untouched', () => {
+  test('files stay in upload/ and staging stays empty', async () => {
+    const dryCfg = { ...cfg, dryRun: true } as AgentConfig;
+    await put('Observator/Dry Tower/WindSonic_20260901_0400.csv', COMPLETE);
+
+    // findStable is what tick() consults; claiming is what must NOT happen.
+    const found = await new Watcher(dryCfg).findStable(async () => COMPLETE);
+    assert.ok(found.some((f) => f.rel.includes('Dry Tower')), 'the file should be seen');
+
+    // The suites share one temp tree, so compare the DELTA rather than zero.
+    const before = await stagingDepth(dryCfg);
+    const stillThere = await readdir(join(dryCfg.uploadDir, 'Observator/Dry Tower'));
+    assert.deepEqual(stillThere, ['WindSonic_20260901_0400.csv'], 'file must remain in upload/');
+    assert.equal(await stagingDepth(dryCfg), before, 'a dry run must not add anything to staging');
   });
 });

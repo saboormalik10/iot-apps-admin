@@ -101,15 +101,21 @@ export async function drainStaging(cfg: AgentConfig): Promise<string[]> {
  * Staging and quarantine mirror the upload tree, so a flat readdir would report
  * zero files and a crash-recovered batch would be silently abandoned.
  */
-async function listCsvTree(dir: string, prefix = ''): Promise<string[]> {
+async function listCsvTree(dir: string, prefix = '', accept?: (name: string) => boolean): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   const out: string[] = [];
   for (const e of entries) {
     const rel = prefix ? `${prefix}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...(await listCsvTree(join(dir, e.name), rel)));
-    else if (e.name.toLowerCase().endsWith('.csv')) out.push(rel);
+    if (e.isDirectory()) out.push(...(await listCsvTree(join(dir, e.name), rel, accept)));
+    else if (e.name.toLowerCase().endsWith('.csv') && (!accept || accept(e.name))) out.push(rel);
   }
   return out;
+}
+
+/** Does this filename start with one of the configured prefixes? */
+export function matchesPrefix(name: string, prefixes: string[]): boolean {
+  if (prefixes.length === 0) return true;
+  return prefixes.some((p) => name.toLowerCase().startsWith(p.toLowerCase()));
 }
 
 /** Depth of the staging backlog — the metric that says ingestion has stalled. */

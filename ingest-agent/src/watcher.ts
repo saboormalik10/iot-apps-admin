@@ -1,4 +1,5 @@
 import { readdir, stat } from 'fs/promises';
+import { matchesPrefix } from './paths';
 import { join } from 'path';
 
 import { AgentConfig } from './config';
@@ -140,7 +141,24 @@ export class Watcher {
     for (const e of entries) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
       if (e.isFile()) {
-        if (e.name.toLowerCase().endsWith('.csv')) out.push(rel);
+        /**
+         * Only files whose name starts with a configured prefix (default
+         * `WindSonic_`). Anything else is left where it is — not claimed, not
+         * moved, not deleted.
+         *
+         * The station drops several kinds of file into the same folder, and the
+         * backend picks its parser from the FOLDER, so a file of another kind is
+         * parsed as wind and quietly mis-stored: `Environmental_*` loses humidity
+         * (the registry expects `humidity_pct`, the file says `humidity_percent`)
+         * and the retired `EnvDiagnostic_*` wrote ~60 all-null rows a minute.
+         * Neither is rejected, because both carry a `timestamp` column.
+         *
+         * This is the narrow fix. Per-prefix stream routing replaces it, and the
+         * skipped files stay on disk to be backfilled when it lands.
+         */
+        if (e.name.toLowerCase().endsWith('.csv') && matchesPrefix(e.name, this.cfg.filePrefixes)) {
+          out.push(rel);
+        }
       } else if (e.isDirectory()) {
         if (depth >= MAX_DEPTH) {
           log.warn(`not descending past ${MAX_DEPTH} levels — skipping ${rel}/`);

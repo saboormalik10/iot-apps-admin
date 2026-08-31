@@ -144,6 +144,26 @@ async function tick(cfg: AgentConfig, watcher: Watcher, uploader: Uploader): Pro
   const staged = await drainStaging(cfg);
 
   const candidates = await watcher.findStable((p) => readFile(p, 'utf8'));
+
+  /**
+   * A dry run reports and returns BEFORE anything is claimed.
+   *
+   * It used to claim first and check `dryRun` afterwards, so the run it
+   * advertises as "nothing will be posted or moved" renamed every settled file
+   * into `staging/` — on the live box that was 19,000 files. The whole point of
+   * the flag is to inspect a new deployment safely, so it has to be the first
+   * thing that happens, not the last.
+   */
+  if (cfg.dryRun) {
+    const names = [...staged, ...candidates.map((c) => c.rel)];
+    log.info(
+      `[dry-run] would claim and post ${names.length} file(s): ` +
+        `${names.slice(0, 5).join(', ')}${names.length > 5 ? ' …' : ''}`,
+    );
+    log.info('[dry-run] nothing was moved');
+    return;
+  }
+
   const claimed: string[] = [...staged];
 
   for (const c of candidates) {
@@ -156,11 +176,6 @@ async function tick(cfg: AgentConfig, watcher: Watcher, uploader: Uploader): Pro
   }
 
   if (claimed.length === 0) return;
-
-  if (cfg.dryRun) {
-    log.info(`[dry-run] would post ${claimed.length} file(s): ${claimed.slice(0, 5).join(', ')}${claimed.length > 5 ? ' …' : ''}`);
-    return;
-  }
 
   const payloads = await buildPayload(cfg, claimed);
   if (payloads.length === 0) return;

@@ -78,6 +78,16 @@ OBSERVATOR_ACCOUNT=wxstation
 OBSERVATOR_INGEST_TOKEN=obsi_…
 ENV
 
+# 4b. Directory permissions — the agent must be able to move files OUT of
+#     each tower folder, which SFTP creates as 0755 owned by the station.
+sudo chgrp -R sftpusers /home/wxstation/upload
+sudo find /home/wxstation/upload -type d -exec chmod 2775 {} \;
+for d in staging archive quarantine; do
+  sudo mkdir -p /home/wxstation/$d
+  sudo chown obsingest:sftpusers /home/wxstation/$d
+  sudo chmod 2770 /home/wxstation/$d
+done
+
 # 5. Units
 sudo cp deploy/observator-ingest.service /etc/systemd/system/
 sudo cp deploy/observator-archive-report.{service,timer} /etc/systemd/system/
@@ -101,6 +111,7 @@ them** — doing so would hand sudo to the process that parses untrusted filenam
 | `OBSERVATOR_API_URL` | — | **Required.** Absolute `http(s)` base URL of the API |
 | `OBSERVATOR_ACCOUNT` | — | **Required.** SFTP account; must match `^[a-z][a-z0-9_-]{2,31}$` |
 | `OBSERVATOR_INGEST_TOKEN` | — | **Required.** Must start with `obsi_` |
+| `OBSERVATOR_FILE_PREFIXES` | `WindSonic_` | **Comma-separated filename prefixes to pick up. Everything else is left untouched** — not claimed, not moved, not deleted. This is what stops `Environmental_*` being parsed as wind and losing humidity. Set to empty to take every `.csv` |
 | `OBSERVATOR_ROOT_DIR` | `/home/wxstation` | Parent of `upload/ staging/ archive/ quarantine/` |
 | `OBSERVATOR_POLL_MS` | `5000` | Directory poll interval |
 | `OBSERVATOR_STABLE_MS` | `20000` | A file must be untouched this long before it is sent |
@@ -152,6 +163,12 @@ cd /opt/observator/ingest-agent
 sudo -u obsingest node dist/main.js --once      # one pass, then exit
 sudo -u obsingest node dist/main.js --dry-run   # report only; moves nothing
 ```
+
+`--dry-run` reports what it WOULD take and returns before claiming anything, so
+it is safe to run against a live folder. (It was not always: until M24 it claimed
+first and checked the flag afterwards, so a "dry" run renamed every settled file
+into `staging/` — 19,000 of them on this box. `watcher-tree.test.ts` now asserts
+a dry run adds nothing to staging.)
 
 Stop the service first, or the two will contend for the same files.
 
