@@ -221,7 +221,23 @@ export class IngestService {
     organizationId: Types.ObjectId,
     headingOffsetDeg: number,
   ) {
-    return rows.map((r) => ({
+    /**
+     * Drop keys whose value is null before inserting.
+     *
+     * Removing `default: null` from the schema is only half the job: this mapper
+     * NAMES every sensor field, so `tempC: r.tempC` writes an explicit null for a
+     * wind-only station no matter what the schema says. Measured on the live
+     * deployment — the row was still 566 B with 9 stored nulls after the schema
+     * change alone.
+     *
+     * Absent and null read identically everywhere (`{f: null}` matches missing,
+     * `$avg`/`$min`/`$max` skip both, JS `??` treats them the same), and the
+     * rollup's counters were made missing-safe with `$ifNull` at the same time.
+     */
+    const omitNulls = <T extends Record<string, unknown>>(doc: T): Partial<T> =>
+      Object.fromEntries(Object.entries(doc).filter(([, v]) => v !== null)) as Partial<T>;
+
+    return rows.map((r) => omitNulls({
       recordId,
       organizationId,
       rowType: 'data' as const,
