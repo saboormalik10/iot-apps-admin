@@ -696,7 +696,7 @@ export const collectStationSecret = (jobId: string) =>
 
 /** Rotate a station's SFTP password. Returns a job whose secret is collected as above. */
 export const rotateStationPassword = (stationAccountId: string) =>
-  http.post<{ jobId: string; account: string; status: string }>(
+  http.post<{ jobId: string; account: string; status: string; sftpHost: string; sftpPort: number }>(
     `/platform/stations/${stationAccountId}/rotate`,
     {},
   );

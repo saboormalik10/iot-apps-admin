@@ -1132,6 +1132,9 @@ export type BrandingInput = Partial<Pick<Branding, 'displayName' | 'logoUrl' | '
 
 /** A provisioned station and the state of its most recent provisioning job. */
 export interface PlatformStation {
+  /** Where the customer points their SFTP client. Same for every station on a box. */
+  sftpHost: string;
+  sftpPort: number;
   stationAccountId: string;
   account: string;
   folderPath: string;
@@ -1153,6 +1156,8 @@ export interface ProvisionStationInput {
 }
 
 export interface ProvisionedStation {
+  sftpHost: string;
+  sftpPort: number;
   stationAccountId: string;
   deviceId: string;
   account: string;

@@ -31,7 +31,21 @@ const TOWER_RE = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/;
  * Polls because the agent needs a few seconds: the job is queued before the
  * account exists, so the secret is not there on the first ask.
  */
-function CredentialPanel({ jobId, account, onDone }: { jobId: string; account: string; onDone: () => void }) {
+function CredentialPanel({
+  jobId,
+  account,
+  host,
+  port,
+  folder,
+  onDone,
+}: {
+  jobId: string;
+  account: string;
+  host: string;
+  port: number;
+  folder?: string;
+  onDone: () => void;
+}) {
   const [password, setPassword] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -68,24 +82,50 @@ function CredentialPanel({ jobId, account, onDone }: { jobId: string; account: s
 
       {password ? (
         <>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded bg-background px-2 py-1 font-mono text-sm">{password}</code>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void navigator.clipboard?.writeText(password);
-                setCopied(true);
-              }}
-            >
-              {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
-              <span className="ml-1">{copied ? 'Copied' : 'Copy'}</span>
-            </Button>
-          </div>
+          {/* All four details together — this is what gets sent to the customer,
+              so copying the password alone just meant assembling the rest by hand. */}
+          <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 rounded bg-background p-2 font-mono text-sm">
+            <dt className="text-muted-foreground">Host</dt>
+            <dd className="truncate">{host}</dd>
+            <dt className="text-muted-foreground">Port</dt>
+            <dd>{port}</dd>
+            <dt className="text-muted-foreground">Username</dt>
+            <dd className="truncate">{account}</dd>
+            <dt className="text-muted-foreground">Password</dt>
+            <dd className="truncate">{password}</dd>
+            {folder ? (
+              <>
+                <dt className="text-muted-foreground">Folder</dt>
+                <dd className="truncate">upload/{folder}</dd>
+              </>
+            ) : null}
+          </dl>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() => {
+              const block = [
+                `Host:     ${host}`,
+                `Port:     ${port}`,
+                `Protocol: SFTP`,
+                `Username: ${account}`,
+                `Password: ${password}`,
+                ...(folder ? [`Folder:   upload/${folder}`] : []),
+              ].join('\n');
+              void navigator.clipboard?.writeText(block);
+              setCopied(true);
+            }}
+          >
+            {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+            <span className="ml-1">{copied ? 'Copied all details' : 'Copy all details'}</span>
+          </Button>
+
           <p className="mt-2 text-xs text-muted-foreground">
-            Shown once and never stored. Copy it now — if it is lost, rotate the password to get a new one.
+            The password is shown once and never stored. Copy it now — if it is lost, rotate to issue a new one.
           </p>
-          <Button size="sm" variant="ghost" className="mt-2" onClick={onDone}>
+          <Button size="sm" variant="ghost" className="mt-1" onClick={onDone}>
             Done
           </Button>
         </>
@@ -100,7 +140,13 @@ function CredentialPanel({ jobId, account, onDone }: { jobId: string; account: s
   );
 }
 
-function StationRow({ station, onRotated }: { station: PlatformStation; onRotated: (jobId: string, account: string) => void }) {
+function StationRow({
+  station,
+  onRotated,
+}: {
+  station: PlatformStation;
+  onRotated: (jobId: string, account: string, host: string, port: number, folder: string) => void;
+}) {
   const [busy, setBusy] = useState(false);
   return (
     <li className="flex items-start justify-between gap-3 border-b py-2 last:border-0">
@@ -123,7 +169,7 @@ function StationRow({ station, onRotated }: { station: PlatformStation; onRotate
               setBusy(true);
               try {
                 const job = await rotateStationPassword(station.stationAccountId);
-                onRotated(job.jobId, station.account);
+                onRotated(job.jobId, station.account, job.sftpHost, job.sftpPort, station.folderPath);
               } finally {
                 setBusy(false);
               }
@@ -170,7 +216,13 @@ export function StationsDialog({
   const [towerName, setTowerName] = useState('');
   const [error, setError] = useState<string | null>(null);
   /** The job whose one-read password is still waiting to be shown. */
-  const [secretJob, setSecretJob] = useState<{ jobId: string; account: string } | null>(null);
+  const [secretJob, setSecretJob] = useState<{
+    jobId: string;
+    account: string;
+    host: string;
+    port: number;
+    folder?: string;
+  } | null>(null);
 
   const { data: stations, isLoading } = useQuery({
     queryKey: queryKeys.stations(organizationId),
@@ -208,7 +260,13 @@ export function StationsDialog({
       setTowerName('');
       // The password only exists once the agent has run, so hand the job to the
       // panel and let it poll rather than asking for it here and getting null.
-      setSecretJob({ jobId: made.jobId, account: made.account });
+      setSecretJob({
+        jobId: made.jobId,
+        account: made.account,
+        host: made.sftpHost,
+        port: made.sftpPort,
+        folder: made.folderPath,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not provision the station.');
     }
@@ -228,6 +286,9 @@ export function StationsDialog({
           <CredentialPanel
             jobId={secretJob.jobId}
             account={secretJob.account}
+            host={secretJob.host}
+            port={secretJob.port}
+            folder={secretJob.folder}
             onDone={() => setSecretJob(null)}
           />
         ) : null}
@@ -242,7 +303,9 @@ export function StationsDialog({
               <StationRow
                 key={s.stationAccountId}
                 station={s}
-                onRotated={(jobId, account) => setSecretJob({ jobId, account })}
+                onRotated={(jobId, account, host, port, folder) =>
+                  setSecretJob({ jobId, account, host, port, folder })
+                }
               />
             ))}
           </ul>

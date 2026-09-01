@@ -123,6 +123,7 @@ export class StationsService implements OnModuleInit {
     }).catch(() => void 0);
 
     return {
+      ...this.sftpEndpoint(),
       stationAccountId: String(mapping._id),
       deviceId: String(device._id),
       account,
@@ -165,6 +166,25 @@ export class StationsService implements OnModuleInit {
   }
 
   /** Stations for a customer, with the state of their most recent job. */
+  /**
+   * Where customers point their SFTP client.
+   *
+   * The operator has to hand a customer four things — host, port, username,
+   * password — and only the last two were ever available in the panel, so the
+   * other two had to be known from somewhere else. They are the same for every
+   * station on a box, so they are configuration rather than per-station data.
+   *
+   * Falls back to a clearly-wrong placeholder rather than an empty string: a
+   * visible `SFTP_HOST-not-set` in the copied block is far easier to notice than
+   * a silently missing line.
+   */
+  private sftpEndpoint() {
+    return {
+      sftpHost: (process.env.SFTP_HOST ?? '').trim() || 'SFTP_HOST-not-set',
+      sftpPort: Number.parseInt(process.env.SFTP_PORT ?? '22', 10) || 22,
+    };
+  }
+
   async list(organizationId: string) {
     const mappings = await StationAccount.find({ organizationId: new Types.ObjectId(organizationId) })
       .sort({ createdAt: -1 })
@@ -183,9 +203,12 @@ export class StationsService implements OnModuleInit {
       if (typeof sid === 'string' && !latestFor.has(sid)) latestFor.set(sid, j);
     }
 
+    const endpoint = this.sftpEndpoint();
+
     return mappings.map((m) => {
       const job = latestFor.get(String(m._id));
       return {
+        ...endpoint,
         stationAccountId: String(m._id),
         account: m.account,
         folderPath: m.folderPath,
@@ -220,7 +243,7 @@ export class StationsService implements OnModuleInit {
     });
 
     this.audit(actor, mapping, 'update', 'rotate password', { jobId: job.id });
-    return { jobId: job.id, account: mapping.account, status: 'pending' as const };
+    return { ...this.sftpEndpoint(), jobId: job.id, account: mapping.account, status: 'pending' as const };
   }
 
   /**
@@ -267,7 +290,7 @@ export class StationsService implements OnModuleInit {
     });
 
     this.audit(actor, mapping, 'update', 'restore station', { jobId: job.id });
-    return { jobId: job.id, account: mapping.account, status: 'pending' as const };
+    return { ...this.sftpEndpoint(), jobId: job.id, account: mapping.account, status: 'pending' as const };
   }
 
   /** Ask the agent how much disk this station's uploads are using. */
