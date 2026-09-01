@@ -112,7 +112,10 @@ export class ProvisionService {
    * (the box rebooting mid-job) retries; at the ceiling it stays `failed` so a
    * genuinely broken job stops burning attempts and becomes visible.
    */
-  async report(jobId: string, outcome: { ok: boolean; result?: Record<string, unknown>; error?: string }) {
+  async report(
+    jobId: string,
+    outcome: { ok: boolean; result?: Record<string, unknown>; error?: string; password?: string },
+  ) {
     if (!Types.ObjectId.isValid(jobId)) throw badReq('Unknown job', 'NOT_FOUND');
 
     const job = await ProvisioningJob.findById(jobId);
@@ -121,7 +124,10 @@ export class ProvisionService {
     if (outcome.ok) {
       job.status = 'succeeded';
       // Parked separately from `result`, which is readable for 90 days.
-      const secret = this.extractSecret(outcome.result ?? {});
+      // The agent sends the password at the TOP LEVEL; `result.password` is kept
+      // as a fallback so an older agent still works. Reading only `result` meant
+      // the secret was never captured and the operator had no way to get it.
+      const secret = outcome.password ?? this.extractSecret(outcome.result ?? {});
       if (secret) {
         job.secretOnce = secret;
         job.secretExpiresAt = new Date(Date.now() + SECRET_TTL_MS);

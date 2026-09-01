@@ -30,6 +30,23 @@ export class JobResultDto {
   @IsString()
   @MaxLength(500)
   error?: string;
+
+  /**
+   * The generated SFTP password, sent at the TOP LEVEL by the agent.
+   *
+   * It must be declared here or `whitelist: true` silently drops it before the
+   * controller runs — which is exactly what happened: the agent sent the
+   * password, validation discarded it, the service then looked for it inside
+   * `result` (where it never was), and every provisioning and rotation
+   * completed successfully with no recoverable credential (M24).
+   *
+   * It is parked as a one-read secret and scrubbed from the stored result.
+   */
+  @ApiPropertyOptional({ description: 'One-read secret. Never stored on the job.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  password?: string;
 }
 
 export class ProvisionStationDto {

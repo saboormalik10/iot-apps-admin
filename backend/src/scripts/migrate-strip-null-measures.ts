@@ -50,9 +50,15 @@ async function main(): Promise<void> {
 
   let touched = 0;
   for (const field of [...SENSOR_FIELDS, ...DEAD_FIELDS]) {
+    /**
+     * `{ field: null }` would ALSO match documents where the key is already
+     * absent, so a re-run reported millions of "removals" that were no-ops and
+     * rewrote rows that were already clean. `$exists: true` plus `$type: 'null'`
+     * targets only the rows that genuinely still carry a stored null.
+     */
     const filter = DEAD_FIELDS.includes(field)
       ? { [field]: { $exists: true } }
-      : { [field]: null };
+      : { [field]: { $exists: true, $type: 'null' as const } };
 
     const n = await col.countDocuments(filter);
     if (n === 0) {

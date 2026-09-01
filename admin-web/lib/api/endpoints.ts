@@ -679,6 +679,28 @@ export const listStations = (organizationId: string, signal?: AbortSignal) =>
 export const provisionStation = (input: ProvisionStationInput) =>
   http.post<ProvisionedStation>('/platform/stations', input);
 
+/**
+ * Collect a provisioning job's SFTP password — ONCE.
+ *
+ * The password is generated on the box, handed back, and never stored. It is
+ * readable exactly once and expires after 15 minutes whether it is read or not,
+ * so the caller must show it immediately. `collected: false` means it is already
+ * gone, and the only way back is a rotation.
+ *
+ * Until M24 nothing in the panel called this, so a provisioned station's
+ * credentials were unreachable: the dialog moved from "Waiting for the agent" to
+ * "Receiving" and the password expired unread.
+ */
+export const collectStationSecret = (jobId: string) =>
+  http.post<{ password: string | null; collected: boolean }>(`/platform/stations/secret/${jobId}`, {});
+
+/** Rotate a station's SFTP password. Returns a job whose secret is collected as above. */
+export const rotateStationPassword = (stationAccountId: string) =>
+  http.post<{ jobId: string; account: string; status: string }>(
+    `/platform/stations/${stationAccountId}/rotate`,
+    {},
+  );
+
 /** Stream types with their column specs. Platform administrators only. */
 export const listStreamTypes = (signal?: AbortSignal) =>
   http.get<StreamTypeRow[]>('/platform/stream-types', signal);

@@ -28,7 +28,9 @@
     "loadtest:rollup": "ts-node src/scripts/load-test-rollup.ts",
     "loadtest:ingest": "ts-node src/scripts/load-test-ingest.ts",
     "sync:indexes": "ts-node src/scripts/sync-indexes.ts",
-    "migrate:strip-nulls": "ts-node src/scripts/migrate-strip-null-measures.ts"
+    "migrate:strip-nulls": "ts-node src/scripts/migrate-strip-null-measures.ts",
+    "mint:provision-token": "ts-node src/scripts/mint-provision-token.ts",
+    "migrate:station-folder-key": "ts-node src/scripts/migrate-station-folder-key.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

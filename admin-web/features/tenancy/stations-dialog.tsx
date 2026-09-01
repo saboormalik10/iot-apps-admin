@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Radio, Plus } from 'lucide-react';
+import { Plus, KeyRound, Copy, Check } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingState, EmptyState } from '@/components/screen-states';
-import { listStations, provisionStation } from '@/lib/api/endpoints';
+import { collectStationSecret, listStations, provisionStation, rotateStationPassword } from '@/lib/api/endpoints';
 import { queryKeys } from '@/lib/query/keys';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
 import type { PlatformStation } from '@/lib/api/types';
@@ -18,7 +18,90 @@ import type { PlatformStation } from '@/lib/api/types';
 /** Folder names are display-facing — spaces and capitals are expected. */
 const TOWER_RE = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/;
 
-function StationRow({ station }: { station: PlatformStation }) {
+/**
+ * Shows a freshly provisioned SFTP password — once.
+ *
+ * The password is generated on the box, returned to the API, and never stored:
+ * it can be read exactly once and expires after 15 minutes regardless. Until
+ * M24 nothing in the panel collected it, so a provisioned station's credentials
+ * were simply unreachable — the row went from "Waiting for the agent" to
+ * "Receiving" and the secret expired unread. Losing it is recoverable only by
+ * rotating, which is why the copy control and the warning are both prominent.
+ *
+ * Polls because the agent needs a few seconds: the job is queued before the
+ * account exists, so the secret is not there on the first ask.
+ */
+function CredentialPanel({ jobId, account, onDone }: { jobId: string; account: string; onDone: () => void }) {
+  const [password, setPassword] = useState<string | null>(null);
+  const [gone, setGone] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let stop = false;
+    let tries = 0;
+    const tick = async () => {
+      if (stop) return;
+      tries += 1;
+      try {
+        const res = await collectStationSecret(jobId);
+        if (stop) return;
+        if (res.password) return setPassword(res.password);
+        // `collected: false` after a fair wait means it expired or was taken.
+        if (tries >= 12) return setGone(true);
+      } catch {
+        if (tries >= 12) return setGone(true);
+      }
+      setTimeout(tick, 2_500);
+    };
+    void tick();
+    return () => {
+      stop = true;
+    };
+  }, [jobId]);
+
+  return (
+    <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <KeyRound className="h-4 w-4" aria-hidden />
+        SFTP password for {account}
+      </div>
+
+      {password ? (
+        <>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-background px-2 py-1 font-mono text-sm">{password}</code>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard?.writeText(password);
+                setCopied(true);
+              }}
+            >
+              {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+              <span className="ml-1">{copied ? 'Copied' : 'Copy'}</span>
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Shown once and never stored. Copy it now — if it is lost, rotate the password to get a new one.
+          </p>
+          <Button size="sm" variant="ghost" className="mt-2" onClick={onDone}>
+            Done
+          </Button>
+        </>
+      ) : gone ? (
+        <p className="text-xs text-status-error">
+          The password is no longer available — it is readable once and expires after 15 minutes. Rotate to issue a new one.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Waiting for the agent to create the account…</p>
+      )}
+    </div>
+  );
+}
+
+function StationRow({ station, onRotated }: { station: PlatformStation; onRotated: (jobId: string, account: string) => void }) {
+  const [busy, setBusy] = useState(false);
   return (
     <li className="flex items-start justify-between gap-3 border-b py-2 last:border-0">
       <div className="min-w-0">
@@ -28,14 +111,36 @@ function StationRow({ station }: { station: PlatformStation }) {
           <p className="mt-1 text-xs text-status-error">{station.jobError}</p>
         ) : null}
       </div>
-      {/* `isActive` is what matters; the job status only explains a pending one. */}
-      {station.isActive ? (
-        <StatusBadge tone="ok" label="Receiving" />
-      ) : station.status === 'failed' ? (
-        <StatusBadge tone="error" label="Failed" />
-      ) : (
-        <StatusBadge tone="warn" label="Waiting for the agent" />
-      )}
+      <div className="flex shrink-0 items-center gap-2">
+        {/* Rotation is the ONLY way back to a password — it is never stored, so
+            there is nothing to look up. */}
+        {station.isActive ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const job = await rotateStationPassword(station.stationAccountId);
+                onRotated(job.jobId, station.account);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Rotating…' : 'Rotate password'}
+          </Button>
+        ) : null}
+        {/* `isActive` is what matters; the job status only explains a pending one. */}
+        {station.isActive ? (
+          <StatusBadge tone="ok" label="Receiving" />
+        ) : station.status === 'failed' ? (
+          <StatusBadge tone="error" label="Failed" />
+        ) : (
+          <StatusBadge tone="warn" label="Waiting for the agent" />
+        )}
+      </div>
     </li>
   );
 }
@@ -64,6 +169,8 @@ export function StationsDialog({
 
   const [towerName, setTowerName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** The job whose one-read password is still waiting to be shown. */
+  const [secretJob, setSecretJob] = useState<{ jobId: string; account: string } | null>(null);
 
   const { data: stations, isLoading } = useQuery({
     queryKey: queryKeys.stations(organizationId),
@@ -84,6 +191,7 @@ export function StationsDialog({
     if (open) {
       setTowerName('');
       setError(null);
+      setSecretJob(null);
     }
   }, [open, organizationId]);
 
@@ -98,6 +206,9 @@ export function StationsDialog({
       const made = await provision.mutateAsync({ organizationId, towerName: name });
       toast.success(`${made.folderPath} queued — the agent will create it shortly`);
       setTowerName('');
+      // The password only exists once the agent has run, so hand the job to the
+      // panel and let it poll rather than asking for it here and getting null.
+      setSecretJob({ jobId: made.jobId, account: made.account });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not provision the station.');
     }
@@ -113,6 +224,14 @@ export function StationsDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {secretJob ? (
+          <CredentialPanel
+            jobId={secretJob.jobId}
+            account={secretJob.account}
+            onDone={() => setSecretJob(null)}
+          />
+        ) : null}
+
         {isLoading ? (
           <LoadingState label="Loading stations…" />
         ) : !stations?.length ? (
@@ -120,7 +239,11 @@ export function StationsDialog({
         ) : (
           <ul className="rounded-md border px-3">
             {stations.map((s) => (
-              <StationRow key={s.stationAccountId} station={s} />
+              <StationRow
+                key={s.stationAccountId}
+                station={s}
+                onRotated={(jobId, account) => setSecretJob({ jobId, account })}
+              />
             ))}
           </ul>
         )}

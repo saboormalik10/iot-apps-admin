@@ -24,7 +24,17 @@ const num = (key: string, fallback: number): number => {
 };
 
 export function loadConfig(argv: string[] = process.argv): AgentConfig {
-  const apiBaseUrl = required('OBSERVATOR_API_URL').replace(/\/+$/, '');
+  /**
+   * ORIGIN only — `main.ts` appends `/v1/provision/…` itself.
+   *
+   * A trailing `/v1` is stripped rather than rejected. The ingest agent hit
+   * exactly this: its install guide asked for a `/v1` suffix, which produced
+   * `POST /v1/v1/…` → 404, treated as permanent, so the agent stalled silently
+   * with work queued. Same shape here, so the same tolerance (M24).
+   */
+  const apiBaseUrl = required('OBSERVATOR_API_URL')
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/i, '');
   if (!/^https?:\/\//.test(apiBaseUrl)) {
     throw new Error(`OBSERVATOR_API_URL must be an absolute http(s) URL, got "${apiBaseUrl}"`);
   }

@@ -139,6 +139,46 @@ describe('ProvisionService', () => {
     expect(done.result).toEqual({ account: 'wx-secret-1' });
   });
 
+  it('parks a TOP-LEVEL password as the one-read secret', async () => {
+    // The agent sends the password at the top level of its report, NOT inside
+    // `result`. The service only looked inside `result`, so every provisioning
+    // and rotation succeeded while leaving no recoverable credential — the
+    // operator had no way to get the password at all (M24).
+    await queue({ account: 'wx-toplevel-1', folder: 'A' });
+    const claimed = await service.claimNext('agent-1');
+    await service.report(claimed!.id, { ok: true, result: { account: 'wx-toplevel-1' }, password: 's3cret-pw' });
+
+    const first = await service.collectSecret(claimed!.id);
+    expect(first).toBe('s3cret-pw');
+
+    // ONE read only.
+    expect(await service.collectSecret(claimed!.id)).toBeNull();
+  });
+
+  it('never stores the top-level password on the job', async () => {
+    await queue({ account: 'wx-toplevel-2', folder: 'A' });
+    const claimed = await service.claimNext('agent-1');
+    const done = await service.report(claimed!.id, { ok: true, result: { account: 'wx-toplevel-2' }, password: 'leaky' });
+    expect(JSON.stringify(done.result)).not.toContain('leaky');
+  });
+
+  it('DECLARES password on the DTO, or whitelist strips it before we see it', async () => {
+    // The failure this guards is invisible at the service level: the global
+    // ValidationPipe runs `whitelist: true`, so a field the DTO does not declare
+    // is deleted from the body before the controller is reached. Asserting the
+    // service alone would keep passing while the HTTP path silently lost it.
+    const { JobResultDto } = await import('../src/provision/dto');
+    const { plainToInstance } = await import('class-transformer');
+    const { validate } = await import('class-validator');
+
+    const dto = plainToInstance(JobResultDto, { ok: true, password: 'kept', result: {} }, {
+      excludeExtraneousValues: false,
+    });
+    const errors = await validate(dto as object, { whitelist: true });
+    expect(errors).toEqual([]);
+    expect((dto as { password?: string }).password).toBe('kept');
+  });
+
   it('requeues a transient failure so it retries', async () => {
     await queue({ account: 'wx-retry-01', folder: 'A' });
     const claimed = await service.claimNext('agent-1');
@@ -216,10 +256,40 @@ describe('StationsService', () => {
     expect(mapping!.isActive).toBe(false);
   });
 
-  it('nests the tower under the customer folder', async () => {
-    const org = await Organization.findById(orgId).select('uploadFolder').lean();
+  it('stores the TOWER name alone as the routing key', async () => {
+    /**
+     * This used to assert `<uploadFolder>/<tower>` — and the very next test
+     * asserts the queued job carries only the tower, "because the customer
+     * folder is the account's own home". Both were true and nobody reconciled
+     * them: the key the ingest lookup uses did not match what the agent creates
+     * on disk, so every properly provisioned customer got UNKNOWN_STATION on
+     * every file. Only the legacy customer worked, because its `uploadFolder`
+     * is empty and the two forms coincide (M24).
+     *
+     * The account already identifies the customer; the folder identifies the
+     * station beneath it.
+     */
     const made = await stations.provisionStation({ organizationId: orgId, towerName: 'Tower Two' }, actor);
-    expect(made.folderPath).toBe(`${org!.uploadFolder}/Tower Two`);
+    expect(made.folderPath).toBe('Tower Two');
+  });
+
+  it('lets two customers each have a folder of the same name', async () => {
+    // Uniqueness is per ACCOUNT, not global: separate chroots, separate places.
+    // A global check would refuse the second customer's "Demo Tower".
+    const stamp = Date.now();
+    const other = await Organization.create({
+      name: `Second ${stamp}`,
+      slug: `second-${stamp}`,
+      timezone: 'UTC',
+      uploadFolder: `second-${stamp}`,
+      country: 'AU',
+      contactEmail: `second-${stamp}@test.invalid`,
+    });
+    const a = await stations.provisionStation({ organizationId: orgId, towerName: 'Shared Name' }, actor);
+    const b = await stations.provisionStation({ organizationId: String(other._id), towerName: 'Shared Name' }, actor);
+    expect(a.folderPath).toBe('Shared Name');
+    expect(b.folderPath).toBe('Shared Name');
+    expect(a.account).not.toBe(b.account);
   });
 
   it('queues a job carrying only the TOWER name, not the full path', async () => {

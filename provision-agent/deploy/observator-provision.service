@@ -18,17 +18,35 @@ RestartSec=15
 # `sudo` are mutually exclusive — with it set, the single sudo rule this agent
 # depends on silently fails. That is precisely why provisioning is a SEPARATE
 # unit from the ingest agent, which does set it and keeps the stronger sandbox.
+# SECCOMP-BASED HARDENING IS DELIBERATELY ABSENT FROM THIS UNIT.
+#
+# LockPersonality, RestrictRealtime, RestrictAddressFamilies, RestrictSUIDSGID,
+# MemoryDenyWriteExecute and SystemCallFilter all install a seccomp filter, and
+# systemd must enable NoNewPrivileges to do that on a non-root service. That flag
+# is what `sudo` refuses to run under — so any one of them silently breaks the
+# single privileged action this agent exists to perform.
+#
+# It does NOT show up in the unit file, and `systemctl show` still reports
+# NoNewPrivileges=no. The only symptom is at runtime:
+#   sudo: The "no new privileges" flag is set, which prevents sudo from running as root
+#
+# Verified on the box (M24). The M21 review checked that NoNewPrivileges was not
+# set explicitly and missed that these imply it.
+#
+# The privilege boundary here is NOT systemd hardening — it is the single sudoers
+# rule naming one root-owned 0500 script, which validates its own arguments.
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=false
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=false
-LockPersonality=true
-MemoryDenyWriteExecute=true
-RestrictRealtime=true
+# MemoryDenyWriteExecute is deliberately NOT set — it forbids making memory pages
+# executable, and V8's JIT must do exactly that. With it on, node dies at startup
+# in SetPermissionsOnExecutableMemoryChunk with a SIGTRAP core dump, before
+# running a line of our code. The ingest unit carried the same directive and
+# failed identically on first deployment (M24).
 # No inbound sockets are needed: the agent only ever dials out.
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 [Install]
 WantedBy=multi-user.target

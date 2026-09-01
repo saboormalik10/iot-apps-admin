@@ -50,16 +50,31 @@ export class StationsService implements OnModuleInit {
     const account = (input.account ?? '').trim() || this.deriveAccount(org.slug);
     assertValidAccountName(account);
 
-    // The customer's own folder is the routing root; the tower sits beneath it.
-    const customerFolder = (org.uploadFolder ?? '').trim();
-    const folderPath = customerFolder ? `${customerFolder}/${towerName}` : towerName;
+    /**
+     * The folder is the TOWER NAME ALONE — the account already identifies the
+     * customer.
+     *
+     * This used to store `<org.uploadFolder>/<tower>`, which never matched what
+     * exists on disk. Each customer gets their own chrooted SFTP account, so the
+     * provisioning agent creates `~/upload/<tower>` and the ingest agent reports
+     * the folder relative to that upload root — `"Demo Tower"`, not
+     * `"Acme Marine Services/Demo Tower"`. The lookup is keyed on
+     * `(account, folderPath)`, so the stored prefix meant every properly
+     * provisioned customer got `UNKNOWN_STATION` on every file.
+     *
+     * It went unnoticed because the only live customer has an empty
+     * `uploadFolder`, which makes the prefix "" and the two forms identical.
+     */
+    const folderPath = towerName;
 
     const [accountClash, folderClash] = await Promise.all([
       StationAccount.findOne({ account, folderPath: { $ne: folderPath } }).lean(),
-      StationAccount.findOne({ folderPath }).lean(),
+      // Scoped to the ACCOUNT, not global: two customers each having a
+      // "Demo Tower" is normal and correct — they are different chroots. Only a
+      // clash within one account would route one tower's readings to another.
+      StationAccount.findOne({ account, folderPath }).lean(),
     ]);
-    // Two stations sharing a folder would route one tower's readings to the other.
-    if (folderClash) throw badReq(`The folder "${folderPath}" is already taken`, 'DUPLICATE_FOLDER');
+    if (folderClash) throw badReq(`This customer already has a folder "${folderPath}"`, 'DUPLICATE_FOLDER');
     if (accountClash && String(accountClash.organizationId) !== String(org._id)) {
       throw badReq(`The account "${account}" belongs to another customer`, 'ACCOUNT_TAKEN');
     }

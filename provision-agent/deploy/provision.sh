@@ -47,7 +47,22 @@ home="$ROOT/$account"
 
 # A password is generated here and printed once. It is never written to disk,
 # never logged, and the backend strips it from the stored job.
-gen_password() { tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24; }
+# Password generator.
+#
+# NOT `tr -dc ... < /dev/urandom | head -c 24`. That is the obvious form and it is
+# fatal here: `head` exits after 24 bytes, `tr` is killed by SIGPIPE (141), and
+# with `set -euo pipefail` at the top of this file the whole script aborts —
+# AFTER `useradd` has run but BEFORE the chroot chown and the folder creation.
+# The result is a half-provisioned account and a failed job, every single time.
+#
+# Reading a bounded chunk first means `tr` sees EOF and exits 0, so no pipe is
+# ever broken. bash then slices to length. 512 random bytes yields ~380
+# alphanumerics on average — far more than the 24 needed.
+gen_password() {
+  local raw
+  raw="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' || true)"
+  printf '%s' "${raw:0:24}"
+}
 
 case "$subcommand" in
   createStationAccount)
