@@ -32,9 +32,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { LoadingState, ErrorState, EmptyState, TableSkeleton } from '@/components/screen-states';
 import { RoleLabel, UserStatusBadge } from './role-badge';
-import { InviteDialog } from './invite-dialog';
-import { isFeatureEnabled } from '@/lib/config/flags';
-import { useUsers, useUpdateUser } from './use-users';
+import { AddUserDialog } from './add-user-dialog';
+import { Can } from '@/lib/rbac/guard';
+import { useAssignableRoles } from '@/features/roles/use-roles';
+import { useUsers, useUpdateUser, useRemoveUser } from './use-users';
 import { useCurrentUser } from '@/lib/rbac/context';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
 import { formatRelative } from '@/lib/time';
@@ -46,6 +47,11 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
   const t = useTranslations('users');
   const { data, isLoading, isError, refetch } = useUsers();
   const update = useUpdateUser();
+  const remove = useRemoveUser();
+  // Drives the "change role" menu, so a CUSTOM role can be assigned — the menu
+  // used to hard-code the three legacy keys, which is why no custom role could
+  // ever be held by anyone.
+  const { data: assignableRoles } = useAssignableRoles();
   const currentUser = useCurrentUser();
   const apiToast = useApiToast();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -62,10 +68,19 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
     [rows],
   );
 
-  async function changeRole(user: OrgUser, role: Role) {
+  async function changeRole(user: OrgUser, roleId: string) {
     try {
-      await update.mutateAsync({ id: user.id, input: { role } });
+      await update.mutateAsync({ id: user.id, input: { roleId } });
       apiToast.success(t('roleUpdated'));
+    } catch (err) {
+      apiToast.error(err);
+    }
+  }
+  async function removeUser(user: OrgUser) {
+    if (!window.confirm(t('removeConfirm', { email: user.email }))) return;
+    try {
+      await remove.mutateAsync(user.id);
+      apiToast.success(t('userRemoved'));
     } catch (err) {
       apiToast.error(err);
     }
@@ -123,18 +138,24 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>{t('changeRole')}</DropdownMenuLabel>
-                  {(['viewer', 'operator', 'admin'] as Role[]).map((r) => (
+                  {(assignableRoles ?? []).map((r) => (
                     <DropdownMenuItem
-                      key={r}
-                      disabled={user.role === r}
-                      onClick={() => changeRole(user, r)}
+                      key={r._id}
+                      disabled={user.roleId === r._id}
+                      onClick={() => changeRole(user, r._id)}
                     >
-                      <RoleLabel role={r} />
+                      {r.name}
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => toggleActive(user)}>
                     {user.isActive ? t('deactivate') : t('activate')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-[var(--status-critical)]"
+                    onClick={() => removeUser(user)}
+                  >
+                    {t('remove')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -144,7 +165,7 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
       }),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, activeAdminCount, currentUser?.id],
+    [t, activeAdminCount, currentUser?.id, assignableRoles],
   );
 
   const table = useReactTable({
@@ -171,11 +192,21 @@ export function UsersTable({ roles }: { roles?: Role[] } = {}) {
           className="max-w-xs"
           aria-label={t('subtitle')}
         />
-        {isFeatureEnabled('userInvites') ? <InviteDialog /> : null}
+        <Can permission="user:write">
+          <AddUserDialog />
+        </Can>
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title={t('title')} body={t('subtitle')} action={isFeatureEnabled('userInvites') ? <InviteDialog /> : undefined} />
+        <EmptyState
+          title={t('title')}
+          body={t('subtitle')}
+          action={
+            <Can permission="user:write">
+              <AddUserDialog />
+            </Can>
+          }
+        />
       ) : (
         <Table>
           <TableHeader>

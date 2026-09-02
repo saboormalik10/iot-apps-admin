@@ -11,6 +11,8 @@ export interface RoleActor {
   email: string;
   organizationId: string;
   isSuperAdmin: boolean;
+  /** True while a super admin is switched into another organisation (M19 W1). */
+  isSwitched?: boolean;
 }
 
 /** A role plus how many users hold it — the shape the roles table renders. */
@@ -27,6 +29,7 @@ export interface RoleWithUsage {
 }
 
 export interface RoleInput {
+  baseRole?: 'admin' | 'operator' | 'viewer';
   name: string;
   description?: string;
   permissions: string[];
@@ -221,6 +224,13 @@ export class RolesService {
    * A super admin creates SHARED roles (organizationId: null); anyone else can
    * only create one inside their own organisation. That is what stops a customer
    * adding a role every other customer would then see.
+   *
+   * EXCEPT while switched. `sup` is identity and survives an org switch, so a
+   * platform admin acting as a customer used to land in the super-admin branch and
+   * create a GLOBAL role — one customer's role, named after them, offered to every
+   * other tenant. The switch is exactly the signal that `organizationId` is
+   * somebody else's, so it scopes the role to them instead. A shared role is then
+   * only ever created deliberately, from the admin's own organisation.
    */
   async create(input: RoleInput, actor: RoleActor) {
     const name = (input.name ?? '').trim();
@@ -229,7 +239,8 @@ export class RolesService {
     const permissions = sanitizePermissions(input.permissions ?? []);
     if (permissions.length === 0) throw badReq('A role must grant at least one permission');
 
-    const organizationId = actor.isSuperAdmin ? null : new Types.ObjectId(actor.organizationId);
+    const organizationId =
+      actor.isSuperAdmin && !actor.isSwitched ? null : new Types.ObjectId(actor.organizationId);
     const key = slugify(name);
 
     const clash = await Role.findOne({ organizationId, key, deletedAt: null }).lean();
@@ -241,6 +252,7 @@ export class RolesService {
       name,
       description: (input.description ?? '').trim(),
       permissions,
+      baseRole: input.baseRole ?? 'viewer',
       isSystem: false,
       createdBy: new Types.ObjectId(actor.userId),
     });
@@ -279,8 +291,21 @@ export class RolesService {
       if (permissions.length === 0) throw badReq('A role must grant at least one permission');
       $set.permissions = permissions;
     }
+    if (input.baseRole !== undefined) {
+      if (role.isSystem) throw badReq('A system role\'s base role is fixed');
+      $set.baseRole = input.baseRole;
+    }
 
     const updated = await Role.findByIdAndUpdate(role._id, { $set }, { new: true }).lean();
+
+    // Re-point every holder's legacy mirror in the same operation. `User.role` is
+    // what RolesGuard and the frontend read; leaving it behind would mean a role
+    // whose permissions say one thing and whose legacy key says another, decided
+    // by whichever guard happens to run first.
+    if (input.baseRole !== undefined && input.baseRole !== role.baseRole) {
+      await User.updateMany({ roleId: role._id }, { $set: { role: input.baseRole } });
+    }
+
     this.audit(actor, 'update', role);
     return updated;
   }

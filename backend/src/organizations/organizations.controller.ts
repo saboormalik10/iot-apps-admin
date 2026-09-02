@@ -21,6 +21,7 @@ import {
   ApiBody,
   ApiOkResponse,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiConsumes,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -31,7 +32,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { OrganizationsService } from './organizations.service';
-import { UpdateOrgDto, InviteUserDto, UpdateUserDto, AcceptInviteDto, UpdateBrandingDto } from './dto';
+import { AcceptInviteDto, CreateOrgUserDto, InviteUserDto, UpdateBrandingDto, UpdateOrgDto, UpdateUserDto } from './dto';
 import { assertAllowedFileType } from '../utils/storage.util';
 
 /** Logos only: raster images the browser can render inline. */
@@ -139,7 +140,8 @@ export class OrganizationsController {
     },
   })
   @ApiErrors('unauthorized')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('org:read')
   @Get('me/branding')
   async getBranding(@CurrentUser() user: JWTPayload) {
     return { data: await this.organizationsService.getBranding(user.organizationId) };
@@ -220,7 +222,8 @@ export class OrganizationsController {
   @ApiOkResponse({ description: 'Organization document', schema: { example: { data: { id: '664a1f2e3c4d5e6f7a8b9c0e', name: 'Observator Instruments AU', slug: 'observator-instruments-au', country: 'AU', timezone: 'Australia/Melbourne' } } } })
   @ApiErrors('unauthorized')
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('org:read')
   async getMyOrg(@CurrentUser() user?: JWTPayload) {
     const org = await this.organizationsService.getOrganization(user!.organizationId);
     return { data: org };
@@ -238,6 +241,8 @@ export class OrganizationsController {
     const org = await this.organizationsService.updateOrganization(user!.organizationId, body, {
       userId: user!.userId,
       email: user!.email ?? '',
+      perms: user!.perms,
+      sup: user!.sup,
     });
     return { data: org };
   }
@@ -312,6 +317,53 @@ export class OrganizationsController {
 //     return { data: result };
 //   }
 
+  @ApiOperation({
+    summary: 'Add a user to this organisation',
+    description:
+      'Creates an ACTIVE user with the password supplied — there is no invitation email in this ' +
+      'deployment. Pass `roleId` to grant a custom role, or `role` for one of the three built-in ' +
+      'keys. The password is never returned or logged; show it to the operator once.',
+  })
+  @ApiBody({ type: CreateOrgUserDto })
+  @ApiCreatedResponse({ description: 'The created user' })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden', 'conflict')
+  @Post('me/users')
+  @HttpCode(201)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('admin')
+  @RequirePermissions('user:write')
+  async createUser(@Body() body: CreateOrgUserDto, @CurrentUser() user?: JWTPayload) {
+    const created = await this.organizationsService.createUser(user!.organizationId, body, {
+      userId: user!.userId,
+      email: user!.email ?? '',
+      perms: user!.perms,
+      sup: user!.sup,
+    });
+    return { data: created };
+  }
+
+  @ApiOperation({
+    summary: 'Remove a user from this organisation',
+    description:
+      'Soft-deletes the user, ends their sessions and frees their email address for re-use. ' +
+      'Refuses to remove the last active admin, or the caller themselves.',
+  })
+  @ApiNoContentResponse({ description: 'User removed' })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden', 'notFound')
+  @Delete('me/users/:id')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('admin')
+  @RequirePermissions('user:write')
+  async deleteUser(@Param('id') id: string, @CurrentUser() user?: JWTPayload): Promise<void> {
+    await this.organizationsService.deleteUser(user!.organizationId, id, {
+      userId: user!.userId,
+      email: user!.email ?? '',
+      perms: user!.perms,
+      sup: user!.sup,
+    });
+  }
+
   @ApiOperation({ summary: "Update a user's role or active status (admin only)" })
   @ApiBody({ type: UpdateUserDto })
   @ApiOkResponse({ description: 'Updated user (blocks self-edit + last-admin removal)' })
@@ -328,6 +380,8 @@ export class OrganizationsController {
     const updated = await this.organizationsService.updateUser(user!.organizationId, id, body, {
       userId: user!.userId,
       email: user!.email ?? '',
+      perms: user!.perms,
+      sup: user!.sup,
     });
     return { data: updated };
   }

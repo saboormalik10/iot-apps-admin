@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
 import { useCreateRole, usePermissionGroups, useUpdateRole } from './use-roles';
-import type { RoleRow } from '@/lib/api/types';
+import type { Role, RoleRow } from '@/lib/api/types';
 
 /**
  * Create or re-permission a role.
@@ -38,6 +39,7 @@ export function RoleEditorDialog({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [baseRole, setBaseRole] = useState<Role>('viewer');
   const [error, setError] = useState<string | null>(null);
 
   // Re-seed whenever the dialog opens, so editing one role then another does not
@@ -47,6 +49,7 @@ export function RoleEditorDialog({
     setName(role?.name ?? '');
     setDescription(role?.description ?? '');
     setSelected(role?.permissions ?? []);
+    setBaseRole(role?.baseRole ?? 'viewer');
     setError(null);
   }, [open, role]);
 
@@ -65,8 +68,9 @@ export function RoleEditorDialog({
     if (selected.length === 0) return setError('A role must grant at least one permission.');
 
     try {
-      if (isEdit) await update.mutateAsync({ name: trimmed, description, permissions: selected });
-      else await create.mutateAsync({ name: trimmed, description, permissions: selected });
+      const input = { name: trimmed, description, permissions: selected, ...(role?.isSystem ? {} : { baseRole }) };
+      if (isEdit) await update.mutateAsync(input);
+      else await create.mutateAsync(input);
       toast.success(isEdit ? 'Role updated' : 'Role created');
       onOpenChange(false);
     } catch (err) {
@@ -101,6 +105,26 @@ export function RoleEditorDialog({
               placeholder="What this role is for"
             />
           </div>
+
+          {role?.isSystem ? null : (
+            <div className="grid gap-2">
+              <Label htmlFor="role-base">Legacy role</Label>
+              <Select value={baseRole} onValueChange={(v) => setBaseRole(v as Role)}>
+                <SelectTrigger id="role-base">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                  <SelectItem value="operator">Operator</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Some older checks still read a single role key rather than the permissions above. Holders of
+                this role are treated as this one by those checks — pick the lowest that still works.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-3">
             <div className="flex items-baseline justify-between">

@@ -5,6 +5,17 @@ import { ProvisioningJob, IProvisioningJob, ProvisioningJobType } from '../model
 import { assertValidAccountName, assertValidFolderSegment } from './account-name';
 
 /**
+ * Who is collecting a one-read secret.
+ *
+ * An operator collects a generated SFTP password through the panel; an AGENT
+ * collects a credential it needs to carry out a job it holds. The two are not
+ * interchangeable, so the caller has to say which — an optional identifier that
+ * silently widened the scope when omitted is how the agent path came to accept
+ * every job in one organisation and none anywhere else.
+ */
+export type SecretReader = { by: 'operator' } | { by: 'agent'; agentId: string };
+
+/**
  * How long a claimed job may sit before another agent may take it.
  *
  * Long enough that a slow `useradd` is not stolen mid-flight, short enough that
@@ -257,18 +268,36 @@ export class ProvisionService {
    * Cleared with a conditional update rather than read-then-save: two operators
    * pressing the button at once would otherwise both be shown it, and "one read"
    * would be a claim rather than a guarantee.
+   *
+   * WHO MAY READ, and why it is the CLAIM and not the organisation.
+   * An agent read used to be scoped to the organisation its credential belongs
+   * to. That could never hold: `claimNext` is deliberately not org-scoped,
+   * because ONE agent provisions Unix accounts for every customer on the box, so
+   * its credential belongs to whichever organisation happened to mint it. The
+   * result was that `enableIngestAgent` failed on its FIRST attempt for every
+   * customer except that one — "ingest token unavailable" on a token that had
+   * never been read — and the retry reported the same message, which reads like
+   * a double-collection rather than a scope mismatch. Three customers were left
+   * with a station, a folder and no ingest agent.
+   *
+   * The claim is the right scope and a stricter one: the secret is released only
+   * to the agent currently holding a LIVE lease on that job. Guessing an id buys
+   * nothing, because a job this agent has not claimed will not match — including
+   * another customer's ingest token, which is what the org check was reaching
+   * for.
    */
-  async collectSecret(jobId: string, forOrganizationId?: string): Promise<string | null> {
+  async collectSecret(jobId: string, reader: SecretReader): Promise<string | null> {
     if (!Types.ObjectId.isValid(jobId)) return null;
 
-    // When an AGENT collects (rather than an operator), the job must belong to
-    // the organisation its credential is scoped to. Without this a valid agent
-    // token could read any job's secret by guessing an id — including another
-    // customer's ingest token, which would undo the whole point of one agent per
-    // customer.
     const scope =
-      forOrganizationId && Types.ObjectId.isValid(forOrganizationId)
-        ? { organizationId: new Types.ObjectId(forOrganizationId) }
+      reader.by === 'agent'
+        ? {
+            status: 'claimed',
+            claimedBy: reader.agentId,
+            // Same window `claimNext` treats as live. An expired lease means the
+            // job is claimable again, so its secret is no longer this agent's.
+            claimedAt: { $gt: new Date(Date.now() - LEASE_MS) },
+          }
         : {};
 
     const job = await ProvisioningJob.findOneAndUpdate(

@@ -25,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
@@ -210,9 +211,10 @@ export class FilesController {
 
   @ApiOperation({ summary: 'List all pictures for a MET record (admin dashboard)' })
   @ApiOkResponse({ description: 'Pictures for the record' })
-  @ApiErrors('unauthorized', 'notFound')
+  @ApiErrors('unauthorized', 'forbidden', 'notFound')
   @Get('records/:id/pictures')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async listRecordPictures(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const pictures = await this.filesService.listRecordPictures(user!.organizationId, id);
     return { data: pictures };
@@ -223,7 +225,8 @@ export class FilesController {
   @ApiErrors('unauthorized', 'notFound')
   @Delete('records/:id/pictures/:pictureId')
   @HttpCode(204)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('content:write')
   async deleteRecordPicture(
     @Param('id') id: string,
     @Param('pictureId') pictureId: string,

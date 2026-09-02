@@ -24,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { JwtOrApiKeyGuard } from '../common/guards/jwt-or-apikey.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Consumers } from '../common/decorators/consumers.decorator';
@@ -59,7 +60,8 @@ export class RecordsController {
   @ApiOkResponse({ description: 'Paginated records', schema: { example: { data: [RECORD_EXAMPLE], meta: { page: 1, limit: 20, total: 1, pages: 1 } } } })
   @ApiErrors('unauthorized')
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async listRecords(
     @Query('deviceId') deviceId?: string,
     @Query('from') from?: string,
@@ -112,7 +114,8 @@ export class RecordsController {
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post()
   @HttpCode(201)
-  @UseGuards(JwtOrApiKeyGuard)
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @RequirePermissions('content:write')
   async createRecord(@Body() body: CreateRecordDto, @CurrentUser() user?: JWTPayload) {
     const record = await this.recordsService.createRecord(
       user!.organizationId,
@@ -126,7 +129,8 @@ export class RecordsController {
   @ApiOkResponse({ description: 'Record detail', schema: { example: { data: RECORD_EXAMPLE } } })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getRecord(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const record = await this.recordsService.getRecord(user!.organizationId, id);
     return { data: record };
@@ -137,7 +141,8 @@ export class RecordsController {
   @ApiOkResponse({ description: 'Updated record', schema: { example: { data: RECORD_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('content:write')
   async updateRecord(
     @Param('id') id: string,
     @Body() body: UpdateRecordDto,
@@ -152,7 +157,8 @@ export class RecordsController {
   @ApiErrors('unauthorized', 'notFound')
   @Delete(':id')
   @HttpCode(204)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('content:write')
   async deleteRecord(@Param('id') id: string, @CurrentUser() user?: JWTPayload): Promise<void> {
     await this.recordsService.deleteRecord(
       user!.organizationId,
@@ -199,7 +205,8 @@ export class RecordsController {
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post(':id/measures')
   @HttpCode(201)
-  @UseGuards(JwtOrApiKeyGuard)
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @RequirePermissions('content:write')
   async bulkInsertMeasures(
     @Param('id') id: string,
     @Body() body: BulkMeasuresDto,
@@ -219,7 +226,8 @@ export class RecordsController {
   @ApiOkResponse({ description: 'Paginated measures' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/measures')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMeasures(
     @Param('id') id: string,
     @Query('page') page?: string,
@@ -239,7 +247,8 @@ export class RecordsController {
   @ApiOkResponse({ description: 'CSV file download', content: { 'text/csv': { schema: { type: 'string', format: 'binary' } } } })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/export.csv')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read', 'data:export')
   async exportCsv(
     @Param('id') id: string,
     @Res() res: Response,

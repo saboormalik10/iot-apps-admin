@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -56,8 +57,9 @@ const SUMMARY_EXAMPLE = { data: { inserted: 3600, upserted: 1, skipped: 0, error
 @ApiTags('Import')
 @ApiBearerAuth()
 @Controller('import')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
 @Roles('admin')
+@RequirePermissions('import:write')
 export class ImportController {
   constructor(private readonly importService: ImportService) {}
 

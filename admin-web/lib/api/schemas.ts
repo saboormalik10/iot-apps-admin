@@ -80,9 +80,29 @@ export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const updateUserSchema = z.object({
   role: roleSchema.optional(),
+  // Assigning by id is the only way to grant a CUSTOM role; the server mirrors the
+  // role's `baseRole` onto `role` so the legacy guards keep working.
+  roleId: z.string().optional(),
   isActive: z.boolean().optional(),
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+/**
+ * Add a person directly, with a password.
+ *
+ * There is no invitation email in this deployment, so the operator sets the
+ * password and passes it on — the same flow the platform admin uses for a new
+ * customer's first admin.
+ */
+export const createUserSchema = z.object({
+  email,
+  password: z.string().min(8, { message: 'passwordTooShort' }).max(128),
+  firstName: z.string().max(100).optional(),
+  lastName: z.string().max(100).optional(),
+  role: roleSchema.optional(),
+  roleId: z.string().optional(),
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 // ── Profile ─────────────────────────────────────────────────────────────────
 export const profileSchema = z

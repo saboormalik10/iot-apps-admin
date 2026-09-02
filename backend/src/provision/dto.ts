@@ -12,6 +12,13 @@ export class ClaimJobDto {
   agentId!: string;
 }
 
+export class JobSecretDto {
+  @ApiProperty({ example: 'wxbox-1', description: 'The agent collecting. Must hold a live claim on this job.' })
+  @IsString()
+  @MaxLength(64)
+  agentId!: string;
+}
+
 export class JobResultDto {
   @ApiProperty({ example: true })
   @IsBoolean()

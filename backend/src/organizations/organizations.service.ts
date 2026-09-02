@@ -12,7 +12,7 @@ import { InviteToken } from '../models/InviteToken';
 import { AuditLog } from '../models/AuditLog';
 import { uploadFile, deleteFile } from '../utils/storage.util';
 import { checkAccent, foregroundFor } from '../utils/contrast.util';
-import { resolveRoleId } from '../common/resolve-role';
+import { resolveRoleId, resolveRoleAssignment } from '../common/resolve-role';
 import { sendInviteEmail } from '../utils/mailer';
 import { signAccessToken, JWTPayload } from '../utils/jwt';
 
@@ -34,6 +34,9 @@ const badRequest = (msg: string, code = 'VALIDATION_ERROR') =>
 interface ActorMeta {
   userId: string;
   email: string;
+  /** The actor's own grants — a role assignment may never exceed them. */
+  perms?: string[];
+  sup?: boolean;
 }
 
 export interface UpdateOrgInput {
@@ -52,7 +55,18 @@ export interface InviteUserInput {
 
 export interface UpdateUserInput {
   role?: UserRole;
+  /** A custom or system role by id. Takes precedence over `role` when both are sent. */
+  roleId?: string | null;
   isActive?: boolean;
+}
+
+export interface CreateUserInput {
+  email?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+  roleId?: string | null;
 }
 
 export interface AcceptInviteInput {
@@ -321,7 +335,7 @@ export class OrganizationsService {
   // ─── Users ──────────────────────────────────────────────────────────────────
 
   async listUsers(organizationId: string) {
-    const users = await User.find({ organizationId: new Types.ObjectId(organizationId) })
+    const users = await User.find({ organizationId: new Types.ObjectId(organizationId), deletedAt: null })
       .sort({ createdAt: 1 });
     return users.map(publicUser);
   }
@@ -407,6 +421,141 @@ export class OrganizationsService {
         };
       })
       .filter((r) => r.mobileAppType || r.metRecordCount > 0 || r.nepSessionCount > 0 || r.devices.length > 0);
+  }
+
+  /**
+   * Create a user in this organisation with a password set directly.
+   *
+   * WHY THIS EXISTS
+   * `inviteUser` below is disabled (M15 W3) because there is no invitation email in
+   * this deployment, and M19 W4 replaced it only for the FIRST admin of a brand new
+   * customer. That left every organisation permanently at one user: no route
+   * anywhere could add a second, so `user:write` had nothing to write. This is the
+   * missing route, and it deliberately mirrors the M19 W4 flow — active
+   * immediately, password shown to the operator once, no email.
+   */
+  async createUser(organizationId: string, input: CreateUserInput, actor: ActorMeta) {
+    const email = input.email?.toLowerCase().trim();
+    if (!email) {
+      throw Object.assign(new Error('email is required'), { statusCode: 400, code: 'VALIDATION_ERROR' });
+    }
+    if (!input.password || input.password.length < 8) {
+      throw Object.assign(new Error('password must be at least 8 characters'), {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    // Global, not per-organisation: `User.email` is uniquely indexed across the
+    // whole platform, so a duplicate must be refused here rather than surfacing as
+    // an E11000 the caller cannot interpret.
+    const existing = await User.findOne({ email }).select('_id').lean();
+    if (existing) {
+      throw Object.assign(new Error('A user with this email already exists'), {
+        statusCode: 409,
+        code: 'EMAIL_EXISTS',
+      });
+    }
+
+    const assigned = await resolveRoleAssignment(
+      { role: input.role, roleId: input.roleId },
+      organizationId,
+      'viewer',
+      actor,
+    );
+
+    const user = await User.create({
+      organizationId: new Types.ObjectId(organizationId),
+      email,
+      // Same cost as every other creation path. M24 W1 found the customer-admin
+      // path had drifted to 10 while the rest of the codebase used 12.
+      passwordHash: await bcrypt.hash(input.password, BCRYPT_COST),
+      firstName: input.firstName?.trim() || email.split('@')[0],
+      lastName: input.lastName?.trim() || '',
+      role: assigned.role,
+      roleId: assigned.roleId,
+      isActive: true,
+    });
+
+    AuditLog.create({
+      organizationId: new Types.ObjectId(organizationId),
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'create',
+      resourceType: 'user',
+      resourceId: (user._id as Types.ObjectId).toString(),
+      resourceName: user.email,
+      // Never the password. M21 W1 proved a leaked secret in a stored result does
+      // not survive review; the same rule applies to the audit log.
+      changes: { role: assigned.role, roleId: assigned.roleId ? String(assigned.roleId) : null },
+    }).catch(() => void 0);
+
+    return publicUser(user);
+  }
+
+  /**
+   * Soft-delete a user and end their sessions.
+   *
+   * Soft, because `AuditLog` entries name the actor by id: a hard delete would turn
+   * every historical entry into an unresolvable reference. The email is released
+   * so the address can be re-added later — `User.email` is uniquely indexed, and
+   * without this a person who left could never be given an account again.
+   */
+  async deleteUser(organizationId: string, targetUserId: string, actor: ActorMeta): Promise<void> {
+    if (targetUserId === actor.userId) {
+      throw Object.assign(new Error('You cannot remove your own account'), {
+        statusCode: 400,
+        code: 'CANNOT_MODIFY_SELF',
+      });
+    }
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw Object.assign(new Error('User not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+
+    const user = await User.findOne({
+      _id: new Types.ObjectId(targetUserId),
+      organizationId: new Types.ObjectId(organizationId),
+      deletedAt: null,
+    });
+    if (!user) {
+      throw Object.assign(new Error('User not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+
+    if (user.role === 'admin' && user.isActive) {
+      const activeAdmins = await User.countDocuments({
+        organizationId: new Types.ObjectId(organizationId),
+        role: 'admin',
+        isActive: true,
+        deletedAt: null,
+      });
+      if (activeAdmins <= 1) {
+        throw Object.assign(new Error('Organization must have at least one active admin'), {
+          statusCode: 400,
+          code: 'LAST_ADMIN',
+        });
+      }
+    }
+
+    const originalEmail = user.email;
+    user.deletedAt = new Date();
+    user.isActive = false;
+    // Tombstoned rather than cleared: the address is freed for re-use while the row
+    // remains readable to anyone auditing what happened.
+    user.email = `deleted+${String(user._id)}@${originalEmail.split('@')[1] ?? 'invalid'}`;
+    await user.save();
+
+    await RefreshToken.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
+
+    AuditLog.create({
+      organizationId: new Types.ObjectId(organizationId),
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'delete',
+      resourceType: 'user',
+      resourceId: (user._id as Types.ObjectId).toString(),
+      resourceName: originalEmail,
+      changes: null,
+    }).catch(() => void 0);
   }
 
   async inviteUser(organizationId: string, input: InviteUserInput, actor: ActorMeta) {
@@ -565,7 +714,22 @@ export class OrganizationsService {
       throw Object.assign(new Error('User not found'), { statusCode: 404, code: 'NOT_FOUND' });
     }
 
-    const demotingAdmin = user.role === 'admin' && input.role !== undefined && input.role !== 'admin';
+    // Resolve the role FIRST, so the last-admin guard below sees the role the user
+    // would actually end up with. Reading `input.role` alone would miss a demotion
+    // driven by `roleId` — assigning a viewer-based custom role to the only admin
+    // would then lock the organisation out with nobody able to administer it.
+    if (input.role !== undefined && !VALID_ROLES.includes(input.role)) {
+      throw Object.assign(new Error(`role must be one of: ${VALID_ROLES.join(', ')}`), {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    const assigned =
+      input.role !== undefined || input.roleId !== undefined
+        ? await resolveRoleAssignment({ role: input.role, roleId: input.roleId }, user.organizationId, user.role, actor)
+        : null;
+
+    const demotingAdmin = user.role === 'admin' && assigned !== null && assigned.role !== 'admin';
     const deactivating = input.isActive === false && user.isActive;
 
     if ((demotingAdmin || deactivating) && user.role === 'admin' && user.isActive) {
@@ -583,18 +747,13 @@ export class OrganizationsService {
     }
 
     const changes: Record<string, unknown> = {};
-    if (input.role !== undefined) {
-      if (!VALID_ROLES.includes(input.role)) {
-        throw Object.assign(new Error(`role must be one of: ${VALID_ROLES.join(', ')}`), {
-          statusCode: 400,
-          code: 'VALIDATION_ERROR',
-        });
-      }
-      changes.role = input.role;
-      user.role = input.role;
-      // `roleId` must move with the key, or the two drift: the guard would read
-      // permissions from the role the user USED to hold.
-      user.roleId = await resolveRoleId(input.role, user.organizationId);
+    if (assigned) {
+      // `roleId` and `role` move TOGETHER, always, or the two drift: PermissionsGuard
+      // would read one role and RolesGuard the other.
+      changes.role = assigned.role;
+      if (input.roleId !== undefined) changes.roleId = assigned.roleId ? String(assigned.roleId) : null;
+      user.role = assigned.role;
+      user.roleId = assigned.roleId;
     }
     if (input.isActive !== undefined) {
       changes.isActive = input.isActive;

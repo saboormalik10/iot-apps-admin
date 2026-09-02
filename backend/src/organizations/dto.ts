@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsMongoId, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { UserRole } from '../models/User';
 
 const ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
@@ -53,6 +53,16 @@ export class UpdateUserDto {
   @IsIn(ROLES)
   role?: UserRole;
 
+  @ApiPropertyOptional({
+    description:
+      'Assign a role by id — the only way to grant a CUSTOM role. Takes precedence over `role`, ' +
+      'and the legacy key is mirrored from the role\'s `baseRole`. Must be a system role or one ' +
+      'this organisation owns; anything else is 404.',
+  })
+  @IsOptional()
+  @IsMongoId()
+  roleId?: string;
+
   @ApiPropertyOptional({ description: 'Activate (true) or deactivate (false) the user' })
   @IsOptional()
   @IsBoolean()
@@ -103,4 +113,44 @@ export class UpdateBrandingDto {
   @IsString()
   @MaxLength(160)
   supportEmail?: string;
+}
+
+/**
+ * Create a user directly, with a password rather than an invitation.
+ *
+ * There is no invite email in this deployment (M15 W3), so the operator sets the
+ * password and passes it on. Mirrors the M19 W4 customer-admin flow.
+ */
+export class CreateOrgUserDto {
+  @ApiProperty({ example: 'new.user@observator.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'Str0ngPassphrase', minLength: 8, description: 'Shown to the operator once; never stored in the clear' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
+
+  @ApiPropertyOptional({ example: 'New' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Hire' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string;
+
+  @ApiPropertyOptional({ enum: ROLES, default: 'viewer' })
+  @IsOptional()
+  @IsIn(ROLES)
+  role?: UserRole;
+
+  @ApiPropertyOptional({ description: 'Assign a custom or system role by id. Takes precedence over `role`.' })
+  @IsOptional()
+  @IsMongoId()
+  roleId?: string;
 }

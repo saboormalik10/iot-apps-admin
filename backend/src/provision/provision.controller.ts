@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@n
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { ProvisionService } from './provision.service';
-import { ClaimJobDto, JobResultDto } from './dto';
+import { ClaimJobDto, JobResultDto, JobSecretDto } from './dto';
 import { ProvisionCredentialGuard, AuthenticatedService } from '../common/guards/service-credential.guard';
 import { CurrentService } from '../common/decorators/service-credential.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
@@ -64,13 +64,22 @@ export class ProvisionController {
       'Readable exactly once and expires regardless, so it is never stored on the job document where it would ' +
       'persist for 90 days and reach every backup.',
   })
+  @ApiBody({ type: JobSecretDto })
   @ApiOkResponse({ schema: { example: { data: { secret: 'obsi_…' } } } })
-  @ApiErrors('unauthorized', 'forbidden')
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Post('jobs/:id/secret')
   @HttpCode(200)
-  async jobSecret(@Param('id') id: string, @CurrentService() service: AuthenticatedService) {
-    const secret = await this.provisionService.collectSecret(id, String(service.organizationId));
+  async jobSecret(
+    @Param('id') id: string,
+    @Body() body: JobSecretDto,
+    @CurrentService() service: AuthenticatedService,
+  ) {
+    // Scoped to the CLAIM, not to `service.organizationId` — one agent claims
+    // jobs for every customer on its box, so its own organisation says nothing
+    // about which jobs are legitimately its to run. See `collectSecret`.
+    void service;
+    const secret = await this.provisionService.collectSecret(id, { by: 'agent', agentId: body.agentId });
     return { data: { secret } };
   }
 

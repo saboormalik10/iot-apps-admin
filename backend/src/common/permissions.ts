@@ -25,8 +25,12 @@ export const PERMISSIONS = [
   'device:write',
   'device:delete',
 
-  // Ingest + station provisioning (M21)
-  'ingest:read',
+  // Station provisioning (M21)
+  //
+  // `ingest:read` was removed in M25: no endpoint ever exposed ingest history to a
+  // customer, so it was a catalogue row for a screen that does not exist — exactly
+  // the lie the header of this file says storing the catalogue in the database
+  // would allow. Re-add it in the same commit as the screen, not before.
   'station:provision',
 
   // Organisation & branding
@@ -46,7 +50,11 @@ export const PERMISSIONS = [
   'audit:read',
   'alert:read',
   'alert:write',
-  'share:create',
+  // `share:create` was removed in M25 as a DUPLICATE: `data:export` is labelled
+  // "Export data and create share links" and every role that had one had the
+  // other. Two names for one grant is how a role ends up meaning different things
+  // in the editor and in the guard. POST /share is gated on `data:export`; only
+  // revoking SOMEONE ELSE'S link needs a grant of its own.
   'share:revokeAny',
   'import:write',
 ] as const;
@@ -84,7 +92,6 @@ export const PERMISSION_GROUPS: readonly { group: string; permissions: readonly 
         { key: 'device:read', label: 'View stations' },
         { key: 'device:write', label: 'Add and edit stations' },
         { key: 'device:delete', label: 'Remove stations' },
-        { key: 'ingest:read', label: 'View ingest history' },
         { key: 'station:provision', label: 'Provision new station logins' },
       ],
     },
@@ -112,7 +119,6 @@ export const PERMISSION_GROUPS: readonly { group: string; permissions: readonly 
       group: 'Advanced',
       permissions: [
         { key: 'import:write', label: 'Import data files' },
-        { key: 'share:create', label: 'Create share links' },
         { key: 'share:revokeAny', label: "Revoke anyone's share links" },
       ],
     },
@@ -138,13 +144,13 @@ export const SEEDED_ROLES: readonly { key: string; name: string; description: st
       description: 'Full control of this organisation: stations, people, branding and alerts.',
       permissions: [
         'data:read', 'data:export', 'content:write',
-        'device:read', 'device:write', 'device:delete', 'ingest:read',
+        'device:read', 'device:write', 'device:delete',
         'org:read', 'org:write',
         'user:read', 'user:write',
         'role:read',
         'audit:read',
         'alert:read', 'alert:write',
-        'share:create', 'share:revokeAny',
+        'share:revokeAny',
         'import:write',
       ],
     },
@@ -154,10 +160,9 @@ export const SEEDED_ROLES: readonly { key: string; name: string; description: st
       description: 'Day-to-day use: view everything, manage alerts, add comments and export.',
       permissions: [
         'data:read', 'data:export', 'content:write',
-        'device:read', 'ingest:read',
+        'device:read',
         'org:read', 'user:read',
         'alert:read', 'alert:write',
-        'share:create',
       ],
     },
     {
@@ -167,3 +172,26 @@ export const SEEDED_ROLES: readonly { key: string; name: string; description: st
       permissions: ['data:read', 'data:export', 'device:read', 'org:read', 'alert:read'],
     },
   ]);
+
+/**
+ * Whether a token's bearer holds `permission`, for the cases a guard cannot cover.
+ *
+ * `PermissionsGuard` answers "may this request happen at all". This answers the
+ * narrower question a handler sometimes has to ask ITSELF — "may it happen to
+ * *this* row" — where the permission decides scope rather than access. Revoking a
+ * share link is the case in point: everyone may revoke their own, only
+ * `share:revokeAny` reaches someone else's, and that is one query filter, not two
+ * routes.
+ *
+ * Mirrors the guard's fallback exactly (super admin wildcard, then `perms`, then
+ * the seeded set for a token minted before M18) so the two can never disagree.
+ */
+export function actorHasPermission(
+  actor: { perms?: string[]; sup?: boolean; role?: string },
+  permission: Permission,
+): boolean {
+  if (actor.sup === true) return true;
+  if (actor.perms?.length) return actor.perms.includes(permission);
+  const seeded = SEEDED_ROLES.find((r) => r.key === actor.role);
+  return seeded ? (seeded.permissions as readonly string[]).includes(permission) : false;
+}

@@ -117,7 +117,13 @@ describe('StreamType configuration', () => {
   it('points every configured type at a parser that exists', async () => {
     // A type naming a missing parser would accept stations and then reject every
     // file they send — a failure that only shows up in production.
-    const types = await StreamType.find({ deletedAt: null }).lean();
+    // Excludes other suites' fixtures. This assertion is GLOBAL over a database
+    // shared by every worker, and stream-types.e2e-spec deliberately inserts a
+    // type naming a missing parser to prove such a type is flagged. Running in
+    // parallel, this saw that fixture and failed — intermittently, depending on
+    // which worker got there first. What is being asserted is that the CONFIGURED
+    // types are sound, not that no test ever writes a deliberate bad row.
+    const types = await StreamType.find({ deletedAt: null, key: { $not: /^(tt|test)-/ } }).lean();
     for (const t of types) {
       expect([t.key, getStreamParser(t.parserKey) !== null]).toEqual([t.key, true]);
     }

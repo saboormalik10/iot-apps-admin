@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
@@ -24,7 +25,8 @@ function toArray(v: string | string[] | undefined): string[] {
 @ApiOkResponse({ description: 'Analytics result (shape varies per endpoint; wrapped in `{ data }` unless a CSV/JSON export)' })
 @ApiErrors('badRequest', 'unauthorized', 'notFound')
 @Controller('analytics')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+@RequirePermissions('data:read')
 export class AnalyticsController {
   constructor(
     private readonly analytics: AnalyticsService,
@@ -327,6 +329,7 @@ export class AnalyticsController {
   @ApiQuery({ name: 'format', required: false, description: 'csv (default) | json' })
   @ApiQuery({ name: 'from', required: false, description: 'Window start (Unix ms). Omit for no lower bound ("All time").' })
   @ApiQuery({ name: 'to', required: false, description: 'Window end (Unix ms, default now)' })
+  @RequirePermissions('data:read', 'data:export')
   @Get('met/export-bulk')
   async metExportBulk(
     @Query('deviceId') deviceId: string,

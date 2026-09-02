@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * NOTE: the global ValidationPipe runs with `whitelist: true`, so a property with
@@ -23,6 +23,18 @@ export class RoleInputDto {
   @IsArray()
   @IsString({ each: true })
   permissions!: string[];
+
+  @ApiPropertyOptional({
+    enum: ['admin', 'operator', 'viewer'],
+    default: 'viewer',
+    description:
+      'Which legacy role key a holder is mirrored onto. `User.role` still drives RolesGuard and the ' +
+      'frontend Role union, so a custom role needs one. Defaults to `viewer` — if the two layers ' +
+      'disagree, the legacy one should grant the least.',
+  })
+  @IsOptional()
+  @IsIn(['admin', 'operator', 'viewer'])
+  baseRole?: 'admin' | 'operator' | 'viewer';
 }
 
 /**
@@ -51,4 +63,16 @@ export class RoleUpdateDto {
   @IsArray()
   @IsString({ each: true })
   permissions?: string[];
+
+  @ApiPropertyOptional({
+    enum: ['admin', 'operator', 'viewer'],
+    default: 'viewer',
+    description:
+      'Which legacy role key a holder is mirrored onto. `User.role` still drives RolesGuard and the ' +
+      'frontend Role union, so a custom role needs one. Defaults to `viewer` — if the two layers ' +
+      'disagree, the legacy one should grant the least.',
+  })
+  @IsOptional()
+  @IsIn(['admin', 'operator', 'viewer'])
+  baseRole?: 'admin' | 'operator' | 'viewer';
 }

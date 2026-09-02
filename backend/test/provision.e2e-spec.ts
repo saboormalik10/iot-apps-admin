@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import mongoose, { Types } from 'mongoose';
 
 import { ProvisionService } from '../src/provision/provision.service';
@@ -149,11 +151,11 @@ describe('ProvisionService', () => {
     const claimed = await service.claimNext('agent-1');
     await service.report(claimed!.id, { ok: true, result: { account: 'wx-toplevel-1' }, password: 's3cret-pw' });
 
-    const first = await service.collectSecret(claimed!.id);
+    const first = await service.collectSecret(claimed!.id, { by: 'operator' });
     expect(first).toBe('s3cret-pw');
 
     // ONE read only.
-    expect(await service.collectSecret(claimed!.id)).toBeNull();
+    expect(await service.collectSecret(claimed!.id, { by: 'operator' })).toBeNull();
   });
 
   it('never stores the top-level password on the job', async () => {
@@ -234,7 +236,12 @@ describe('StationsService', () => {
    */
   afterAll(async () => {
     const throwaway = await Organization.find({
-      slug: { $regex: /^(auto|once|scoped)-\d+$/ },
+      // Every slug these tests mint must appear here. `second-` was missing, and
+      // because `claimNext` takes the oldest QUEUED job across all customers,
+      // each run left a job that the live agent then executed — 25 stray
+      // `wx-*` Unix accounts on the production box, and "succeeded" ingest
+      // deployments for tenants that do not exist.
+      slug: { $regex: /^(auto|once|scoped|lease|retry|second)-\d+$/ },
     }).select('_id').lean();
     const ids = throwaway.map((o) => o._id);
     if (!ids.length) return;
@@ -302,9 +309,18 @@ describe('StationsService', () => {
     // The token is parked for ONE read, not written into the job arguments,
     // which persist for 90 days and reach every backup.
     expect(JSON.stringify(job!.args)).not.toContain('obsi_');
-    const first = await provision.collectSecret(String(job!._id), String(org._id));
+
+    // Collected by the agent HOLDING THE CLAIM. Claimed here directly rather
+    // than through `claimNext` so the live agent polling this same database
+    // cannot take the job mid-test.
+    const agentId = `m25-agent-${stamp}`;
+    await ProvisioningJob.updateOne(
+      { _id: job!._id },
+      { $set: { status: 'claimed', claimedBy: agentId, claimedAt: new Date() } },
+    );
+    const first = await provision.collectSecret(String(job!._id), { by: 'agent', agentId });
     expect(first).toMatch(/^obsi_/);
-    expect(await provision.collectSecret(String(job!._id), String(org._id))).toBeNull();
+    expect(await provision.collectSecret(String(job!._id), { by: 'agent', agentId })).toBeNull();
   });
 
   it('does not issue a second agent for the same customer', async () => {
@@ -320,10 +336,18 @@ describe('StationsService', () => {
     expect(await ProvisioningJob.countDocuments({ organizationId: org._id, type: 'enableIngestAgent' })).toBe(1);
   });
 
-  it('refuses to hand one customer another customer\'s job secret', async () => {
-    // An agent credential is scoped to its own organisation. Without this check
-    // a valid agent could read any job's secret by guessing an id — including
-    // another customer's ingest token.
+  it('releases a job secret ONLY to the agent holding the claim', async () => {
+    // This replaces a test that asserted the secret was scoped to the job's
+    // ORGANISATION. That scope could never hold: `claimNext` is deliberately not
+    // org-scoped, because one agent provisions every customer on its box, so its
+    // credential belongs to whichever organisation happened to mint it. The
+    // effect in production was that `enableIngestAgent` failed on its FIRST
+    // attempt for every customer but that one, reporting "ingest token
+    // unavailable" for a token nobody had read. Three customers were left with a
+    // station, a folder and no agent.
+    //
+    // The claim is both the correct scope and a stricter one — guessing a job id
+    // gets you nothing unless you already hold that job.
     const stamp = Date.now();
     const org = await Organization.create({
       name: `Scoped ${stamp}`, slug: `scoped-${stamp}`, timezone: 'UTC',
@@ -331,11 +355,74 @@ describe('StationsService', () => {
     });
     await stations.provisionStation({ organizationId: String(org._id), towerName: 'C' }, actor);
     const job = await ProvisioningJob.findOne({ organizationId: org._id, type: 'enableIngestAgent' }).lean();
+    const id = String(job!._id);
 
-    const otherOrg = new Types.ObjectId();
-    expect(await provision.collectSecret(String(job!._id), String(otherOrg))).toBeNull();
-    // Still collectable by the rightful owner.
-    expect(await provision.collectSecret(String(job!._id), String(org._id))).toMatch(/^obsi_/);
+    const holder = `m25-holder-${stamp}`;
+    await ProvisioningJob.updateOne(
+      { _id: job!._id },
+      { $set: { status: 'claimed', claimedBy: holder, claimedAt: new Date() } },
+    );
+
+    // Another agent, or a guessed id, gets nothing.
+    expect(await provision.collectSecret(id, { by: 'agent', agentId: `m25-impostor-${stamp}` })).toBeNull();
+    // The holder gets it — and its own organisation is irrelevant, which is the
+    // whole point of the change.
+    expect(await provision.collectSecret(id, { by: 'agent', agentId: holder })).toMatch(/^obsi_/);
+  });
+
+  it('releases nothing once the claim lease has expired', async () => {
+    // An expired lease means `claimNext` may hand the job to someone else, so
+    // the secret is no longer this agent's to collect.
+    const stamp = Date.now();
+    const org = await Organization.create({
+      name: `Lease ${stamp}`, slug: `lease-${stamp}`, timezone: 'UTC',
+      uploadFolder: `lease-${stamp}`, country: 'AU', contactEmail: `lease-${stamp}@test.invalid`,
+    });
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'D' }, actor);
+    const job = await ProvisioningJob.findOne({ organizationId: org._id, type: 'enableIngestAgent' }).lean();
+
+    const holder = `m25-stale-${stamp}`;
+    await ProvisioningJob.updateOne(
+      { _id: job!._id },
+      {
+        $set: {
+          status: 'claimed',
+          claimedBy: holder,
+          // The lease is five minutes; six puts it comfortably past.
+          claimedAt: new Date(Date.now() - 6 * 60 * 1000),
+        },
+      },
+    );
+    expect(await provision.collectSecret(String(job!._id), { by: 'agent', agentId: holder })).toBeNull();
+  });
+
+  it('re-deploys after a FAILED attempt instead of skipping forever', async () => {
+    // The idempotency key used to be "an unrevoked ingest credential exists",
+    // which is written before the job runs. One failure therefore made the
+    // failure permanent AND silent: every later station for that customer
+    // skipped provisioning while the panel reported success.
+    const stamp = Date.now();
+    const org = await Organization.create({
+      name: `Retry ${stamp}`, slug: `retry-${stamp}`, timezone: 'UTC',
+      uploadFolder: `retry-${stamp}`, country: 'AU', contactEmail: `retry-${stamp}@test.invalid`,
+    });
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'E' }, actor);
+
+    const first = await ProvisioningJob.findOne({ organizationId: org._id, type: 'enableIngestAgent' }).lean();
+    await ProvisioningJob.updateOne(
+      { _id: first!._id },
+      { $set: { status: 'failed', error: 'ingest token unavailable (already collected or expired)', attempts: 3 } },
+    );
+
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'F' }, actor);
+
+    expect(await ProvisioningJob.countDocuments({ organizationId: org._id, type: 'enableIngestAgent' })).toBe(2);
+    // Exactly one live credential: the dead one is revoked rather than left
+    // authenticating with a secret that can never reach the box.
+    expect(
+      await ServiceCredential.countDocuments({ organizationId: org._id, kind: 'ingest', revokedAt: null }),
+    ).toBe(1);
+    expect(await ServiceCredential.countDocuments({ organizationId: org._id, kind: 'ingest' })).toBe(2);
   });
 
   it('creates the mapping INACTIVE, so a half-finished provisioning is inert', async () => {
@@ -542,13 +629,13 @@ describe('StationsService', () => {
     });
 
     it('is returned exactly once', async () => {
-      expect(await provision.collectSecret(jobId)).toBe('sup3r-s3cret');
+      expect(await provision.collectSecret(jobId, { by: 'operator' })).toBe('sup3r-s3cret');
       // A second operator, or a second click, gets nothing.
-      expect(await provision.collectSecret(jobId)).toBeNull();
+      expect(await provision.collectSecret(jobId, { by: 'operator' })).toBeNull();
     });
 
     it('is gone from the document after collection', async () => {
-      await provision.collectSecret(jobId);
+      await provision.collectSecret(jobId, { by: 'operator' });
       const job = await ProvisioningJob.findById(jobId).lean();
       expect(job!.secretOnce).toBeNull();
       expect(job!.secretExpiresAt).toBeNull();
@@ -556,20 +643,20 @@ describe('StationsService', () => {
 
     it('expires even if nobody collects it', async () => {
       await ProvisioningJob.updateOne({ _id: jobId }, { $set: { secretExpiresAt: new Date(Date.now() - 1000) } });
-      expect(await provision.collectSecret(jobId)).toBeNull();
+      expect(await provision.collectSecret(jobId, { by: 'operator' })).toBeNull();
     });
 
     it('does NOT delete the job — the audit trail outlives the secret', async () => {
       // A TTL index on `secretExpiresAt` would erase the whole document, which is
       // why expiry is enforced on read instead.
       await ProvisioningJob.updateOne({ _id: jobId }, { $set: { secretExpiresAt: new Date(Date.now() - 1000) } });
-      await provision.collectSecret(jobId);
+      await provision.collectSecret(jobId, { by: 'operator' });
       expect(await ProvisioningJob.findById(jobId).lean()).not.toBeNull();
     });
 
     it('returns null for an unknown or malformed job id', async () => {
-      expect(await provision.collectSecret('000000000000000000000000')).toBeNull();
-      expect(await provision.collectSecret('not-an-id')).toBeNull();
+      expect(await provision.collectSecret('000000000000000000000000', { by: 'operator' })).toBeNull();
+      expect(await provision.collectSecret('not-an-id', { by: 'operator' })).toBeNull();
     });
   });
 
@@ -700,5 +787,44 @@ describe('cross-layer contract with the agent', () => {
         await expect(attempt).rejects.toMatchObject({ statusCode: 400 });
       }
     }
+  });
+});
+
+/**
+ * CROSS-LAYER CONTRACT — the agent must send what the server requires.
+ *
+ * The secret channel broke because the two ends disagreed about scope, and
+ * nothing failed loudly: the agent posted an empty body, the server inferred the
+ * scope from the credential's organisation, and the mismatch surfaced only as
+ * "ingest token unavailable" against a token nobody had read. The server now
+ * releases a secret only to the agent holding the claim, which means the agent
+ * MUST name itself. Neither half is any use without the other, so they are
+ * asserted together — a source check rather than a live request, because minting
+ * a real provisioning credential in a test would put a root-capable token in the
+ * database to prove a request shape.
+ */
+describe('provisioning agent ↔ API contract', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8');
+
+  it('the server REQUIRES agentId on the job-secret route', () => {
+    const dto = read('backend/src/provision/dto.ts');
+    expect(dto).toMatch(/class JobSecretDto[\s\S]*?agentId!: string;/);
+    const controller = read('backend/src/provision/provision.controller.ts');
+    expect(controller).toMatch(/jobs\/:id\/secret/);
+    expect(controller).toMatch(/collectSecret\(\s*id,\s*\{\s*by:\s*'agent',\s*agentId:\s*body\.agentId\s*\}/);
+  });
+
+  it('the agent SENDS agentId when collecting a job secret', () => {
+    const main = read('provision-agent/src/main.ts');
+    // The POST to /secret must carry the agent's own id, not an empty body.
+    expect(main).toMatch(/\/jobs\/\$\{id\}\/secret`,\s*\{\s*agentId:\s*cfg\.agentId\s*\}/);
+  });
+
+  it('no caller reaches collectSecret without saying who is reading', () => {
+    // An optional reader is how the agent path came to accept every job in one
+    // organisation and none anywhere else.
+    const service = read('backend/src/provision/provision.service.ts');
+    expect(service).toMatch(/collectSecret\(jobId: string, reader: SecretReader\)/);
+    expect(service).not.toMatch(/forOrganizationId/);
   });
 });

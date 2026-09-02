@@ -7,6 +7,7 @@ import { ProvisionService } from './provision.service';
 import { ProvisionStationDto } from './dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuperAdminGuard } from '../common/guards/super-admin.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
@@ -22,7 +23,8 @@ import { JWTPayload } from '../utils/jwt';
  */
 @ApiTags('Stations (platform)')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, SuperAdminGuard, ThrottlerGuard)
+@UseGuards(JwtAuthGuard, SuperAdminGuard, PermissionsGuard, ThrottlerGuard)
+@RequirePermissions('station:provision')
 @Controller('platform/stations')
 export class StationsController {
   constructor(
@@ -140,7 +142,7 @@ export class StationsController {
   @Post('secret/:jobId')
   @HttpCode(200)
   async secret(@Param('jobId') jobId: string) {
-    const password = await this.provision.collectSecret(jobId);
+    const password = await this.provision.collectSecret(jobId, { by: 'operator' });
     return { data: { password, collected: password !== null } };
   }
 }

@@ -7,6 +7,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
@@ -28,7 +29,8 @@ export class DashboardController {
   @ApiQuery({ name: 'type', required: false, description: 'MET-LINK | NEP-LINK — narrow every count to one device family' })
   @ApiQuery({ name: 'deviceId', required: false, description: 'Device ObjectId — narrow every count to one device' })
   @Get('summary')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getSummary(
     @Query('type') type: string,
     @Query('deviceId') deviceId: string,
@@ -44,7 +46,8 @@ export class DashboardController {
   @ApiOperation({ summary: 'List all devices with online status' })
   @ApiOkResponse({ description: 'Device list with isOnline flag' })
   @Get('devices')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getDevices(@CurrentUser() user: JWTPayload) {
     return this.dashboardService.getDevices(user.organizationId);
   }
@@ -53,7 +56,8 @@ export class DashboardController {
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
   @ApiOkResponse({ description: 'Full sensor snapshot from the latest record row' })
   @Get('met/latest')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMetLatest(
     @Query('deviceId') deviceId: string,
     @CurrentUser() user: JWTPayload,
@@ -68,7 +72,8 @@ export class DashboardController {
       'Wind direction/speed arrays: last600 (≈10 min) and last120 (≈2 min)',
   })
   @Get('met/windrose')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMetWindrose(
     @Query('deviceId') deviceId: string,
     @CurrentUser() user: JWTPayload,
@@ -88,7 +93,8 @@ export class DashboardController {
   @ApiQuery({ name: 'to', required: true, description: 'End time (Unix ms)' })
   @ApiOkResponse({ description: '1-minute buckets: { sensor, unit, data: [{timestampMs, min, max, avg, count}] }' })
   @Get('met/history')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMetHistory(
     @Query('deviceId') deviceId: string,
     @Query('sensor') sensor: string,
@@ -121,7 +127,8 @@ export class DashboardController {
       '{ from, to, bucketMs, series: { [sensor]: { unit, data: [{timestampMs, min, max, avg, count}] } } }',
   })
   @Get('met/history-multi')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMetHistoryMulti(
     @Query('deviceId') deviceId: string,
     @Query('sensors') sensors: string,
@@ -230,7 +237,8 @@ export class DashboardController {
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
   @ApiOkResponse({ description: 'Lifetime totals + min/max sensor extremes' })
   @Get('met/stats')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getMetStats(@Query('deviceId') deviceId: string, @CurrentUser() user: JWTPayload) {
     return this.dashboardService.getMetStats(user.organizationId, deviceId);
   }
@@ -259,7 +267,8 @@ export class DashboardController {
   @ApiOperation({ summary: 'Org fleet map — last-known GPS for every device' })
   @ApiOkResponse({ description: 'Devices with last GPS position, battery and online flag' })
   @Get('org/device-map')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
   async getOrgDeviceMap(@CurrentUser() user: JWTPayload) {
     return this.dashboardService.getOrgDeviceMap(user.organizationId);
   }

@@ -10,6 +10,7 @@ import {
   ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
@@ -45,7 +46,8 @@ export class AlertRulesController {
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post()
   @HttpCode(201)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('alert:write')
   async create(@Body() body: CreateAlertRuleDto, @CurrentUser() user: JWTPayload) {
     const rule = await this.service.create(user.organizationId, body, { userId: user.userId, email: user.email ?? '' });
     return { data: rule };
@@ -62,7 +64,8 @@ export class AlertRulesController {
   })
   @ApiErrors('unauthorized')
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('alert:read')
   async list(
     @Query('deviceId') deviceId: string,
     @Query('isActive') isActive: string,
@@ -82,7 +85,8 @@ export class AlertRulesController {
   @ApiOkResponse({ description: 'Alert rule', schema: { example: { data: ALERT_RULE_EXAMPLE } } })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('alert:read')
   async get(@Param('id') id: string, @CurrentUser() user: JWTPayload) {
     const rule = await this.service.get(user.organizationId, id);
     return { data: rule };
@@ -93,7 +97,8 @@ export class AlertRulesController {
   @ApiOkResponse({ description: 'Updated alert rule', schema: { example: { data: ALERT_RULE_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('alert:write')
   async update(@Param('id') id: string, @Body() body: UpdateAlertRuleDto, @CurrentUser() user: JWTPayload) {
     const rule = await this.service.update(user.organizationId, id, body, { userId: user.userId, email: user.email ?? '' });
     return { data: rule };
@@ -104,7 +109,8 @@ export class AlertRulesController {
   @ApiErrors('unauthorized', 'notFound')
   @Delete(':id')
   @HttpCode(204)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('alert:write')
   async remove(@Param('id') id: string, @CurrentUser() user: JWTPayload): Promise<void> {
     await this.service.remove(user.organizationId, id, { userId: user.userId, email: user.email ?? '' });
   }

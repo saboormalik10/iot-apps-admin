@@ -63,7 +63,8 @@ export class DevicesController {
   })
   @ApiErrors('unauthorized')
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async listDevices(
     @Query('type') type?: 'MET-LINK' | 'NEP-LINK',
     @Query('bleId') bleId?: string,
@@ -128,7 +129,8 @@ export class DevicesController {
   @ApiErrors('badRequest', 'unauthorized')
   @Post()
   @HttpCode(201)
-  @UseGuards(JwtOrApiKeyGuard)
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @RequirePermissions('device:write')
   async createDevice(
     @Body() body: { bleId: string; name: string; type: 'MET-LINK' | 'NEP-LINK'; serialNo?: string; firmwareVersion?: string; customName?: string },
     @CurrentUser() user?: JWTPayload,
@@ -165,7 +167,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Configured firmware targets', schema: { example: { data: [{ deviceType: 'NEP-LINK', version: '2.2.0' }] } } })
   @ApiErrors('unauthorized')
   @Get('firmware-target')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async listFirmwareTargets(@CurrentUser() user: JWTPayload) {
     const data = await this.devicesService.listFirmwareTargets(user.organizationId);
     return { data };
@@ -179,7 +182,8 @@ export class DevicesController {
   })
   @ApiErrors('unauthorized')
   @Get('firmware-status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getFirmwareStatus(@Query('type') type: 'MET-LINK' | 'NEP-LINK', @CurrentUser() user: JWTPayload) {
     return this.devicesService.getFirmwareStatus(user.organizationId, type);
   }
@@ -188,7 +192,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Device detail', schema: { example: { data: DEVICE_EXAMPLE } } })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getDevice(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const device = await this.devicesService.getDevice(user!.organizationId, id);
     return { data: device };
@@ -199,7 +204,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Updated device', schema: { example: { data: DEVICE_EXAMPLE } } })
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:write')
   async updateDevice(
     @Param('id') id: string,
     @Body() body: { name?: string; customName?: string; serialNo?: string; firmwareVersion?: string },
@@ -234,7 +240,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Device stats' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/stats')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getDeviceStats(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const stats = await this.devicesService.getDeviceStats(user!.organizationId, id);
     return { data: stats };
@@ -244,7 +251,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Device health' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/health')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getDeviceHealth(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const health = await this.devicesService.getDeviceHealth(user!.organizationId, id);
     return { data: health };
@@ -254,7 +262,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Firmware history' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/firmware-history')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getFirmwareHistory(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const result = await this.devicesService.getFirmwareHistory(user!.organizationId, id);
     return { data: result };
@@ -271,7 +280,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Device settings (defaults created on first read)' })
   @ApiErrors('unauthorized', 'notFound')
   @Get(':id/settings')
-  @UseGuards(JwtOrApiKeyGuard)
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @RequirePermissions('device:read')
   async getDeviceSettings(@Param('id') id: string, @CurrentUser() user?: JWTPayload) {
     const settings = await this.devicesService.getDeviceSettings(user!.organizationId, id);
     return { data: settings };
@@ -302,7 +312,8 @@ export class DevicesController {
   @ApiOkResponse({ description: 'Updated settings', schema: { example: { data: { deviceId: '664a1f2e3c4d5e6f7a8b9c0f', unitWindSpeed: 'km/h', unitPressure: 'hPa' } } } })
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Patch(':id/settings')
-  @UseGuards(JwtOrApiKeyGuard)
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @RequirePermissions('device:write')
   async updateDeviceSettings(
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,

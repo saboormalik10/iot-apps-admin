@@ -52,8 +52,8 @@ describe('Organizations / user management (e2e)', () => {
   afterAll(async () => {
     if (invitedUserId) {
       await InviteToken.deleteMany({ userId: new mongoose.Types.ObjectId(invitedUserId) });
-      await User.deleteOne({ _id: new mongoose.Types.ObjectId(invitedUserId) });
     }
+    await User.deleteMany({ email: /^invitee-\d+@observator\.com$/ });
     await app?.close();
     await mongoose.disconnect();
   });
@@ -76,23 +76,45 @@ describe('Organizations / user management (e2e)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('POST /v1/organizations/me/users/invite as viewer → 403', async () => {
+  // These covered `POST me/users/invite`, which has been commented out since M15 W3
+  // — there is no invitation email in this deployment. They now cover the route
+  // that replaced it (M25): the operator sets a password and passes it on, so the
+  // user is created ACTIVE rather than pending an invitation.
+  it('POST /v1/organizations/me/users as viewer → 403', async () => {
     const res = await request(httpServer)
-      .post('/v1/organizations/me/users/invite')
+      .post('/v1/organizations/me/users')
       .set('Authorization', `Bearer ${viewerToken}`)
-      .send({ email: 'nope@observator.com', role: 'viewer' });
+      .send({ email: 'nope@observator.com', password: 'Nope@12345', role: 'viewer' });
     expect(res.status).toBe(403);
   });
 
-  it('POST /v1/organizations/me/users/invite as admin → 201, creates inactive user', async () => {
+  it('POST /v1/organizations/me/users as admin → 201, creates an active user', async () => {
     const res = await request(httpServer)
-      .post('/v1/organizations/me/users/invite')
+      .post('/v1/organizations/me/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: invitedEmail, role: 'operator', firstName: 'New', lastName: 'Hire' });
+      .send({ email: invitedEmail, password: 'NewHire@1234', role: 'operator', firstName: 'New', lastName: 'Hire' });
     expect(res.status).toBe(201);
-    expect(res.body.data.user.email).toBe(invitedEmail);
-    expect(res.body.data.user.isActive).toBe(false);
-    invitedUserId = res.body.data.user.id;
+    expect(res.body.data.email).toBe(invitedEmail);
+    expect(res.body.data.isActive).toBe(true);
+    invitedUserId = res.body.data.id;
+  });
+
+  it('the added user can actually sign in with the password that was set', async () => {
+    // The point of the whole route: an organisation had no way to gain a second
+    // member, so "created" is only true if the person can get in.
+    const res = await request(httpServer)
+      .post('/v1/auth/login')
+      .send({ email: invitedEmail, password: 'NewHire@1234' });
+    expect(res.status).toBe(200);
+    expect(res.body.data?.accessToken).toBeTruthy();
+  });
+
+  it('POST /v1/organizations/me/users with a duplicate email → 409', async () => {
+    const res = await request(httpServer)
+      .post('/v1/organizations/me/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: invitedEmail, password: 'Another@1234', role: 'viewer' });
+    expect(res.status).toBe(409);
   });
 
   it("PATCH /v1/organizations/me/users/:id as admin → changes a user's role", async () => {
@@ -110,5 +132,33 @@ describe('Organizations / user management (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ role: 'viewer' });
     expect(res.status).toBe(400);
+  });
+
+  it('DELETE /v1/organizations/me/users/:id on self → 400', async () => {
+    const res = await request(httpServer)
+      .delete(`/v1/organizations/me/users/${adminUserId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('DELETE /v1/organizations/me/users/:id → 204 and drops out of the list', async () => {
+    const res = await request(httpServer)
+      .delete(`/v1/organizations/me/users/${invitedUserId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(204);
+
+    const list = await request(httpServer)
+      .get('/v1/organizations/me/users')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(list.body.data.some((u: { email: string }) => u.email === invitedEmail)).toBe(false);
+  });
+
+  it('a removed user can no longer sign in', async () => {
+    // Soft-deleted, not merely inactive — the login path has to honour it or
+    // "remove" means nothing.
+    const res = await request(httpServer)
+      .post('/v1/auth/login')
+      .send({ email: invitedEmail, password: 'NewHire@1234' });
+    expect(res.status).toBe(401);
   });
 });

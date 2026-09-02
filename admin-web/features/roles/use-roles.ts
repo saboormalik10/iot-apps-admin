@@ -4,10 +4,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { listRoles, listPermissionGroups, getRoleUsage, createRole, updateRole, deleteRole } from '@/lib/api/endpoints';
 import { queryKeys } from '@/lib/query/keys';
+import { useRbac } from '@/lib/rbac/context';
+import { useMemo } from 'react';
 import type { RoleInput } from '@/lib/api/types';
 
 export function useRoles() {
   return useQuery({ queryKey: queryKeys.roles, queryFn: ({ signal }) => listRoles(signal) });
+}
+
+/**
+ * The roles the current user may actually GRANT, least-privileged first.
+ *
+ * The server refuses to let anyone grant a permission they do not hold themselves
+ * — otherwise assigning a role is a way to manufacture authority you were denied.
+ * Mirroring that rule here keeps the menu honest: offering a role that is
+ * guaranteed to come back 403 reads as a broken screen, not as a policy.
+ *
+ * The server remains the decision; this only decides what to show.
+ */
+export function useAssignableRoles() {
+  const { has, isSuperAdmin } = useRbac();
+  const query = useRoles();
+  const roles = useMemo(() => {
+    const all = query.data ?? [];
+    const grantable = isSuperAdmin ? all : all.filter((r) => r.permissions.every((p) => has(p)));
+    return [...grantable].sort((a, b) => a.permissions.length - b.permissions.length);
+  }, [query.data, has, isSuperAdmin]);
+  return { ...query, data: roles };
 }
 
 /**

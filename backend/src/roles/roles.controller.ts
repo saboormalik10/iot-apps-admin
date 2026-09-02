@@ -35,6 +35,9 @@ export class RolesController {
       email: user.email ?? '',
       organizationId: user.organizationId,
       isSuperAdmin: user.sup === true,
+      // Present only while a super admin is acting as a customer (M19 W1). It is
+      // what tells `create` that `organizationId` above is somebody else's.
+      isSwitched: typeof user.homeOrganizationId === 'string',
     };
   }
 

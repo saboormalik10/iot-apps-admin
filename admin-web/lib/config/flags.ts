@@ -49,6 +49,11 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   // `POST /organizations/me/users/invite` and `POST /organizations/accept-invite`
   // are commented out. Customer logins are created directly by the super admin —
   // that flow lands in M19 W4 and replaces this UI rather than re-enabling it.
+  // Stays OFF: `POST /organizations/me/users/invite` is commented out on the
+  // backend (no invitation email in this deployment), so flipping this on would
+  // render a dialog that 404s. Adding a person now goes through AddUserDialog and
+  // `POST /organizations/me/users`. Reviving invitations means uncommenting the
+  // route, its DTO and the mailer wiring first.
   userInvites: false,
 };
 

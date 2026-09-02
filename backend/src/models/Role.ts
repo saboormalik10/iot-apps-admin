@@ -23,6 +23,18 @@ export interface IRole extends Document {
   organizationId: Types.ObjectId | null;
   /** Stable machine key. Mirrored onto User.role for the legacy guards. */
   key: string;
+  /**
+   * The legacy role key a holder of this role is mirrored onto.
+   *
+   * `User.role` is still what the JWT carries, what `RolesGuard` reads and what
+   * the frontend `Role` union expects, so a user holding a CUSTOM role still needs
+   * one of the three legacy keys written alongside `roleId`. Without this a custom
+   * role could not be assigned at all — which is exactly why it never was.
+   *
+   * Defaults to `viewer`: if the two layers ever disagree, the legacy one should
+   * grant the least.
+   */
+  baseRole: 'admin' | 'operator' | 'viewer';
   name: string;
   description: string;
   permissions: string[];
@@ -41,6 +53,7 @@ const roleSchema = new Schema<IRole>(
   {
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null },
     key: { type: String, required: true, trim: true, lowercase: true },
+    baseRole: { type: String, enum: ['admin', 'operator', 'viewer'], default: 'viewer' },
     name: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
     // Validated against the catalogue in common/permissions.ts at write time, not

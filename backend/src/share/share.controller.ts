@@ -10,6 +10,8 @@ import {
   ApiNoContentResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard, RequirePermissions } from '../common/guards/permissions.guard';
+import { actorHasPermission } from '../common/permissions';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
@@ -41,7 +43,8 @@ export class ShareController {
   @ApiErrors('badRequest', 'unauthorized', 'notFound')
   @Post()
   @HttpCode(201)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:export')
   async create(@Body() body: CreateShareDto, @CurrentUser() user: JWTPayload) {
     const data = await this.shareService.createShare(user.organizationId, body, {
       userId: user.userId,
@@ -75,6 +78,11 @@ export class ShareController {
   @HttpCode(204)
   @UseGuards(JwtAuthGuard)
   async revoke(@Param('id') id: string, @CurrentUser() user: JWTPayload): Promise<void> {
-    await this.shareService.revokeShare(user.organizationId, id, { userId: user.userId, email: user.email ?? '' });
+    await this.shareService.revokeShare(
+      user.organizationId,
+      id,
+      { userId: user.userId, email: user.email ?? '' },
+      actorHasPermission(user, 'share:revokeAny'),
+    );
   }
 }

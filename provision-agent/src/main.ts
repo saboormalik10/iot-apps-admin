@@ -70,7 +70,14 @@ async function tick(cfg: AgentConfig): Promise<boolean> {
   // persist for 90 days and reach every backup.
   const fetchSecret = async (id: string): Promise<string | null> => {
     try {
-      const res = (await api(cfg, `/jobs/${id}/secret`, {})) as { data?: { secret?: string } };
+      // `agentId` is REQUIRED: the server releases the secret only to the agent
+      // holding a live claim on that job. It used to scope the read to the
+      // credential's organisation instead, which meant every customer but the
+      // one that minted the credential got "ingest token unavailable" on the
+      // first attempt.
+      const res = (await api(cfg, `/jobs/${id}/secret`, { agentId: cfg.agentId })) as {
+        data?: { secret?: string };
+      };
       return res?.data?.secret ?? null;
     } catch (err) {
       log.error(`could not collect job secret: ${String(err)}`);

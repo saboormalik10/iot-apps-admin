@@ -83,6 +83,7 @@ import type {
   CreateShareInput,
   DeviceSettingsInput,
   InviteUserInput,
+  CreateUserInput,
   UpdateAlertRuleInput,
   UpdateDeviceInput,
   UpdateOrgInput,
@@ -114,6 +115,9 @@ export const inviteUser = (input: InviteUserInput) =>
   http.post<{ user: OrgUser }>('/organizations/me/users/invite', input);
 export const updateUser = (id: string, input: UpdateUserInput) =>
   http.patch<OrgUser>(`/organizations/me/users/${id}`, input);
+export const createUser = (input: CreateUserInput) =>
+  http.post<OrgUser>('/organizations/me/users', input);
+export const removeUser = (id: string) => http.delete<void>(`/organizations/me/users/${id}`);
 
 // ── Audit log (server-paginated + server-side filters) ──────────────────────
 export interface AuditQuery {

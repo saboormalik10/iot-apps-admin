@@ -238,7 +238,22 @@
     "roleUpdated": "Role updated",
     "statusUpdated": "Status updated",
     "cannotEditSelf": "You can't change your own role or status",
-    "cannotRemoveLastAdmin": "You can't remove the last admin"
+    "cannotRemoveLastAdmin": "You can't remove the last admin",
+    "addUser": "Add person",
+    "addUserTitle": "Add a person",
+    "addUserSubtitle": "They can sign in straight away with the password you set — no invitation email is sent.",
+    "addUserSubmit": "Add person",
+    "addUserPasswordNote": "Pass the password on yourself. It is stored hashed and cannot be shown again.",
+    "userAdded": "{email} can now sign in",
+    "colPassword": "Password",
+    "colFirstName": "First name",
+    "colLastName": "Last name",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "generatePassword": "Generate a password",
+    "remove": "Remove from organisation",
+    "removeConfirm": "Remove {email}? They will be signed out immediately and lose access. Their audit history is kept.",
+    "userRemoved": "Person removed"
   },
   "audit": {
     "title": "Audit log",

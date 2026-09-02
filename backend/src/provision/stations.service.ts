@@ -205,19 +205,42 @@ export class StationsService implements OnModuleInit {
    * between something that works and something that is done wrong eventually.
    *
    * Idempotent: a second station for the same customer reuses the running agent.
+   *
+   * WHAT COUNTS AS "already has one" — a SUCCEEDED job, not a credential.
+   * This used to return early whenever an unrevoked ingest credential existed.
+   * The credential is written before the job runs, so one failed deployment made
+   * the failure permanent AND silent: every later station for that customer
+   * skipped provisioning, and the panel reported success each time. Three
+   * customers reached exactly that state — station created, folder created, no
+   * agent, files piling up in `upload/` with an empty `quarantine/` to show for
+   * it. Keying on the job means a failure is retried by the next station, and
+   * `scripts/redeploy-ingest-agents.ts` can repair one on demand.
    */
   private async ensureIngestAgent(
     organizationId: Types.ObjectId,
     account: string,
     actor: { userId: string; email: string },
   ): Promise<void> {
-    const existing = await ServiceCredential.findOne({
+    const forThisAccount = {
       organizationId,
-      kind: 'ingest',
-      name: `ingest-agent (${account})`,
-      revokedAt: null,
-    }).lean();
-    if (existing) return;                      // already has one — nothing to do
+      type: 'enableIngestAgent' as const,
+      'args.account': account,
+    };
+    const [running, inFlight] = await Promise.all([
+      ProvisioningJob.findOne({ ...forThisAccount, status: 'succeeded' }).lean(),
+      // `failed` is deliberately NOT in here: a job only reaches it at the
+      // attempt ceiling, which is the case this method exists to recover from.
+      ProvisioningJob.findOne({ ...forThisAccount, status: { $in: ['queued', 'claimed'] } }).lean(),
+    ]);
+    if (running || inFlight) return;
+
+    // A previous attempt failed, so its token never reached the box and its
+    // one-read secret is gone — but the credential would still authenticate.
+    // Revoke it rather than leaving a live credential no one holds.
+    await ServiceCredential.updateMany(
+      { organizationId, kind: 'ingest', name: `ingest-agent (${account})`, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
 
     // `obsi_<prefix>_<secret>`: the prefix is the public lookup key, the secret
     // is never stored — only its hash.

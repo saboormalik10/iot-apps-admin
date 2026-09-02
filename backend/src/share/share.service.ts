@@ -68,12 +68,30 @@ export class ShareService {
     };
   }
 
-  async revokeShare(organizationId: string, id: string, actor: { userId: string; email: string }): Promise<void> {
+  /**
+   * Revoke a share link.
+   *
+   * `canRevokeAny` decides SCOPE, not access: without it the filter is narrowed to
+   * links the actor created, so someone else's link is a 404 rather than a 403 —
+   * the same answer they would get for a link that never existed, which is what we
+   * want, since "wrong permission" would confirm the link is real.
+   */
+  async revokeShare(
+    organizationId: string,
+    id: string,
+    actor: { userId: string; email: string },
+    canRevokeAny = false,
+  ): Promise<void> {
     if (!Types.ObjectId.isValid(id)) {
       throw Object.assign(new Error('Share not found'), { statusCode: 404, code: 'NOT_FOUND' });
     }
     const doc = await ShareToken.findOneAndUpdate(
-      { _id: new Types.ObjectId(id), organizationId: new Types.ObjectId(organizationId), revokedAt: null },
+      {
+        _id: new Types.ObjectId(id),
+        organizationId: new Types.ObjectId(organizationId),
+        revokedAt: null,
+        ...(canRevokeAny ? {} : { createdBy: new Types.ObjectId(actor.userId) }),
+      },
       { $set: { revokedAt: new Date() } },
       { new: true },
     );

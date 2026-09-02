@@ -42,7 +42,13 @@ export interface OrgUser {
   email: string;
   firstName: string;
   lastName: string;
+  /**
+   * The LEGACY key. For someone holding a custom role this is that role's
+   * `baseRole`, not its name — read `roleId` to know which role they actually
+   * hold, and look it up in the roles list for a label.
+   */
   role: Role;
+  roleId?: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
   invitedAt: string | null;
@@ -1024,6 +1030,8 @@ export interface RoleRow {
   name: string;
   description: string;
   permissions: string[];
+  /** Which legacy key a holder is mirrored onto — needed by RolesGuard. */
+  baseRole?: Role;
   isSystem: boolean;
   isDefault: boolean;
   userCount: number;
@@ -1055,6 +1063,12 @@ export interface RoleInput {
   name: string;
   description?: string;
   permissions: string[];
+  /**
+   * Which legacy key a holder is mirrored onto. `User.role` still drives
+   * RolesGuard and the frontend Role union, so a custom role needs one — without
+   * it a custom role cannot be assigned to anybody at all.
+   */
+  baseRole?: Role;
 }
 
 /** A customer organisation, as the super-admin switcher lists them. */

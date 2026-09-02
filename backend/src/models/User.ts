@@ -34,6 +34,15 @@ export interface IUser extends Document {
   lastLoginAt: Date | null;
   invitedAt: Date | null;
   invitedBy: Types.ObjectId | null;
+  /**
+   * Soft delete. Set when a user is removed from an organisation.
+   *
+   * Soft, because AuditLog names its actor by id — a hard delete would turn every
+   * historical entry into a dangling reference. The removal also tombstones the
+   * email (`deleted+<id>@…`), because `email` is uniquely indexed platform-wide and
+   * the address must be re-usable if the person is ever re-added.
+   */
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,7 +53,12 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
+    // NOT required: every creation DTO makes it optional, and the services default
+    // it to ''. Mongoose treats '' as missing under `required`, so a user created
+    // without a surname failed validation with a 500 — the invite path (M15,
+    // disabled) carried the same defect and simply never ran. Plenty of people
+    // have one name; the API should not insist otherwise.
+    lastName: { type: String, default: '' },
     role: { type: String, enum: ['admin', 'operator', 'viewer'], default: 'viewer' },
     roleId: { type: Schema.Types.ObjectId, ref: 'Role', default: null },
     isSuperAdmin: { type: Boolean, default: false },
@@ -53,6 +67,7 @@ const userSchema = new Schema<IUser>(
     lastLoginAt: { type: Date, default: null },
     invitedAt: { type: Date, default: null },
     invitedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
