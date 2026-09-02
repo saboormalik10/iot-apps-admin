@@ -116,7 +116,9 @@ metRecordSchema.index(
 // daily aggregates survive the record's removal.
 metRecordSchema.index(
   { createdAt: 1 },
-  { expireAfterSeconds: 3_024_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+  // 18 days — deliberately longer than the measures' 15, so a day's record is
+  // never orphaned while its readings are still being removed.
+  { expireAfterSeconds: 1_555_200, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
 );
 
 export const MetRecord = model<IMetRecord>('MetRecord', metRecordSchema);

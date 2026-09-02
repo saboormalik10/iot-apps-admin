@@ -124,7 +124,11 @@ metMeasureSchema.index({ recordId: 1, rowType: 1, timestampMs: -1 });
 // the measures it counts — see models/MetRecord.ts.
 metMeasureSchema.index(
   { createdAt: 1 },
-  { expireAfterSeconds: 2_592_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+  // 15 days. Halved from 30 (Sept 2026) because the database filled faster
+  // than the old window: ~19 MB/day means 512 MB was reached in about two and a
+  // half weeks, BEFORE any cleanup began. The daily rollups in
+  // `metdailysummaries` are unaffected and keep the long-term history.
+  { expireAfterSeconds: 1_296_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
 );
 
 export const MetMeasure = model<IMetMeasure>('MetMeasure', metMeasureSchema);

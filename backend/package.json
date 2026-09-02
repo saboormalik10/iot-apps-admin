@@ -30,7 +30,8 @@
     "sync:indexes": "ts-node src/scripts/sync-indexes.ts",
     "migrate:strip-nulls": "ts-node src/scripts/migrate-strip-null-measures.ts",
     "mint:provision-token": "ts-node src/scripts/mint-provision-token.ts",
-    "migrate:station-folder-key": "ts-node src/scripts/migrate-station-folder-key.ts"
+    "migrate:station-folder-key": "ts-node src/scripts/migrate-station-folder-key.ts",
+    "migrate:ttl": "ts-node src/scripts/migrate-ttl-windows.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

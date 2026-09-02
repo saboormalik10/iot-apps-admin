@@ -80,6 +80,9 @@ metIngestFileSchema.index({ organizationId: 1, deviceId: 1, receivedAt: -1 });
  * be re-ingested from the agent's archive and silently resurrect deleted data.
  * The ledger must outlive what it is protecting.
  */
-metIngestFileSchema.index({ receivedAt: 1 }, { expireAfterSeconds: 3_888_000 });
+// 23 days — the longest of the three ON PURPOSE. This is the fingerprint ledger
+// that stops a file being ingested twice; if it expired first, a file replayed
+// from the permanent archive would resurrect readings that had just been deleted.
+metIngestFileSchema.index({ receivedAt: 1 }, { expireAfterSeconds: 1_987_200 });
 
 export const MetIngestFile = model<IMetIngestFile>('MetIngestFile', metIngestFileSchema);
