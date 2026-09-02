@@ -6,7 +6,7 @@ import { join } from 'path';
 
 import { Watcher } from './watcher';
 import { claim, archive, drainStaging, matchesPrefix, stagingDepth } from './paths';
-import { AgentConfig } from './config';
+import { AgentConfig, loadConfig } from './config';
 
 /**
  * Subdirectory walking (M19 W5).
@@ -214,5 +214,48 @@ describe('backlog is processed in bounded slices', () => {
     // Oldest first: filenames encode the minute, and the walk is sorted.
     const names = found.map((f) => f.rel.split('/').pop()!).filter((n) => n.startsWith('WindSonic_202609'));
     assert.deepEqual(names, [...names].sort(), 'must be chronological');
+  });
+});
+
+/**
+ * Multi-customer roots (M24).
+ *
+ * The agent watched exactly one tree, so a second customer's account, folders
+ * and active mapping could all exist while nothing ever looked at their files.
+ */
+describe('config supports one root per customer', () => {
+  const withEnv = (extra: Record<string, string>) => {
+    const saved = { ...process.env };
+    Object.assign(process.env, {
+      OBSERVATOR_API_URL: 'https://api.example.com',
+      OBSERVATOR_ACCOUNT: 'wxstation',
+      OBSERVATOR_INGEST_TOKEN: 'obsi_a_b',
+      ...extra,
+    });
+    try {
+      return loadConfig([]);
+    } finally {
+      process.env = saved;
+    }
+  };
+
+  test('falls back to the single account when OBSERVATOR_ROOTS is unset', () => {
+    const c = withEnv({ OBSERVATOR_ROOT_DIR: '/home/wxstation' });
+    assert.equal(c.roots.length, 1);
+    assert.equal(c.roots[0].account, 'wxstation');
+    assert.equal(c.roots[0].uploadDir, '/home/wxstation/upload');
+  });
+
+  test('parses several customers', () => {
+    const c = withEnv({ OBSERVATOR_ROOTS: 'wxstation:/home/wxstation, wx-new-customer:/home/wx-new-customer' });
+    assert.equal(c.roots.length, 2);
+    assert.deepEqual(c.roots.map((r) => r.account), ['wxstation', 'wx-new-customer']);
+    assert.equal(c.roots[1].stagingDir, '/home/wx-new-customer/staging');
+  });
+
+  test('refuses a malformed entry rather than watching the wrong place', () => {
+    assert.throws(() => withEnv({ OBSERVATOR_ROOTS: 'wxstation' }), /account:\/path/);
+    assert.throws(() => withEnv({ OBSERVATOR_ROOTS: 'BadName:/home/x' }), /must match/);
+    assert.throws(() => withEnv({ OBSERVATOR_ROOTS: 'wxstation:relative/path' }), /absolute/);
   });
 });

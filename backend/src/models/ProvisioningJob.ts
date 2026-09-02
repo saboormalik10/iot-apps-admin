@@ -20,7 +20,9 @@ export type ProvisioningJobType =
   | 'rotateStationPassword'
   | 'disableStationAccount'
   | 'createStationFolder'
-  | 'reportStationUsage';
+  | 'reportStationUsage'
+  | 'enableIngestAgent'
+  | 'disableIngestAgent';
 
 export type ProvisioningJobStatus = 'queued' | 'claimed' | 'succeeded' | 'failed';
 
@@ -72,6 +74,13 @@ const provisioningJobSchema = new Schema<IProvisioningJob>(
         'disableStationAccount',
         'createStationFolder',
         'reportStationUsage',
+        // Installs a per-customer ingest agent: writes that customer's env file
+        // and enables its systemd instance. One agent per customer because an
+        // ingest token is scoped to ONE organisation — the server refuses a
+        // token uploading for a customer it does not belong to, so a shared
+        // agent can only ever serve the org its token was minted for.
+        'enableIngestAgent',
+        'disableIngestAgent',
       ],
     },
     args: { type: Schema.Types.Mixed, default: {} },

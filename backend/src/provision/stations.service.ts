@@ -2,11 +2,14 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Types } from 'mongoose';
 
 import { Organization } from '../models/Organization';
+import { randomBytes } from 'crypto';
 import { Device } from '../models/Device';
 import { StationAccount } from '../models/StationAccount';
 import { ProvisioningJob } from '../models/ProvisioningJob';
 import { AuditLog } from '../models/AuditLog';
 import { ProvisionService } from './provision.service';
+import { ServiceCredential } from '../models/ServiceCredential';
+import { hashToken } from '../common/guards/service-credential.guard';
 import { assertValidAccountName, assertValidFolderSegment, isValidAccountName } from './account-name';
 
 const badReq = (msg: string, code = 'VALIDATION_ERROR') =>
@@ -111,6 +114,9 @@ export class StationsService implements OnModuleInit {
     // Linked so the job's completion can find what to activate.
     await ProvisioningJob.updateOne({ _id: job.id }, { $set: { 'args.stationAccountId': String(mapping._id) } });
 
+    // The customer's own ingest agent, provisioned automatically.
+    await this.ensureIngestAgent(org._id as Types.ObjectId, account, actor);
+
     AuditLog.create({
       organizationId: org._id,
       userId: Types.ObjectId.isValid(actor.userId) ? new Types.ObjectId(actor.userId) : null,
@@ -183,6 +189,62 @@ export class StationsService implements OnModuleInit {
       sftpHost: (process.env.SFTP_HOST ?? '').trim() || 'SFTP_HOST-not-set',
       sftpPort: Number.parseInt(process.env.SFTP_PORT ?? '22', 10) || 22,
     };
+  }
+
+  /**
+   * Give this customer their own ingest agent, once.
+   *
+   * An ingest token is scoped to ONE organisation — the server refuses a token
+   * uploading for a customer it does not belong to (verified: a station created
+   * for a second customer had every file rejected as UNKNOWN_STATION while the
+   * agent held the first customer's token). So a shared agent cannot serve more
+   * than one customer, and each needs its own instance and its own credential.
+   *
+   * Doing it here means adding a customer's first station is a single action in
+   * the panel rather than five manual steps on the box — which is the difference
+   * between something that works and something that is done wrong eventually.
+   *
+   * Idempotent: a second station for the same customer reuses the running agent.
+   */
+  private async ensureIngestAgent(
+    organizationId: Types.ObjectId,
+    account: string,
+    actor: { userId: string; email: string },
+  ): Promise<void> {
+    const existing = await ServiceCredential.findOne({
+      organizationId,
+      kind: 'ingest',
+      name: `ingest-agent (${account})`,
+      revokedAt: null,
+    }).lean();
+    if (existing) return;                      // already has one — nothing to do
+
+    // `obsi_<prefix>_<secret>`: the prefix is the public lookup key, the secret
+    // is never stored — only its hash.
+    const prefix = randomBytes(6).toString('hex');
+    const token = `obsi_${prefix}_${randomBytes(24).toString('hex')}`;
+
+    await ServiceCredential.create({
+      organizationId,
+      name: `ingest-agent (${account})`,
+      kind: 'ingest',
+      tokenPrefix: prefix,
+      tokenHash: hashToken(token),
+      allowedCidrs: [],
+    });
+
+    const job = await this.provision.queue({
+      organizationId: String(organizationId),
+      type: 'enableIngestAgent',
+      args: { account },
+      createdBy: actor.userId,
+    });
+
+    // The token is NOT put in the job arguments: those persist for 90 days and
+    // land in backups. It is parked as a one-read secret the agent collects when
+    // it runs the job, then discarded — the same mechanism the generated SFTP
+    // password uses, in the opposite direction.
+    await this.provision.parkSecretForAgent(job.id, token);
   }
 
   async list(organizationId: string) {

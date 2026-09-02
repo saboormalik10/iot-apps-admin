@@ -39,6 +39,10 @@ exports.KNOWN_JOB_TYPES = [
     'disableStationAccount',
     'createStationFolder',
     'reportStationUsage',
+    // Installs or removes a customer's own ingest agent. One agent per customer,
+    // because an ingest token is scoped to a single organisation.
+    'enableIngestAgent',
+    'disableIngestAgent',
 ];
 /**
  * Decide whether a job is safe to run, and normalise its arguments.

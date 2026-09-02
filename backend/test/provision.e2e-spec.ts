@@ -2,6 +2,7 @@ import 'dotenv/config';
 import mongoose, { Types } from 'mongoose';
 
 import { ProvisionService } from '../src/provision/provision.service';
+import { ServiceCredential } from '../src/models/ServiceCredential';
 import { ProvisioningJob } from '../src/models/ProvisioningJob';
 import { isValidAccountName, isValidFolderSegment } from '../src/provision/account-name';
 import { StationsService } from '../src/provision/stations.service';
@@ -222,6 +223,28 @@ describe('ProvisionService', () => {
 });
 
 describe('StationsService', () => {
+
+  /**
+   * Remove the throwaway customers these tests create.
+   *
+   * `claimNext` takes the oldest QUEUED job across every organisation, so a job
+   * left behind here is claimed by the ProvisionService tests on the next run —
+   * they clean only their own org. Leaving rows behind made unrelated tests fail
+   * on a later run, which is worse than failing honestly now.
+   */
+  afterAll(async () => {
+    const throwaway = await Organization.find({
+      slug: { $regex: /^(auto|once|scoped)-\d+$/ },
+    }).select('_id').lean();
+    const ids = throwaway.map((o) => o._id);
+    if (!ids.length) return;
+    await ProvisioningJob.deleteMany({ organizationId: { $in: ids } });
+    await ServiceCredential.deleteMany({ organizationId: { $in: ids } });
+    await StationAccount.deleteMany({ organizationId: { $in: ids } });
+    await Device.deleteMany({ organizationId: { $in: ids } });
+    await Organization.deleteMany({ _id: { $in: ids } });
+  });
+
   const provision = new ProvisionService();
   const stations = new StationsService(provision);
   const actor = { userId: new Types.ObjectId().toString(), email: 'ops@test.invalid' };
@@ -244,6 +267,75 @@ describe('StationsService', () => {
     await ProvisioningJob.deleteMany({ organizationId: oid });
     await Organization.deleteOne({ _id: oid });
     await mongoose.disconnect();
+  });
+
+  it('gives a NEW customer their own ingest agent and token', async () => {
+    /**
+     * An ingest token is scoped to one organisation: the server refuses a token
+     * uploading for a customer it does not belong to. Verified the hard way — a
+     * station created for a second customer had all ten test files rejected as
+     * UNKNOWN_STATION while the agent carried the first customer's token. So
+     * each customer needs their own agent instance and their own credential,
+     * and creating their first station has to arrange both.
+     */
+    const stamp = Date.now();
+    const org = await Organization.create({
+      name: `Auto ${stamp}`, slug: `auto-${stamp}`, timezone: 'UTC',
+      uploadFolder: `auto-${stamp}`, country: 'AU', contactEmail: `auto-${stamp}@test.invalid`,
+    });
+
+    const made = await stations.provisionStation(
+      { organizationId: String(org._id), towerName: 'Tower One' }, actor);
+
+    const cred = await ServiceCredential.findOne({
+      organizationId: org._id, kind: 'ingest', revokedAt: null }).lean();
+    expect(cred).toBeTruthy();
+    expect(cred!.name).toContain(made.account);
+    // Only the hash is kept — never the token itself.
+    expect(JSON.stringify(cred)).not.toContain('obsi_');
+
+    const job = await ProvisioningJob.findOne({
+      organizationId: org._id, type: 'enableIngestAgent' }).lean();
+    expect(job).toBeTruthy();
+    expect(job!.args.account).toBe(made.account);
+
+    // The token is parked for ONE read, not written into the job arguments,
+    // which persist for 90 days and reach every backup.
+    expect(JSON.stringify(job!.args)).not.toContain('obsi_');
+    const first = await provision.collectSecret(String(job!._id), String(org._id));
+    expect(first).toMatch(/^obsi_/);
+    expect(await provision.collectSecret(String(job!._id), String(org._id))).toBeNull();
+  });
+
+  it('does not issue a second agent for the same customer', async () => {
+    const stamp = Date.now();
+    const org = await Organization.create({
+      name: `Once ${stamp}`, slug: `once-${stamp}`, timezone: 'UTC',
+      uploadFolder: `once-${stamp}`, country: 'AU', contactEmail: `once-${stamp}@test.invalid`,
+    });
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'A' }, actor);
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'B' }, actor);
+
+    expect(await ServiceCredential.countDocuments({ organizationId: org._id, kind: 'ingest' })).toBe(1);
+    expect(await ProvisioningJob.countDocuments({ organizationId: org._id, type: 'enableIngestAgent' })).toBe(1);
+  });
+
+  it('refuses to hand one customer another customer\'s job secret', async () => {
+    // An agent credential is scoped to its own organisation. Without this check
+    // a valid agent could read any job's secret by guessing an id — including
+    // another customer's ingest token.
+    const stamp = Date.now();
+    const org = await Organization.create({
+      name: `Scoped ${stamp}`, slug: `scoped-${stamp}`, timezone: 'UTC',
+      uploadFolder: `scoped-${stamp}`, country: 'AU', contactEmail: `scoped-${stamp}@test.invalid`,
+    });
+    await stations.provisionStation({ organizationId: String(org._id), towerName: 'C' }, actor);
+    const job = await ProvisioningJob.findOne({ organizationId: org._id, type: 'enableIngestAgent' }).lean();
+
+    const otherOrg = new Types.ObjectId();
+    expect(await provision.collectSecret(String(job!._id), String(otherOrg))).toBeNull();
+    // Still collectable by the rightful owner.
+    expect(await provision.collectSecret(String(job!._id), String(org._id))).toMatch(/^obsi_/);
   });
 
   it('creates the mapping INACTIVE, so a half-finished provisioning is inert', async () => {

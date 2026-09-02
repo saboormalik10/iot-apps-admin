@@ -7,9 +7,27 @@
  * files silently not moving. So this fails fast at startup instead.
  */
 
+/**
+ * One customer's tree: their SFTP account and the four directories beneath it.
+ *
+ * The agent watches a LIST of these. It used to watch exactly one, which meant a
+ * second customer's files were never even looked at — their account and folders
+ * existed, the mapping was active, and nothing collected anything.
+ */
+export interface RootConfig {
+  account: string;
+  rootDir: string;
+  uploadDir: string;
+  stagingDir: string;
+  archiveDir: string;
+  quarantineDir: string;
+}
+
 export interface AgentConfig {
   apiBaseUrl: string;
   token: string;
+  /** Every customer tree this agent is responsible for. */
+  roots: RootConfig[];
   account: string;
   /** Root the station uploads into. Children of this are the working dirs. */
   rootDir: string;
@@ -91,6 +109,17 @@ export function loadConfig(argv: string[] = process.argv): AgentConfig {
     throw new Error(`OBSERVATOR_API_URL must be an absolute http(s) URL, got "${apiBaseUrl}"`);
   }
 
+  /**
+   * `OBSERVATOR_ROOTS` — comma-separated `account:/home/account` pairs.
+   *
+   * Explicit rather than globbing `/home/*`: an agent that discovers its own
+   * work would start ingesting from any directory that happened to appear,
+   * which on a box that also terminates untrusted SFTP logins is not a
+   * property worth having.
+   *
+   * Unset falls back to the single OBSERVATOR_ACCOUNT/OBSERVATOR_ROOT_DIR pair,
+   * so an existing deployment keeps working untouched.
+   */
   const account = required('OBSERVATOR_ACCOUNT');
   // Same charset the backend and the provisioning script enforce. Each layer
   // validates independently — any one of them can be bypassed on its own.
@@ -103,9 +132,32 @@ export function loadConfig(argv: string[] = process.argv): AgentConfig {
     throw new Error('OBSERVATOR_INGEST_TOKEN must be an ingest credential (obsi_…)');
   }
 
+  const dirsFor = (acct: string, dir: string): RootConfig => ({
+    account: acct,
+    rootDir: dir,
+    uploadDir: `${dir}/upload`,
+    stagingDir: `${dir}/staging`,
+    archiveDir: `${dir}/archive`,
+    quarantineDir: `${dir}/quarantine`,
+  });
+
+  const rootsRaw = (process.env.OBSERVATOR_ROOTS ?? '').trim();
+  const roots: RootConfig[] = rootsRaw
+    ? rootsRaw.split(',').map((pair) => {
+        const [acct, dir] = pair.split(':').map((x) => x.trim());
+        if (!acct || !dir) throw new Error(`OBSERVATOR_ROOTS entry must be "account:/path", got "${pair}"`);
+        if (!/^[a-z][a-z0-9_-]{2,31}$/.test(acct)) {
+          throw new Error(`OBSERVATOR_ROOTS account "${acct}" must match ^[a-z][a-z0-9_-]{2,31}$`);
+        }
+        if (!dir.startsWith('/')) throw new Error(`OBSERVATOR_ROOTS path must be absolute, got "${dir}"`);
+        return dirsFor(acct, dir);
+      })
+    : [dirsFor(account, root)];
+
   return {
     apiBaseUrl,
     token,
+    roots,
     account,
     rootDir: root,
     uploadDir: `${root}/upload`,

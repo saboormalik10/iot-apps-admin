@@ -57,6 +57,23 @@ export class ProvisionController {
   @ApiOkResponse({ description: 'The updated job' })
   @ApiErrors('badRequest', 'unauthorized', 'forbidden', 'notFound')
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Collect a job secret — machine, once',
+    description:
+      'Returns a secret the AGENT needs to carry out a job, such as the ingest token for `enableIngestAgent`. ' +
+      'Readable exactly once and expires regardless, so it is never stored on the job document where it would ' +
+      'persist for 90 days and reach every backup.',
+  })
+  @ApiOkResponse({ schema: { example: { data: { secret: 'obsi_…' } } } })
+  @ApiErrors('unauthorized', 'forbidden')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('jobs/:id/secret')
+  @HttpCode(200)
+  async jobSecret(@Param('id') id: string, @CurrentService() service: AuthenticatedService) {
+    const secret = await this.provisionService.collectSecret(id, String(service.organizationId));
+    return { data: { secret } };
+  }
+
   @Post('jobs/:id/result')
   @HttpCode(200)
   async report(@Param('id') id: string, @Body() body: JobResultDto, @CurrentService() service: AuthenticatedService) {

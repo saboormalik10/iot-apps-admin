@@ -1,0 +1,79 @@
+# Per-customer ingest agent — one instance per SFTP account.
+#
+#   systemctl enable --now observator-ingest@wx-acme.service
+#
+# One agent per customer because an ingest token is scoped to ONE organisation:
+# the server refuses a token uploading for a customer it does not belong to, so a
+# shared agent can only ever serve the org its token was minted for. Separate
+# instances also mean a compromised customer agent cannot touch another
+# customer's data — the credential and the process are both isolated.
+#
+# The environment file is written by the provisioning helper when a customer's
+# first station is created; it is 0600 root:root and holds that customer's token.
+#
+# Observator ingest agent.
+#
+# Hardened deliberately: this process runs on a box that also terminates an
+# untrusted SFTP login, so it gets the narrowest privileges that still let it
+# read the drop directory and move files between siblings.
+#
+# NOTE: NoNewPrivileges=yes here is what makes `sudo` impossible in this unit.
+# That is intentional — provisioning, which DOES need sudo, lives in its own
+# unit (observator-provision.service). The two must never be merged.
+#
+#   install:  cp observator-ingest.service /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now observator-ingest
+#   logs:     journalctl -u observator-ingest -f
+
+[Unit]
+Description=Observator ingest agent for %i
+Documentation=https://github.com/observator/iot-apps-admin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=obsingest
+Group=sftpusers
+WorkingDirectory=/opt/observator/ingest-agent
+ExecStart=/usr/bin/node /opt/observator/ingest-agent/dist/main.js
+
+# The credential lives here, not in the unit file — 0600 root:root, so it is not
+# readable by the station's own SFTP account.
+EnvironmentFile=/etc/observator-ingest-%i.env
+
+Restart=always
+RestartSec=10s
+# Give the current batch time to finish before SIGKILL.
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# MemoryDenyWriteExecute is deliberately NOT set. It forbids making memory pages
+# executable, and V8's JIT must do exactly that — with it on, node dies at
+# startup in SetPermissionsOnExecutableMemoryChunk with a SIGTRAP core dump,
+# before running a line of our code. Verified on the box (M24): the same binary
+# ran fine by hand and crashed instantly under systemd until this was removed.
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The only paths it may write: the station's working directories.
+ReadWritePaths=/home/%i
+
+# Bound the agent so it can never take the box — and sshd — down with it. The
+# instance is small (416 MB) and the process is a file mover, not a parser.
+MemoryMax=300M
+MemoryHigh=240M
+
+[Install]
+WantedBy=multi-user.target

@@ -201,6 +201,8 @@ export class ProvisionService {
         assertValidFolderSegment(folder);
         return { account, folder, ...link() };
       }
+      case 'enableIngestAgent':
+      case 'disableIngestAgent':
       case 'rotateStationPassword':
       case 'disableStationAccount':
       case 'reportStationUsage': {
@@ -227,6 +229,22 @@ export class ProvisionService {
    * — never the job document, which is readable for 90 days and shows up in
    * backups.
    */
+  /**
+   * Park a secret the AGENT will collect — the reverse of the password flow.
+   *
+   * `enableIngestAgent` has to get that customer's ingest token onto the box.
+   * Putting it in `job.args` would persist a live credential in a document that
+   * is readable for 90 days and lands in every backup. So it travels the same
+   * way a generated password does, just in the other direction: parked once,
+   * read once, then gone.
+   */
+  async parkSecretForAgent(jobId: string, secret: string): Promise<void> {
+    await ProvisioningJob.updateOne(
+      { _id: new Types.ObjectId(jobId) },
+      { $set: { secretOnce: secret, secretExpiresAt: new Date(Date.now() + SECRET_TTL_MS) } },
+    );
+  }
+
   /** The generated password, if the agent reported one. */
   private extractSecret(result: Record<string, unknown>): string | null {
     const v = result.password;
@@ -240,11 +258,26 @@ export class ProvisionService {
    * pressing the button at once would otherwise both be shown it, and "one read"
    * would be a claim rather than a guarantee.
    */
-  async collectSecret(jobId: string): Promise<string | null> {
+  async collectSecret(jobId: string, forOrganizationId?: string): Promise<string | null> {
     if (!Types.ObjectId.isValid(jobId)) return null;
 
+    // When an AGENT collects (rather than an operator), the job must belong to
+    // the organisation its credential is scoped to. Without this a valid agent
+    // token could read any job's secret by guessing an id — including another
+    // customer's ingest token, which would undo the whole point of one agent per
+    // customer.
+    const scope =
+      forOrganizationId && Types.ObjectId.isValid(forOrganizationId)
+        ? { organizationId: new Types.ObjectId(forOrganizationId) }
+        : {};
+
     const job = await ProvisioningJob.findOneAndUpdate(
-      { _id: new Types.ObjectId(jobId), secretOnce: { $ne: null }, secretExpiresAt: { $gt: new Date() } },
+      {
+        _id: new Types.ObjectId(jobId),
+        ...scope,
+        secretOnce: { $ne: null },
+        secretExpiresAt: { $gt: new Date() },
+      },
       { $set: { secretOnce: null, secretExpiresAt: null } },
       { new: false },
     );

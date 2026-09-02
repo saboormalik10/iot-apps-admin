@@ -23,6 +23,11 @@ set -euo pipefail
 # sshd_config, which is configured by hand at install time; if you change one,
 # change the other.
 GROUP="sftpusers"
+# Used when writing a customer's ingest env file. Constants here, not
+# environment variables: sudo's env_reset strips anything passed in, so a
+# setting would silently do nothing.
+API_URL="https://iot-apps-backend.vercel.app"
+FILE_PREFIXES="WindSonic_"
 ROOT="/home"
 
 die() { printf '%s\n' "$1" >&2; exit 1; }
@@ -85,17 +90,82 @@ case "$subcommand" in
     chown root:root "$home"
     chmod 755 "$home"
 
-    install -d -o "$account" -g "$account" -m 750 "$home/upload"
-    install -d -o "$account" -g "$account" -m 750 "$home/upload/$folder"
+    # GROUP-OWNED, not owned by the account alone.
+    #
+    # The customer owns these files, but the ingest agent has to read them and
+    # rename them out into staging. It runs as its own user in $GROUP, so a
+    # folder created `-g "$account" -m 750` locks it out completely: a properly
+    # provisioned customer could upload happily and nothing would ever collect
+    # the files. 2770 gives the group read AND write (a rename needs write on
+    # the directory), setgid keeps new tower folders in the same group, and
+    # `other` has nothing — so customers still cannot see each other.
+    install -d -o "$account" -g "$GROUP" -m 2770 "$home/upload"
+    install -d -o "$account" -g "$GROUP" -m 2770 "$home/upload/$folder"
+
+    # The ingest agent's working directories, created HERE because only root can
+    # write into the chroot home (it must stay root-owned or sshd refuses the
+    # session). The agent cannot make them itself and simply died with ENOENT on
+    # every poll for a newly provisioned customer.
+    #
+    # Group-owned so any $GROUP member — the agent — can move files between them.
+    for d in staging archive quarantine; do
+      install -d -o root -g "$GROUP" -m 2770 "$home/$d"
+    done
 
     printf '{"ok":true,"account":"%s","home":"%s","folder":"%s","password":"%s"}\n' \
       "$account" "$home" "$folder" "$password"
     ;;
 
+  enableIngestAgent)
+    # Install this customer's OWN ingest agent.
+    #
+    # An ingest token is scoped to one organisation — the server refuses a token
+    # uploading for a customer it does not belong to — so a shared agent cannot
+    # serve more than one customer. Each gets its own systemd instance and its
+    # own credential.
+    #
+    # The token arrives on STDIN, never as an argument: argv is world-readable
+    # through `ps`, and this box also terminates untrusted SFTP logins.
+    id -u "$account" >/dev/null 2>&1 || die "no such account"
+    read -r token || true
+    [ -n "${token:-}" ] || die "no ingest token supplied on stdin"
+    case "$token" in
+      obsi_*) : ;;
+      *) die "token is not an ingest credential" ;;
+    esac
+
+    envfile="/etc/observator-ingest-${account}.env"
+    umask 077
+    cat > "$envfile" <<ENVEOF
+OBSERVATOR_API_URL=${API_URL}
+OBSERVATOR_ACCOUNT=${account}
+OBSERVATOR_ROOT_DIR=/home/${account}
+OBSERVATOR_INGEST_TOKEN=${token}
+OBSERVATOR_FILE_PREFIXES=${FILE_PREFIXES}
+OBSERVATOR_MAX_FILES=20
+OBSERVATOR_TIMEOUT_MS=120000
+ENVEOF
+    chown root:root "$envfile"
+    chmod 0600 "$envfile"
+
+    systemctl enable --now "observator-ingest@${account}.service" >/dev/null 2>&1 \
+      || die "could not enable observator-ingest@${account}"
+
+    printf '{"ok":true,"account":"%s","service":"observator-ingest@%s"}\n' "$account" "$account"
+    ;;
+
+  disableIngestAgent)
+    id -u "$account" >/dev/null 2>&1 || die "no such account"
+    systemctl disable --now "observator-ingest@${account}.service" >/dev/null 2>&1 || true
+    # The credential file goes; the customer's FILES are never touched.
+    rm -f "/etc/observator-ingest-${account}.env"
+    printf '{"ok":true,"account":"%s","disabled":true}\n' "$account"
+    ;;
+
   createStationFolder)
     [ -n "$folder" ] || die "folder is required"
     id -u "$account" >/dev/null 2>&1 || die "no such account"
-    install -d -o "$account" -g "$account" -m 750 "$home/upload/$folder"
+    install -d -o "$account" -g "$GROUP" -m 2770 "$home/upload/$folder"
     printf '{"ok":true,"account":"%s","folder":"%s"}\n' "$account" "$folder"
     ;;
 

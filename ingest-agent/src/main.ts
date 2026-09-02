@@ -199,25 +199,40 @@ async function tick(cfg: AgentConfig, watcher: Watcher, uploader: Uploader): Pro
     }
   }
 
+  // Named, because the agent now watches several customers and "staging backlog
+  // is 900 files" is not actionable without knowing whose.
   const depth = await stagingDepth(cfg);
-  if (depth > STAGING_ALARM) log.error(`staging backlog is ${depth} files — ingestion is not keeping up`);
+  if (depth > STAGING_ALARM) {
+    log.error(`${cfg.account}: staging backlog is ${depth} files — ingestion is not keeping up`);
+  }
   const qDepth = await quarantineDepth(cfg);
-  if (qDepth > 0) log.warn(`${qDepth} file(s) in quarantine awaiting inspection`);
+  if (qDepth > 0) log.warn(`${cfg.account}: ${qDepth} file(s) in quarantine awaiting inspection`);
 }
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
   log.info(`observator-ingest-agent ${cfg.agentVersion}`);
-  log.info(`  account   ${cfg.account}`);
   log.info(`  api       ${cfg.apiBaseUrl}`);
-  log.info(`  watching  ${cfg.uploadDir}`);
+  for (const r of cfg.roots) log.info(`  watching  ${r.account} → ${r.uploadDir}`);
   if (cfg.dryRun) log.warn('  DRY RUN — nothing will be posted or moved');
 
-  await ensureDirs(cfg);
-  await assertWritable(cfg);
+  /**
+   * One view per customer.
+   *
+   * `Watcher` holds per-file state between polls (the stability gates), so each
+   * root needs its own — sharing one would let a file in one customer's tree
+   * satisfy a gate using another's history. `AgentConfig` is spread over the
+   * root's directories so everything downstream keeps taking a plain config.
+   */
+  const views = cfg.roots.map((r) => {
+    const view: AgentConfig = { ...cfg, ...r };
+    return { view, watcher: new Watcher(view), uploader: new Uploader(view) };
+  });
 
-  const watcher = new Watcher(cfg);
-  const uploader = new Uploader(cfg);
+  for (const { view } of views) {
+    await ensureDirs(view);
+    await assertWritable(view);
+  }
 
   const shutdown = (signal: string) => {
     log.info(`${signal} — finishing the current batch then exiting`);
@@ -226,15 +241,22 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
+  const tickAll = async () => {
+    for (const { view, watcher, uploader } of views) {
+      if (stopping) break;
+      await tick(view, watcher, uploader);
+    }
+  };
+
   if (cfg.once) {
-    await tick(cfg, watcher, uploader);
+    await tickAll();
     log.info('--once complete');
     return;
   }
 
   while (!stopping) {
     try {
-      await tick(cfg, watcher, uploader);
+      await tickAll();
     } catch (err) {
       consecutiveFailures++;
       log.error(`tick failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);

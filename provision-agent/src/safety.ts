@@ -41,6 +41,10 @@ export const KNOWN_JOB_TYPES = [
   'disableStationAccount',
   'createStationFolder',
   'reportStationUsage',
+  // Installs or removes a customer's own ingest agent. One agent per customer,
+  // because an ingest token is scoped to a single organisation.
+  'enableIngestAgent',
+  'disableIngestAgent',
 ] as const;
 
 export type JobType = (typeof KNOWN_JOB_TYPES)[number];

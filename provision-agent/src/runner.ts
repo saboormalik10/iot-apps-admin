@@ -8,6 +8,33 @@ import { log } from './log';
 
 const run = promisify(execFile);
 
+/**
+ * Run a command, optionally writing something to its stdin.
+ *
+ * `promisify(execFile)` has no `input` option — that belongs to the SYNCHRONOUS
+ * variant, and passing it there is silently ignored, which would have sent the
+ * helper an empty token and written an unusable env file. So the child's stdin
+ * is written explicitly here.
+ */
+function runWithInput(
+  cmd: string,
+  args: string[],
+  opts: { timeout: number; maxBuffer: number; env: NodeJS.ProcessEnv },
+  input: string,
+): Promise<{ stdout: string }> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(cmd, args, opts, (err, stdout, stderr) => {
+      if (err) {
+        Object.assign(err, { stderr });
+        reject(err);
+      } else {
+        resolve({ stdout: String(stdout) });
+      }
+    });
+    child.stdin?.end(input);
+  });
+}
+
 export interface RunOutcome {
   ok: boolean;
   result?: Record<string, unknown>;
@@ -69,9 +96,30 @@ export async function assertScriptSafe(cfg: AgentConfig): Promise<void> {
  * there is no shell to inject into. The job type maps to a subcommand the script
  * recognises; the agent never forwards a command of its own.
  */
-export async function runJob(cfg: AgentConfig, job: Accepted): Promise<RunOutcome> {
+export async function runJob(
+  cfg: AgentConfig,
+  job: Accepted,
+  jobId?: string,
+  fetchSecret?: (jobId: string) => Promise<string | null>,
+): Promise<RunOutcome> {
   const argv: string[] = [cfg.scriptPath, job.type, job.account];
   if (job.folder) argv.push(job.folder);
+
+  /**
+   * `enableIngestAgent` needs that customer's ingest token on the box.
+   *
+   * It is collected here and passed to the helper on STDIN — never as an
+   * argument. Arguments are visible to every user on the machine through `ps`,
+   * and this box also terminates untrusted SFTP logins, so an argv-borne
+   * credential would be readable by the very accounts it is meant to isolate.
+   */
+  let stdinSecret: string | undefined;
+  if (job.type === 'enableIngestAgent') {
+    if (!fetchSecret || !jobId) return { ok: false, error: 'no secret channel available for enableIngestAgent' };
+    const secret = await fetchSecret(jobId);
+    if (!secret) return { ok: false, error: 'ingest token unavailable (already collected or expired)' };
+    stdinSecret = secret;
+  }
 
   if (cfg.dryRun) {
     log.warn(`[dry-run] would run: sudo -n ${argv.join(' ')}`);
@@ -88,11 +136,15 @@ export async function runJob(cfg: AgentConfig, job: Accepted): Promise<RunOutcom
     // Those values now live in the root-owned script, which is the only place
     // they can be both trusted and effective. `PATH` is set for this process's
     // own lookup of `sudo`; sudo applies its own `secure_path` beyond that.
-    const { stdout } = await run('sudo', ['-n', ...argv], {
+    const opts = {
       timeout: 60_000,
       maxBuffer: 1024 * 256,
       env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin' },
-    });
+    };
+    const { stdout } =
+      stdinSecret !== undefined
+        ? await runWithInput('sudo', ['-n', ...argv], opts, `${stdinSecret}\n`)
+        : await run('sudo', ['-n', ...argv], opts);
 
     // The script prints one JSON object. Anything else is a bug in the script,
     // and guessing at unstructured output is how a failure gets read as success.

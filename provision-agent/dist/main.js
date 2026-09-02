@@ -60,7 +60,20 @@ async function tick(cfg) {
         await api(cfg, `/jobs/${job.id}/result`, { ok: false, error: `refused by agent: ${vetted.reason}` });
         return true;
     }
-    const outcome = await (0, runner_1.runJob)(cfg, vetted);
+    // `enableIngestAgent` needs that customer's ingest token. It is collected
+    // here — once, from the API — rather than carried in the job arguments, which
+    // persist for 90 days and reach every backup.
+    const fetchSecret = async (id) => {
+        try {
+            const res = (await api(cfg, `/jobs/${id}/secret`, {}));
+            return res?.data?.secret ?? null;
+        }
+        catch (err) {
+            log_1.log.error(`could not collect job secret: ${String(err)}`);
+            return null;
+        }
+    };
+    const outcome = await (0, runner_1.runJob)(cfg, vetted, job.id, fetchSecret);
     await api(cfg, `/jobs/${job.id}/result`, {
         ok: outcome.ok,
         result: outcome.result,
