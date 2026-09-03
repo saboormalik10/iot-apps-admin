@@ -1,7 +1,7 @@
 {
   "name": "observator-backend",
   "version": "1.0.0",
-  "description": "Observator Instruments \u2014 Cloud API Backend",
+  "description": "Observator Instruments — Cloud API Backend",
   "main": "dist/main.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
@@ -33,7 +33,9 @@
     "migrate:station-folder-key": "ts-node src/scripts/migrate-station-folder-key.ts",
     "migrate:ttl": "ts-node src/scripts/migrate-ttl-windows.ts",
     "migrate:role-scoping": "ts-node src/scripts/migrate-role-scoping.ts",
-    "migrate:redeploy-agents": "ts-node src/scripts/redeploy-ingest-agents.ts"
+    "migrate:redeploy-agents": "ts-node src/scripts/redeploy-ingest-agents.ts",
+    "verify:stats": "ts-node src/scripts/verify-stats.ts",
+    "verify:analytics": "ts-node src/scripts/verify-analytics.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

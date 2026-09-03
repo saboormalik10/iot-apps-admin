@@ -66,8 +66,9 @@ describe('CommandPalette (plan §13)', () => {
     renderPalette();
     await u.click(screen.getByRole('button', { name: /search devices, sessions and records/i }));
 
-    const devices = await screen.findByRole('option', { name: /devices/i });
-    await u.click(devices);
+    // Labelled "Stations" now — the route is unchanged, only the wording.
+    const stations = await screen.findByRole('option', { name: /stations/i });
+    await u.click(stations);
     expect(push).toHaveBeenCalledWith('/devices');
   });
 
@@ -82,7 +83,10 @@ describe('CommandPalette (plan §13)', () => {
     for (const option of screen.getAllByRole('option')) {
       expect(option.textContent).not.toMatch(/\bnav\./);
     }
-    expect(screen.getByRole('option', { name: 'Fleet map' })).toBeInTheDocument();
+    // A concrete resolved label, to prove the loop above is not vacuous on an
+    // empty list. "Fleet map" used to serve here; it is gated off now (the SFTP
+    // files carry no GPS), so "Stations" stands in.
+    expect(screen.getByRole('option', { name: 'Stations' })).toBeInTheDocument();
   });
 
   it('hides destinations the role has no capability for', async () => {

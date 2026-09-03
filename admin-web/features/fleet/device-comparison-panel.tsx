@@ -24,7 +24,7 @@ export function DeviceComparisonPanel() {
   const metDevices = useMemo(() => devices.filter((d) => d.type === 'MET-LINK'), [devices]);
 
   const [selected, setSelected] = useState<string[]>([]);
-  const [sensor, setSensor] = useState('temperature');
+  const [sensor, setSensor] = useState('wind_speed');
   const [interval, setInterval] = useState('1h');
 
   // Default to the first two MET devices once the list loads.
@@ -34,6 +34,45 @@ export function DeviceComparisonPanel() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metDevices.length]);
+
+  /**
+   * Offer only sensors at least one SELECTED device actually reports.
+   *
+   * The dropdown used to list every MET sensor unconditionally — 15 options on a
+   * wind-only station, 13 of which can never return anything — and defaulted to
+   * `temperature`, which this station has never sent, so the panel opened on
+   * "Loading comparison…" that never resolved.
+   *
+   * Union, not intersection, across the selected devices: comparing a wind-only
+   * station against a wind+temperature one should still offer temperature — the
+   * wind-only station's series is simply empty for it, which the chart already
+   * handles, rather than the picker hiding a sensor that's genuinely comparable
+   * for at least one of the lines on screen.
+   *
+   * `availableSensors` comes straight off `DashboardDevice` — the same list this
+   * component already fetched for the device-toggle row above, so this costs
+   * nothing extra. `null`/undefined (not yet ingested) fails OPEN, matching
+   * `useDeviceSensors`: a device with no opinion yet should not narrow the list
+   * for everyone else selected alongside it.
+   */
+  const availableSensorOptions = useMemo(() => {
+    const selectedDevices = metDevices.filter((d) => selected.includes(d._id));
+    if (selectedDevices.length === 0) return MET_SENSORS;
+    const known = selectedDevices.filter((d) => d.availableSensors?.length);
+    if (known.length === 0) return MET_SENSORS; // nobody has reported yet — fail open
+    const union = new Set(known.flatMap((d) => d.availableSensors ?? []));
+    return MET_SENSORS.filter((s) => union.has(s.key));
+  }, [metDevices, selected]);
+
+  // Fall back once the selection resolves to a set that doesn't include the
+  // current sensor — e.g. switching from an all-sensor station to a wind-only
+  // one. Mirrors the Statistics panel's fallback (M25).
+  useEffect(() => {
+    if (availableSensorOptions.length === 0) return;
+    if (!availableSensorOptions.some((s) => s.key === sensor)) {
+      setSensor(availableSensorOptions[0].key);
+    }
+  }, [availableSensorOptions, sensor]);
 
   const toggle = (id: string) =>
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length >= MAX_DEVICES ? cur : [...cur, id]));
@@ -80,7 +119,7 @@ export function DeviceComparisonPanel() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MET_SENSORS.map((s) => (
+              {availableSensorOptions.map((s) => (
                 <SelectItem key={s.key} value={s.key}>
                   {s.label}
                 </SelectItem>

@@ -58,10 +58,7 @@ export class DashboardController {
   @Get('met/latest')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('data:read')
-  async getMetLatest(
-    @Query('deviceId') deviceId: string,
-    @CurrentUser() user: JWTPayload,
-  ) {
+  async getMetLatest(@Query('deviceId') deviceId: string, @CurrentUser() user: JWTPayload) {
     return this.dashboardService.getMetLatest(user.organizationId, deviceId);
   }
 

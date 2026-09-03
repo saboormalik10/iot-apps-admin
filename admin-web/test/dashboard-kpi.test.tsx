@@ -19,11 +19,24 @@ describe('KpiRow (§10.8 summary enrichment)', () => {
 
     // Headline counts from the mocked /dashboard/summary.
     await waitFor(() => expect(screen.getByText('Devices')).toBeInTheDocument());
-    expect(screen.getByText('MET records')).toBeInTheDocument();
-    expect(screen.getByText('NEP sessions')).toBeInTheDocument();
+    // READINGS, not records. The old tile counted MetRecord documents, which are
+    // one per station per LOCAL DAY — so it showed a day count that moved once a
+    // day and looked frozen.
+    expect(screen.getByText('MET readings')).toBeInTheDocument();
+    expect(screen.queryByText('MET records')).toBeNull();
 
-    // §10.8 sparklines render as SVGs on the records/sessions tiles.
-    await waitFor(() => expect(document.querySelectorAll('svg').length).toBeGreaterThanOrEqual(2));
+    // §10.8 sparkline renders as an SVG on the readings tile.
+    await waitFor(() => expect(document.querySelectorAll('svg').length).toBeGreaterThanOrEqual(1));
+  });
+
+  // NEP is disabled (M15 W4), so both tiles could only ever show 0 — and a
+  // permanent zero reads as a fault rather than an absent feature.
+  it('omits the NEP tiles while NEP is disabled', async () => {
+    renderWithProviders(<KpiRow />);
+
+    await waitFor(() => expect(screen.getByText('Devices')).toBeInTheDocument());
+    expect(screen.queryByText('NEP sessions')).toBeNull();
+    expect(screen.queryByText('MET / NEP')).toBeNull();
   });
 
   // Alerts are switched off: nothing evaluates rules, so an "armed" count would

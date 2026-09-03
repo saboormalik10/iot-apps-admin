@@ -102,6 +102,14 @@ async function dailyCounts(
   orgId: Types.ObjectId,
   days: number,
   extraMatch: Record<string, unknown> = {},
+  /**
+   * Field to sum instead of counting documents.
+   *
+   * The MET sparkline sits under a tile that now shows READINGS, so counting
+   * day-records would draw a line in a different unit from the number above it —
+   * a spike of "7" beside a headline of "1,105,209".
+   */
+  sumField?: string,
 ): Promise<number[]> {
   const now = new Date();
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -118,7 +126,7 @@ async function dailyCounts(
     {
       $group: {
         _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
-        count: { $sum: 1 },
+        count: sumField ? { $sum: `$${sumField}` } : { $sum: 1 },
       },
     },
   ]);
@@ -203,10 +211,22 @@ export class DashboardService {
       Device.countDocuments({ ...devMatch, lastSeenAt: { $gte: new Date(Date.now() - ONLINE_THRESHOLD_MS) } }),
       countMet ? Device.countDocuments({ ...devMatch, type: 'MET-LINK' }) : Promise.resolve(0),
       countNep ? Device.countDocuments({ ...devMatch, type: 'NEP-LINK' }) : Promise.resolve(0),
-      countMet ? MetRecord.countDocuments({ organizationId: orgId, deletedAt: null, ...dataMatch }) : Promise.resolve(0),
+      // READINGS, not day-records.
+      //
+      // A MetRecord is one document per station per LOCAL DAY (M14), so counting
+      // them counts DAYS: the tile sat on "17" for a fortnight and moved once a
+      // day, which reads as a broken number rather than a slow one. `measureCount`
+      // is maintained on the record as rows are ingested, so summing 17 documents
+      // gives the reading count without touching the 1.1M measures themselves.
+      countMet
+        ? MetRecord.aggregate<{ readings: number; days: number }>([
+            { $match: { organizationId: orgId, deletedAt: null, ...dataMatch } },
+            { $group: { _id: null, readings: { $sum: '$measureCount' }, days: { $sum: 1 } } },
+          ]).then((r) => r[0] ?? { readings: 0, days: 0 })
+        : Promise.resolve({ readings: 0, days: 0 }),
       countNep ? NepSession.countDocuments({ organizationId: orgId, deletedAt: null, ...dataMatch }) : Promise.resolve(0),
       AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
-      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, dataMatch) : zeros(),
+      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, dataMatch, 'measureCount') : zeros(),
       countNep ? dailyCounts(NepSession, orgId, SPARKLINE_DAYS, dataMatch) : zeros(),
     ]);
 
@@ -216,7 +236,11 @@ export class DashboardService {
       offlineDevices: totalDevices - onlineDevices,
       metLinkDevices: metDevices,
       nepLinkDevices: nepDevices,
-      totalMetRecords: totalRecords,
+      // Kept under its old name for the existing consumers; it is now the reading
+      // count. `totalMetDays` carries what the tile used to show, for anyone who
+      // actually wanted "how many days of data do we hold".
+      totalMetRecords: totalRecords.readings,
+      totalMetDays: totalRecords.days,
       totalNepSessions: totalSessions,
       // §10.8 enrichment — armed alert rules + last-14-day daily-count sparklines
       activeAlertRules,

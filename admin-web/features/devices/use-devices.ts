@@ -15,6 +15,8 @@ import {
   getFirmwareTargets,
   setFirmwareTarget,
   getFirmwareStatus,
+  listPlatformDevices,
+  listDeviceCustomers,
   type DevicesQuery,
 } from '@/lib/api/endpoints';
 import type { DeviceType, FirmwareTarget } from '@/lib/api/types';
@@ -102,5 +104,33 @@ export function useSetFirmwareTarget() {
       qc.invalidateQueries({ queryKey: ['devices', 'firmware-status'] });
       qc.invalidateQueries({ queryKey: ['audit'] });
     },
+  });
+}
+
+/**
+ * The stations list, widened across customers for a platform administrator.
+ *
+ * `enabled` is the caller's decision rather than this hook's: only a super admin
+ * who is NOT switched into a customer should see every tenant's stations. Once
+ * switched they are acting AS that customer, and the ordinary tenant-scoped list
+ * is the correct answer.
+ */
+export function usePlatformDevices(
+  params: { organizationId?: string; type?: string; page?: number },
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.platformDevices(params),
+    queryFn: ({ signal }) => listPlatformDevices(params, signal),
+    enabled,
+  });
+}
+
+/** Customers that own at least one station — the filter's options. */
+export function useDeviceCustomers(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.deviceCustomers,
+    queryFn: ({ signal }) => listDeviceCustomers(signal),
+    enabled,
   });
 }

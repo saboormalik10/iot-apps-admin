@@ -5,6 +5,7 @@ import {
   getSummary,
   getDashboardDevices,
   getMetLatest,
+  getMetRangeSummary,
   getMetWindrose,
   getMetHistory,
   getMetHistoryMulti,
@@ -45,11 +46,32 @@ export function useDashboardDevices() {
 }
 
 export function useMetLatest(deviceId?: string) {
-  const { scope } = useScope();
   return useQuery({
     queryKey: [...queryKeys.metLatest(deviceId ?? '')] as const,
     queryFn: ({ signal }) => getMetLatest(deviceId!, signal),
     enabled: Boolean(deviceId),
+  });
+}
+
+/**
+ * min / mean / max for a sensor across the scope-bar window.
+ *
+ * This is what makes the date filter visible on the live panel. The panel itself
+ * shows one moment — a dial points one way — so the range can only change it when
+ * the station has been quiet. These three numbers describe the whole window, and
+ * they move on every preset.
+ *
+ * Uses the same memoised, minute-quantised window as `useMetLatest`, for the same
+ * reason: an inline `Date.now()` in the key refetches forever.
+ */
+export function useMetRangeSummary(deviceId?: string, sensor = 'wind_speed', enabled = true) {
+  const { window } = useScope();
+  const from = window.from ?? 0;
+  const to = window.to;
+  return useQuery({
+    queryKey: [...queryKeys.metRangeSummary(deviceId ?? '', sensor, `${from}-${to}`)] as const,
+    queryFn: ({ signal }) => getMetRangeSummary({ deviceId: deviceId!, sensor, from, to }, signal),
+    enabled: Boolean(deviceId) && enabled,
   });
 }
 

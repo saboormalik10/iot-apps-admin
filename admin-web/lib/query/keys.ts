@@ -24,6 +24,8 @@ export const queryKeys = {
   // ── Dashboard (Month 8) ──
   summary: ['dashboard', 'summary'] as const,
   dashboardDevices: ['dashboard', 'devices'] as const,
+  metRangeSummary: (deviceId: string, sensor: string, window: string) =>
+    ['dashboard', 'met', 'range-summary', deviceId, sensor, window] as const,
   metLatest: (deviceId: string) => ['dashboard', 'met', 'latest', deviceId] as const,
   metWindrose: (deviceId: string) => ['dashboard', 'met', 'windrose', deviceId] as const,
   metHistory: (deviceId: string, sensor: string, from: number, to: number) =>
@@ -93,6 +95,8 @@ export const queryKeys = {
 
   // ── Devices (Month 8) ──
   devices: (q: DevicesQuery) => ['devices', q] as const,
+  platformDevices: (q: Record<string, unknown>) => ['platform', 'devices', q] as const,
+  deviceCustomers: ['platform', 'device-customers'] as const,
   roles: ['roles'] as const,
   organizations: ['organizations'] as const,
   branding: ['branding'] as const,

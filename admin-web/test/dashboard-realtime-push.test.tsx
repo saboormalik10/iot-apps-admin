@@ -20,6 +20,16 @@ import type { MetLatestPayload } from '@/lib/realtime/events';
  *   - it does not seed a partial object before the first fetch.
  */
 
+// The hook reads the scope-bar window to decide whether a pushed reading belongs
+// in the SCOPED cache entry as well as the live one, so next/navigation has to be
+// mocked the way `scope-window-stability.test.ts` does it.
+const searchParams = new URLSearchParams();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: () => {}, push: () => {} }),
+  usePathname: () => '/',
+  useSearchParams: () => searchParams,
+}));
+
 // One shared handler registry so the test can fire events at the hook.
 const handlers = new Map<string, (p: unknown) => void>();
 vi.mock('@/lib/realtime/hooks', () => ({
@@ -57,7 +67,10 @@ function setup() {
 const fire = (p: unknown) => handlers.get('met:latest')?.(p);
 
 describe('met:latest push', () => {
-  beforeEach(() => handlers.clear());
+  beforeEach(() => {
+    handlers.clear();
+    searchParams.forEach((_v, k) => searchParams.delete(k));
+  });
 
   it('applies the pushed reading to the cache without a refetch', () => {
     const qc = setup();
@@ -120,5 +133,77 @@ describe('met:latest push', () => {
     const next = qc.getQueryData<Record<string, unknown>>(queryKeys.metLatest(DEVICE));
     expect(next?.windSpeedKmh).toBe(1.8);
     expect(next?.deviceName).toBe('x');
+  });
+});
+
+/**
+ * M25 — a pushed reading raises the range summary's MAX in place.
+ *
+ * The summary spans hours or days, so refetching it on every reading would be a
+ * round trip per reading and the mean would not visibly move for any of them. The
+ * maximum is the exception: a new peak is the number being watched, so it is
+ * patched immediately and the rest waits for the next natural refetch.
+ */
+describe('met:latest push — range summary', () => {
+  beforeEach(() => {
+    handlers.clear();
+    searchParams.forEach((_v, k) => searchParams.delete(k));
+  });
+
+  const summaryKey = (fromMs: number, toMs: number) =>
+    queryKeys.metRangeSummary(DEVICE, 'wind_speed', `${fromMs}-${toMs}`);
+
+  // Derived exactly as `useScope` does: `to` is the minute bucket, `from` is that
+  // minus the preset span. Re-inventing it here would test a window the app never
+  // actually uses.
+  const currentWindow = (spanMs: number) => {
+    const to = Math.floor(Date.now() / 60_000) * 60_000;
+    return [to - spanMs, to] as const;
+  };
+
+  it('raises the max when a reading beats it', () => {
+    searchParams.set('range', '24h');
+    const qc = setup();
+    const [from, to] = currentWindow(86_400_000);
+    qc.setQueryData(summaryKey(from, to), { sensor: 'wind_speed', unit: 'm/s', count: 100, min: null, mean: 1, max: 2, basis: 'measures' });
+
+    fire({ ...payload, measuredAtMs: Date.now() - 5_000, windSpeedMs: 7.5 });
+
+    expect(qc.getQueryData<Record<string, unknown>>(summaryKey(from, to))?.max).toBe(7.5);
+  });
+
+  it('leaves the max alone when the reading does not beat it', () => {
+    searchParams.set('range', '24h');
+    const qc = setup();
+    const [from, to] = currentWindow(86_400_000);
+    qc.setQueryData(summaryKey(from, to), { sensor: 'wind_speed', unit: 'm/s', count: 100, min: null, mean: 1, max: 9, basis: 'measures' });
+
+    fire({ ...payload, measuredAtMs: Date.now() - 5_000, windSpeedMs: 2.5 });
+
+    // A maximum is monotonic within its window — a quiet second must not lower it.
+    expect(qc.getQueryData<Record<string, unknown>>(summaryKey(from, to))?.max).toBe(9);
+  });
+
+  it('ignores a reading that falls outside the window', () => {
+    searchParams.set('range', '1h');
+    const qc = setup();
+    const [from, to] = currentWindow(3_600_000);
+    qc.setQueryData(summaryKey(from, to), { sensor: 'wind_speed', unit: 'm/s', count: 10, min: null, mean: 1, max: 2, basis: 'measures' });
+
+    // `payload` is dated 2026-08-25 — nowhere near a one-hour window. Patching it
+    // in would put a reading from another week into this window's maximum.
+    fire({ ...payload, windSpeedMs: 99 });
+
+    expect(qc.getQueryData<Record<string, unknown>>(summaryKey(from, to))?.max).toBe(2);
+  });
+
+  it('does not seed a summary that has not been fetched', () => {
+    searchParams.set('range', '24h');
+    const qc = setup();
+    const [from, to] = currentWindow(86_400_000);
+
+    fire({ ...payload, measuredAtMs: Date.now(), windSpeedMs: 7.5 });
+
+    expect(qc.getQueryData(summaryKey(from, to))).toBeUndefined();
   });
 });

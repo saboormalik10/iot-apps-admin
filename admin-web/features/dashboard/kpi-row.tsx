@@ -1,6 +1,6 @@
 'use client';
 
-import { Cpu, Wifi, WifiOff, FileText, Waves } from 'lucide-react'; // BellRing ← armed-alerts tile disabled
+import { Cpu, Wifi, WifiOff, FileText } from 'lucide-react'; // BellRing, Waves ← disabled tiles
 import { StatTile } from '@/components/charts/stat-tile';
 
 import { fmt } from '@/components/charts/chart-utils';
@@ -18,7 +18,6 @@ export function KpiRow() {
   const { data, isLoading, isError } = useSummary();
   const effectiveType = useEffectiveDeviceType();
   const showMet = !effectiveType || effectiveType === 'MET-LINK';
-  const showNep = !effectiveType || effectiveType === 'NEP-LINK';
 
   if (isLoading) return <KpiSkeleton />;
   if (isError || !data) return null;
@@ -34,13 +33,27 @@ export function KpiRow() {
       />
       {showMet ? (
         <StatTile
-          label="MET records"
+          /*
+           * READINGS, not records.
+           *
+           * A MetRecord is one document per station per LOCAL DAY, so the old
+           * "MET records" tile counted days — it sat on 17 for a fortnight and
+           * moved once a day, which reads as a broken number. The server now sums
+           * `measureCount`, and the sparkline sums it per day so the trend line is
+           * in the same unit as the headline.
+           */
+          label="MET readings"
           value={fmt(data.totalMetRecords, 0)}
+          sub={data.totalMetDays ? `over ${fmt(data.totalMetDays, 0)} days` : undefined}
           icon={<FileText className="h-4 w-4" />}
           spark={data.sparklines?.records}
           sparkRole="chart-2"
         />
       ) : null}
+      {/* NEP sessions tile removed from the dashboard. NEP is disabled (M15 W4),
+          so this tile only ever showed 0 — a permanent zero reads as a fault
+          rather than as an absent feature. The server still returns
+          `totalNepSessions`; restore this block if NEP comes back.
       {showNep ? (
         <StatTile
           label="NEP sessions"
@@ -49,7 +62,7 @@ export function KpiRow() {
           spark={data.sparklines?.sessions}
           sparkRole="chart-1"
         />
-      ) : null}
+      ) : null} */}
       {/* Armed-alerts tile removed with the alerts section. The backend still
           returns `activeAlertRules` (a count of previously configured rules),
           but nothing evaluates them, so the number would be misleading.
@@ -60,9 +73,10 @@ export function KpiRow() {
         icon={<BellRing className="h-4 w-4" />}
         href="/alerts"
       /> */}
+      {/* MET / NEP split removed with the NEP tile above — half of it is always 0.
       {!effectiveType ? (
         <StatTile label="MET / NEP" value={`${fmt(data.metLinkDevices, 0)} / ${fmt(data.nepLinkDevices, 0)}`} />
-      ) : null}
+      ) : null} */}
     </div>
   );
 }

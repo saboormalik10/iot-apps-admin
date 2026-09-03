@@ -59,12 +59,24 @@ export function FleetHealthTable() {
       },
       {
         header: 'Data',
-        cell: ({ row }) =>
-          row.original.type === 'NEP-LINK'
-            ? `${row.original.totalSessions.toLocaleString()} sessions`
-            : `${row.original.totalRecords.toLocaleString()} records`,
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.type === 'NEP-LINK') return `${r.totalSessions.toLocaleString()} sessions`;
+          // Readings, with the day span as context — "1,121,112 readings" alone
+          // doesn't say whether that's a busy hour or two weeks; "over 18 days"
+          // does, without implying the record count IS the reading count.
+          return (
+            <span>
+              {r.totalRecords.toLocaleString()} readings
+              {r.totalDays ? <span className="text-muted-foreground"> · {r.totalDays}d</span> : null}
+            </span>
+          );
+        },
       },
-      { header: 'Storage', cell: ({ row }) => `${fmt(row.original.storageEstimateMb, 1)} MB` },
+      {
+        header: 'Storage',
+        cell: ({ row }) => `${fmt(row.original.storageEstimateMb, 1)} MB`,
+      },
       { header: 'Age', cell: ({ row }) => (row.original.daysSinceFirst != null ? `${fmt(row.original.daysSinceFirst, 0)}d` : '—') },
       { header: 'Last seen', cell: ({ row }) => <span className="text-xs text-muted-foreground">{relTime(row.original.lastSeenAt)}</span> },
     ],

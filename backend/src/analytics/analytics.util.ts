@@ -379,3 +379,22 @@ function fromCelsius(c: number, unit: string): number | null {
   if (unit === 'k') return c + 273.15;
   return null;
 }
+
+/**
+ * Which `MetDailySummary` fields answer min / mean / max for a sensor.
+ *
+ * Only the sensors the daily rollup actually summarises appear here; anything
+ * absent falls back to aggregating raw measures whatever the window length.
+ *
+ * `min` is deliberately missing for wind, precipitation rate and solar: the rollup
+ * does not store one, because the minimum of all three is zero in essentially any
+ * window. `windCalmPct` is the useful figure there instead.
+ */
+export const MET_ROLLUP_FIELD: Record<string, { min?: string; mean: string; max: string }> = {
+  wind_speed: { mean: 'windSpeedAvgMs', max: 'windSpeedMaxMs' },
+  temperature: { min: 'tempMinC', mean: 'tempAvgC', max: 'tempMaxC' },
+  humidity: { min: 'humidityMinPct', mean: 'humidityAvgPct', max: 'humidityMaxPct' },
+  pressure: { min: 'pressureMinHpa', mean: 'pressureAvgHpa', max: 'pressureMaxHpa' },
+  precip_rate: { mean: 'precipRateAvgMmHr', max: 'precipRateMaxMmHr' },
+  solar: { mean: 'solarAvgWm2', max: 'solarMaxWm2' },
+};

@@ -2,17 +2,18 @@ import { http } from './http';
 import { uploadWithProgress } from './upload';
 import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
-  RoleRow,
-  PermissionGroup,
-  RoleUsage,
-  RoleInput,
   AlertRule,
   AppNotification,
   AuditEntry,
+  Branding,
+  BrandingInput,
+  CreateCustomerInput,
+  CreatedCustomer,
   DashboardDevice,
   DashboardLayout,
   DashboardSummary,
   Device,
+  DeviceCustomer,
   DeviceHealth,
   DeviceSettings,
   DeviceStats,
@@ -21,7 +22,9 @@ import type {
   FirmwareStatus,
   FirmwareStatusRow,
   FirmwareTarget,
+  FleetHealthRow,
   FleetMapPoint,
+  ImportDryRun,
   ImportSummary,
   MetComfort,
   MetDailySummary,
@@ -32,17 +35,18 @@ import type {
   MetMeasureRow,
   MetMultiSensor,
   MetPressureTendency,
+  MetRangeSummary,
   MetRecordRow,
   MetStatistics,
   MetWindGust,
   MetWindRoseAgg,
   MetWindrose,
   MobileUser,
-  NepLatest,
   NepCorrelation,
   NepCrossSessionTrend,
   NepDailySummary,
   NepGpsDensity,
+  NepLatest,
   NepMap,
   NepProbeBreakdown,
   NepSampleRow,
@@ -52,30 +56,29 @@ import type {
   NepTurbidityDistribution,
   NepWaterQuality,
   OrgDeviceComparison,
-  FleetHealthRow,
-  Organization,
   OrgUser,
+  Organization,
+  OrganizationSummary,
+  PermissionGroup,
+  PlatformDevice,
+  PlatformOverview,
+  PlatformStation,
   Profile,
+  ProvisionStationInput,
+  ProvisionedStation,
   PublicSnapshot,
   PushToken,
   Role,
+  RoleInput,
+  RoleRow,
+  RoleUsage,
   SessionFile,
   SessionUser,
-  OrganizationSummary,
-  PlatformOverview,
-  CreateCustomerInput,
-  CreatedCustomer,
-  PlatformStation,
-  ProvisionStationInput,
-  ProvisionedStation,
-  StreamTypeRow,
-  StreamPreview,
-  ImportDryRun,
-  Branding,
-  BrandingInput,
   ShareLink,
   ShareResourceType,
   ShareTokenRow,
+  StreamPreview,
+  StreamTypeRow,
 } from './types';
 import type {
   AlertRuleInput,
@@ -191,6 +194,41 @@ export const getDashboardDevices = (signal?: AbortSignal) =>
   http.get<DashboardDevice[]>(`/dashboard/devices`, signal);
 export const getMetLatest = (deviceId: string, signal?: AbortSignal) =>
   http.get<MetLatest | null>(`/dashboard/met/latest?deviceId=${deviceId}`, signal);
+/**
+ * Every station across every customer — platform administrators only.
+ *
+ * `listDevices` stays scoped to one organisation. This is the deliberate,
+ * separately-guarded way to read across tenants.
+ */
+export const listPlatformDevices = async (
+  params: { organizationId?: string; type?: string; page?: number; limit?: number },
+  signal?: AbortSignal,
+): Promise<Page<PlatformDevice>> => {
+  const qs = new URLSearchParams();
+  if (params.organizationId) qs.set('organizationId', params.organizationId);
+  if (params.type) qs.set('type', params.type);
+  qs.set('page', String(params.page ?? 1));
+  qs.set('limit', String(params.limit ?? 20));
+  const body = await http.getRaw<{
+    data: PlatformDevice[];
+    meta: { page: number; limit: number; total: number; pages: number };
+  }>(`/platform/devices?${qs.toString()}`, signal);
+  const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };
+  return { rows: body.data ?? [], page: m.page, limit: m.limit, total: m.total, pageCount: m.pages };
+};
+
+export const listDeviceCustomers = (signal?: AbortSignal) =>
+  http.get<DeviceCustomer[]>('/platform/device-customers', signal);
+
+export const getMetRangeSummary = (
+  params: { deviceId: string; sensor: string; from: number; to: number },
+  signal?: AbortSignal,
+) =>
+  http.get<MetRangeSummary>(
+    `/analytics/met/range-summary?deviceId=${params.deviceId}&sensor=${params.sensor}` +
+      `&from=${params.from}&to=${params.to}`,
+    signal,
+  );
 export const getMetWindrose = (deviceId: string, signal?: AbortSignal) =>
   http.get<MetWindrose>(`/dashboard/met/windrose?deviceId=${deviceId}`, signal);
 export const getMetHistory = (

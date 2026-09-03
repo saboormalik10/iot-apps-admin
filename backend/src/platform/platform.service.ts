@@ -74,6 +74,77 @@ export interface PlatformOverview {
  */
 @Injectable()
 export class PlatformService {
+  /**
+   * Every station across every customer, with the customer's name on each row.
+   *
+   * WHY THIS IS NOT A WIDENED `GET /devices`
+   * That endpoint is hard-scoped to one organisation, and it should stay that way:
+   * widening a tenant-scoped list on a role check is precisely the change that
+   * turns into a cross-tenant leak the first time the check is wrong. Cross-customer
+   * reads live behind `SuperAdminGuard` on this controller instead, so "what spans
+   * customers?" stays answerable by grepping one symbol (M19 W3).
+   *
+   * The organisation names are resolved with ONE query and joined in memory: a
+   * populate per row would be a round trip per station.
+   */
+  async devices(opts: {
+    organizationId?: string;
+    type?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    data: Array<Record<string, unknown> & { organizationName: string; isOnline: boolean }>;
+    meta: { page: number; limit: number; total: number; pages: number };
+  }> {
+    const page = Math.max(1, opts.page ?? 1);
+    const limit = Math.min(100, Math.max(1, opts.limit ?? 20));
+
+    const query: Record<string, unknown> = { deletedAt: null };
+    if (opts.organizationId && Types.ObjectId.isValid(opts.organizationId)) {
+      query.organizationId = new Types.ObjectId(opts.organizationId);
+    }
+    if (opts.type) query.type = opts.type;
+
+    const [items, total, orgs] = await Promise.all([
+      Device.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Device.countDocuments(query),
+      Organization.find({}).select('name').lean(),
+    ]);
+
+    const nameById = new Map(orgs.map((o) => [String(o._id), o.name]));
+    const ONLINE_MS = 5 * 60 * 1000;
+
+    return {
+      data: items.map((d) => ({
+        ...d,
+        organizationName: nameById.get(String(d.organizationId)) ?? 'Unknown customer',
+        // Same rule as every other surface: seen in the last 5 minutes, not the
+        // sticky `isOnline` flag, which is never reset.
+        isOnline: d.lastSeenAt ? Date.now() - new Date(d.lastSeenAt).getTime() < ONLINE_MS : false,
+      })),
+      meta: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * The customers that own at least one station — the options for the filter.
+   *
+   * Deliberately not "every organisation": a filter listing customers with nothing
+   * to show is a list of dead ends.
+   */
+  async deviceCustomers() {
+    const ids = await Device.distinct('organizationId', { deletedAt: null });
+    const orgs = await Organization.find({ _id: { $in: ids } })
+      .select('name')
+      .sort({ name: 1 })
+      .lean();
+    return orgs.map((o) => ({ _id: String(o._id), name: o.name }));
+  }
+
   async overview(): Promise<PlatformOverview> {
     const now = Date.now();
     const since = now - 24 * 60 * 60 * 1000;

@@ -1,5 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { PlatformService } from './platform.service';
 import { OpsHealthService } from './ops-health.service';
@@ -52,6 +60,46 @@ export class PlatformController {
     private readonly platformService: PlatformService,
     private readonly opsHealth: OpsHealthService,
   ) {}
+
+  @ApiOperation({
+    summary: 'Every station across every customer (platform administrator only)',
+    description:
+      'The stations list widened across tenants, each row carrying the customer that owns it. ' +
+      '`GET /devices` stays scoped to one organisation deliberately — cross-customer reads live here, ' +
+      'behind SuperAdminGuard, so the tenancy boundary is greppable rather than conditional.',
+  })
+  @ApiQuery({ name: 'organizationId', required: false, description: 'Filter to one customer' })
+  @ApiQuery({ name: 'type', required: false, description: 'MET-LINK | NEP-LINK' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false, description: 'Max 100' })
+  @ApiOkResponse({ description: 'Stations with their owning customer' })
+  @ApiErrors('unauthorized', 'forbidden')
+  @Get('devices')
+  async devices(
+    @Query('organizationId') organizationId?: string,
+    @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.platformService.devices({
+      organizationId,
+      type,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @ApiOperation({
+    summary: 'Customers that own at least one station — the filter options',
+    description:
+      'Only customers with stations. A filter listing customers with nothing behind them is a list of dead ends.',
+  })
+  @ApiOkResponse({ description: 'Customers, alphabetical' })
+  @ApiErrors('unauthorized', 'forbidden')
+  @Get('device-customers')
+  async deviceCustomers() {
+    return { data: await this.platformService.deviceCustomers() };
+  }
 
   @ApiOperation({
     summary: 'Cross-customer overview (platform administrator only)',

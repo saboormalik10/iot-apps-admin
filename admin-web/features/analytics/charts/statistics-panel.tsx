@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatTile } from '@/components/charts/stat-tile';
 import { BeaufortScale } from '@/components/charts/beaufort-scale';
@@ -16,7 +16,16 @@ import { useMetStatistics } from '../use-analytics';
  */
 export function StatisticsPanel({ deviceId }: { deviceId?: string }) {
   const sensors = useDeviceSensors(deviceId);
-  const [sensor, setSensor] = useState('temperature');
+  /**
+   * Wind speed by default.
+   *
+   * This opened on `temperature`, which the WindSonic stations do not report —
+   * so the panel loaded empty, on a sensor that is not even in its own dropdown,
+   * and every visitor had to change it before seeing anything. Wind is the
+   * station's primary measurement and the one the rest of the screen is built
+   * around.
+   */
+  const [sensor, setSensor] = useState('wind_speed');
   const { data, isLoading } = useMetStatistics(deviceId, sensor);
   const unit = sensorUnit(sensor);
   const withUnit = (v?: number | null) => (v == null ? '—' : `${fmt(v, 2)} ${unit}`);
@@ -24,6 +33,21 @@ export function StatisticsPanel({ deviceId }: { deviceId?: string }) {
   // Offer only the sensors this station reports. A wind-only device otherwise
   // lists 15 options, 13 of which return an empty chart.
   const availableSensorOptions = MET_SENSORS.filter((option) => sensors.has(option.key));
+
+  /**
+   * Fall back once the device's sensor list resolves.
+   *
+   * A station that reports no wind — a future water-quality or air-quality
+   * stream — would otherwise sit on a default it does not have, showing the same
+   * empty panel this change exists to remove. Only runs once the list is known,
+   * because `sensors.has()` fails open and would otherwise reject nothing.
+   */
+  useEffect(() => {
+    if (!sensors.resolved || availableSensorOptions.length === 0) return;
+    if (!availableSensorOptions.some((o) => o.key === sensor)) {
+      setSensor(availableSensorOptions[0].key);
+    }
+  }, [sensors.resolved, availableSensorOptions, sensor]);
 
   return (
     <section className="space-y-3">

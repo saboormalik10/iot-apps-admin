@@ -73,6 +73,28 @@ export class AnalyticsController {
     });
   }
 
+  @ApiOperation({
+    summary: 'MET min / mean / max for a sensor over a window',
+    description:
+      'Three numbers and a count, computed in the database. This is what the dashboard renders beside ' +
+      'the live reading so the date filter visibly changes something — `met/statistics` answers a much ' +
+      'larger question and ships every raw value to do it.',
+  })
+  @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId' })
+  @ApiQuery({ name: 'sensor', required: true, description: VALID_MET_SENSORS })
+  @ApiQuery({ name: 'from', required: false, description: 'Window start (Unix ms). Omit for no lower bound.' })
+  @ApiQuery({ name: 'to', required: false, description: 'Window end (Unix ms, default now)' })
+  @Get('met/range-summary')
+  metRangeSummary(
+    @Query('deviceId') deviceId: string,
+    @Query('sensor') sensor: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    return this.analytics.metRangeSummary(user.organizationId, deviceId, sensor, from, to);
+  }
+
   @ApiOperation({ summary: 'MET full statistical profile for a sensor (+ Beaufort for wind_speed)' })
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId (from POST /v1/devices)' })
   @ApiQuery({ name: 'sensor', required: true, description: VALID_MET_SENSORS })

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSocketEvent } from '@/lib/realtime/hooks';
+import { useDeviceSubscription, useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent, type MetLatestPayload } from '@/lib/realtime/events';
-import type { MetLatest } from '@/lib/api/types';
+import type { MetLatest, MetRangeSummary } from '@/lib/api/types';
 import { queryKeys } from '@/lib/query/keys';
+import { useScope } from '@/lib/hooks/use-scope';
 
 /**
  * Wires the dashboard's live surfaces to socket events (plan §3.2).
@@ -22,6 +23,22 @@ import { queryKeys } from '@/lib/query/keys';
  */
 export function useDashboardRealtime(deviceIds: { met?: string; nep?: string }) {
   const qc = useQueryClient();
+  const { window } = useScope();
+
+  /**
+   * Join the device rooms.
+   *
+   * `met:latest` is emitted with `server.to(roomForDevice(deviceId))`, so a client
+   * that never sends `subscribe:device` is not in the room and receives NOTHING.
+   * The dashboard mounted this hook and registered handlers but never subscribed,
+   * so every listener below was dead on this page — the panel only ever changed on
+   * a refetch or a remount, which is precisely why the live values looked stuck.
+   *
+   * The device-detail screen has always subscribed, which is why the push worked
+   * there and hid the gap here.
+   */
+  useDeviceSubscription(deviceIds.met);
+  useDeviceSubscription(deviceIds.nep);
   const windroseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useSocketEvent<MetLatestPayload>(ClientEvent.MET_LATEST, (payload) => {
@@ -30,15 +47,50 @@ export function useDashboardRealtime(deviceIds: { met?: string; nep?: string }) 
       // something to merge INTO: seeding a partial object before the first fetch
       // would render a reading with no device name and no calibration state.
       if (payload && typeof payload.measuredAtMs === 'number') {
-        qc.setQueryData<MetLatest | null>(queryKeys.metLatest(deviceIds.met), (prev) =>
-          prev
-            ? {
-                ...prev,
-                ...payload,
-                measuredAt: new Date(payload.measuredAtMs).toISOString(),
-              }
-            : prev,
-        );
+        const patch = (key: readonly unknown[]) =>
+          qc.setQueryData<MetLatest | null>(key, (prev) =>
+            prev
+              ? {
+                  ...prev,
+                  ...payload,
+                  measuredAt: new Date(payload.measuredAtMs as number).toISOString(),
+                }
+              : prev,
+          );
+
+        patch(queryKeys.metLatest(deviceIds.met));
+
+        /**
+         * Keep the range summary's MAX honest without refetching it.
+         *
+         * Invalidating a summary spanning hours or days on every reading would be
+         * a round trip per reading, and the mean it returns would not visibly move
+         * for any single one of them. The maximum is different: a new peak is
+         * exactly the number an operator watches for, and it must not wait.
+         *
+         * Raised in place when a reading beats it; mean and count follow on the
+         * next natural refetch. Monotonic within a window, which is what a maximum
+         * is.
+         */
+        const from = window.from ?? 0;
+        // `window.to` is quantised DOWN to the minute (so the query key is stable
+        // and does not refetch every render). A reading that just arrived is
+        // therefore often LATER than it — by up to 59 seconds — and a naive
+        // `<= window.to` would silently drop exactly the readings this patch
+        // exists for. Every preset is a rolling window ending "now", so the real
+        // upper bound is now.
+        const upper = Math.max(window.to, Date.now());
+        const inWindow = payload.measuredAtMs >= from && payload.measuredAtMs <= upper;
+        if (inWindow && typeof payload.windSpeedMs === 'number') {
+          const speed = payload.windSpeedMs;
+          qc.setQueryData<MetRangeSummary | undefined>(
+            queryKeys.metRangeSummary(deviceIds.met, 'wind_speed', `${from}-${window.to}`),
+            (prev) =>
+              prev && prev.max != null && speed > prev.max
+                ? { ...prev, max: Math.round(speed * 100) / 100 }
+                : prev,
+          );
+        }
       }
       // NOTE: metLatest is deliberately NOT invalidated here. The patch above
       // already holds every field that changes, so a refetch would overwrite it

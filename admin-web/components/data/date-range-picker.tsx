@@ -9,7 +9,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-const LABELS: Record<RangePreset, string> = {
+/** Exported so other surfaces name the range exactly as the picker does. */
+export const RANGE_LABELS: Record<RangePreset, string> = {
   '1h': 'Last hour',
   '24h': 'Last 24 hours',
   '7d': 'Last 7 days',
@@ -39,7 +40,7 @@ export function DateRangePicker({
       <SelectContent>
         {RANGE_PRESETS.map((p) => (
           <SelectItem key={p.key} value={p.key}>
-            {LABELS[p.key]}
+            {RANGE_LABELS[p.key]}
           </SelectItem>
         ))}
       </SelectContent>

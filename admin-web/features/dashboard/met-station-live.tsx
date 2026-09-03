@@ -16,6 +16,9 @@ import { fmt } from '@/components/charts/chart-utils';
 import { WindRosePanel } from './wind-rose-panel';
 import { DataFreshness } from './data-freshness';
 import { useMetLatest } from './use-dashboard';
+import { useScope } from '@/lib/hooks/use-scope';
+import { RANGE_LABELS } from '@/components/data/date-range-picker';
+import { useMetRangeSummary } from './use-dashboard';
 import { PresetMenu } from './presets/preset-menu';
 import { useDashboardLayouts } from './presets/use-layouts';
 import { ALL_WIDGET_KEYS, MET_STATION_WIDGETS, tilesToKeys } from './presets/tile-catalog';
@@ -47,8 +50,66 @@ const WIND_BANDS: GaugeBand[] = [
  * PresetMenu toggles visibility and persists named presets via `dashboard-layouts`.
  * Default is ALL tiles (zero change unless a view is saved/applied).
  */
+/**
+ * max / mean / min for the selected range, under the live reading.
+ *
+ * The live panel shows ONE moment — a dial points one way — so the date filter can
+ * only change it when the station has been quiet, which is why changing the range
+ * appeared to do nothing. These three numbers describe the whole window and move
+ * on every preset.
+ *
+ * Max leads deliberately. A weekly average wind of 8 km/h tells an operator
+ * nothing; a peak of 60 km/h is the number a speed restriction turns on. Min is
+ * shown only when it means something — for wind it is zero in any window worth
+ * looking at, so the API returns null and it is omitted rather than printed as a
+ * meaningless 0.0.
+ */
+function RangeSummary({ deviceId, unitLabel, convert }: {
+  deviceId: string;
+  unitLabel: string;
+  convert: (v: number) => number;
+}) {
+  const { scope } = useScope();
+  const { data, isLoading } = useMetRangeSummary(deviceId, 'wind_speed');
+
+  if (isLoading) return <p className="text-xs text-muted-foreground">Summarising {RANGE_LABELS[scope.range].toLowerCase()}…</p>;
+  if (!data || !data.count || data.max == null) return null;
+
+  const parts = [
+    `max ${convert(data.max).toFixed(1)}`,
+    data.mean != null ? `avg ${convert(data.mean).toFixed(1)}` : null,
+    data.min != null ? `min ${convert(data.min).toFixed(1)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">{RANGE_LABELS[scope.range]}</span>
+      {' · '}
+      {parts.join(' · ')} {unitLabel}
+      {/* Long ranges are answered from daily rollups, so the window is rounded
+          outward to whole local days. Saying so costs one word and stops the
+          figures being read as minute-precise. */}
+      {data.basis === 'daily' ? <span className="ml-1 opacity-70">(daily)</span> : null}
+    </p>
+  );
+}
+
 export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto?: boolean }) {
+  /**
+   * The panel shows the LIVE reading — the newest one, whatever the date range.
+   *
+   * A dial points one way and a hero number is one value, so a range can only ever
+   * move that single point; for a station reporting now, every rolling preset
+   * resolves to the same reading, which is why changing the filter appeared to do
+   * nothing. The range belongs to the SUMMARY line below instead, where it
+   * describes the whole window and visibly changes on every preset.
+   *
+   * Staleness is already covered: `DataFreshness` says how old the reading is, and
+   * badges it once past ten minutes.
+   */
+  const { scope } = useScope();
   const { data, isLoading } = useMetLatest(deviceId);
+  const scoped = scope.range !== 'all';
   const { data: layouts } = useDashboardLayouts(deviceId);
   const sensors = useDeviceSensors(deviceId);
 
@@ -119,6 +180,11 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
               {isAuto ? <span className="ml-2 text-xs font-normal text-muted-foreground">(auto-selected)</span> : null}
             </h2>
             <DataFreshness tsMs={data.measuredAtMs} />
+            {scoped && deviceId ? (
+              // m/s from the API; the panel speaks km/h, so convert rather than
+              // printing two different units side by side.
+              <RangeSummary deviceId={deviceId} unitLabel="km/h" convert={(v) => v * 3.6} />
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <BeaufortBadge windMs={data.windSpeedMs} />

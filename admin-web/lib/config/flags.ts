@@ -26,7 +26,24 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   // Later-month sections stay flagged off until their month lands.
   dashboardHome: true,
   devices: true,
-  maps: true,
+  /**
+   * Fleet map + GPS density — OFF.
+   *
+   * The map only plots stations that report a GPS position, and the SFTP files
+   * carry none. Verified against the live upload folder: every stream is
+   * timestamp + sensor values only —
+   *   WindSonic      timestamp, direction, speed, units, status
+   *   Environmental  timestamp, temperature_C, humidity_percent, pressure_hPa
+   *   EnvDiagnostic  timestamp, received_time_ms, second, status, sentence, reason
+   * — so `getFleetMap` drops every station on its `lastGpsLat == null` guard and
+   * the screen can only ever be blank. GPS came from the mobile apps, which are
+   * disabled; a WindSonic mast is bolted in one place and never reports where.
+   *
+   * To bring it back, store a fixed latitude/longitude on the station at
+   * provisioning time and plot that instead of a reading's GPS fix. That is also
+   * the "corridor map" the Sydney Metro proposal commits to, so the work carries.
+   */
+  maps: false,
   // Month 10 lands the NEP sessions module (+ NEP analytics, GPS density, fleet rollups).
   // NEP is switched off (M15 W4). Its only data source was the mobile apps, which
   // are disabled, so sessions and NEP analytics have a fixed dataset that can

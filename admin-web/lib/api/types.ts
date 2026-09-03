@@ -145,7 +145,10 @@ export interface DashboardSummary {
   offlineDevices: number;
   metLinkDevices: number;
   nepLinkDevices: number;
+  /** Total MET READINGS (sum of per-day `measureCount`), not day-records. */
   totalMetRecords: number;
+  /** How many local days those readings span. */
+  totalMetDays?: number;
   totalNepSessions: number;
   /** §10.8 — count of armed (isActive) alert rules. */
   activeAlertRules: number;
@@ -755,7 +758,15 @@ export interface FleetHealthRow {
   batteryPct: number | null;
   batteryCharging: boolean | null;
   daysSinceFirst: number | null;
+  /**
+   * MET readings (sum of each day-record's `measureCount`), not day-records.
+   * A `MetRecord` is one document per station per LOCAL DAY, so counting THOSE
+   * showed the number of days live, not the amount of data sent — it sat on
+   * "18" for over two weeks while readings passed a million. Kept under this
+   * name for existing consumers; `totalDays` is what it used to mean.
+   */
   totalRecords: number;
+  totalDays: number;
   totalSessions: number;
   storageEstimateMb: number | null;
 }
@@ -1021,6 +1032,36 @@ export interface ImportSummary {
   errors: string[];
 }
 
+
+/**
+ * min / mean / max for one sensor over a window — the context shown beside the
+ * live reading so the date filter visibly changes something.
+ *
+ * `min` is null for sensors whose daily rollup does not store one (wind,
+ * precipitation rate, solar — all of which sit at zero for part of any window).
+ * `basis` says whether it was computed from raw measures or daily rollups; the
+ * rollup path is rounded outward to whole local days.
+ */
+export interface MetRangeSummary {
+  sensor: string;
+  unit: string;
+  count: number;
+  min: number | null;
+  mean: number | null;
+  max: number | null;
+  basis: 'measures' | 'daily';
+}
+
+/** A station as the platform-wide list returns it: the device plus its owner. */
+export interface PlatformDevice extends Device {
+  organizationName: string;
+}
+
+/** A customer that owns at least one station — an option for the station filter. */
+export interface DeviceCustomer {
+  _id: string;
+  name: string;
+}
 
 /** A role and how many people hold it (M18). */
 export interface RoleRow {
