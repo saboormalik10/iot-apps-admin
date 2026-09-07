@@ -17,6 +17,7 @@ import { sendInviteEmail } from '../utils/mailer';
 import { signAccessToken, JWTPayload } from '../utils/jwt';
 
 import { BCRYPT_COST } from '../common/bcrypt';
+import { canonicalTimeZone } from '../common/validators/is-time-zone.validator';
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 const INVITE_TOKEN_EXPIRY_DAYS = 7;
 const VALID_ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
@@ -402,8 +403,12 @@ export class OrganizationsService {
     (['name', 'contactEmail', 'country', 'timezone'] as const).forEach((key) => {
       const value = input[key];
       if (typeof value === 'string' && value.trim()) {
-        (org as unknown as Record<string, unknown>)[key] = value.trim();
-        changes[key] = value.trim();
+        // `timezone` is canonicalised so one zone has one spelling in the
+        // database — `Intl` accepts `australia/sydney`, and the DTO has already
+        // refused anything that is not a real zone.
+        const next = key === 'timezone' ? (canonicalTimeZone(value) ?? value.trim()) : value.trim();
+        (org as unknown as Record<string, unknown>)[key] = next;
+        changes[key] = next;
       }
     });
 

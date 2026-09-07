@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEmail, IsIn, IsMongoId, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsTimeZone } from '../common/validators/is-time-zone.validator';
 import { UserRole } from '../models/User';
 
 const ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
@@ -23,6 +24,7 @@ export class UpdateOrgDto {
   @ApiPropertyOptional({ example: 'Australia/Melbourne' })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string;
 }
 

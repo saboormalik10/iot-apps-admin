@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TimeZonePicker } from '@/components/data/timezone-picker';
 import { FormField } from '@/components/form-field';
 import { LoadingState, ErrorState } from '@/components/screen-states';
 import { useOrg, useUpdateOrg } from './use-org';
@@ -68,7 +69,12 @@ export function OrgSettingsForm() {
           <Input id="country" value={form.country} onChange={set('country')} />
         </FormField>
         <FormField id="timezone" label={t('timezone')} errorKey={errors.timezone}>
-          <Input id="timezone" value={form.timezone} onChange={set('timezone')} />
+          <TimeZonePicker
+            id="timezone"
+            value={form.timezone}
+            onChange={(tz) => setForm((f) => ({ ...f, timezone: tz }))}
+            aria-invalid={Boolean(errors.timezone)}
+          />
         </FormField>
       </div>
       <Button type="submit" disabled={update.isPending}>

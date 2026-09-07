@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsObject, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsTimeZone } from '../common/validators/is-time-zone.validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -58,6 +59,7 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  @IsTimeZone()
   timezone?: string;
 
   @ApiPropertyOptional({

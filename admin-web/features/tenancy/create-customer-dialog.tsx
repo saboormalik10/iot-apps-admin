@@ -7,6 +7,7 @@ import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TimeZonePicker } from '@/components/data/timezone-picker';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { createCustomer } from '@/lib/api/endpoints';
 import { queryKeys } from '@/lib/query/keys';
@@ -142,7 +143,15 @@ export function CreateCustomerDialog({ open, onOpenChange }: { open: boolean; on
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="c-tz">Time zone</Label>
-                <Input id="c-tz" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+                <TimeZonePicker id="c-tz" value={timezone} onChange={setTimezone} />
+                {/* This is not a display preference: it is the boundary the
+                    customer's DAYS are cut on, and it is baked into every record
+                    at ingest. Changing it later does not re-cut what already
+                    exists, so it says so here rather than in a doc nobody reads. */}
+                <p className="text-xs text-muted-foreground">
+                  Where the station physically is. It sets the customer&apos;s day boundary for records and daily
+                  summaries, and is fixed into data as it arrives — changing it later will not re-cut existing days.
+                </p>
               </div>
             </div>
 

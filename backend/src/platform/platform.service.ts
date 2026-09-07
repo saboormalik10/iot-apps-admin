@@ -13,6 +13,7 @@ import { resolveRoleId } from '../common/resolve-role';
 import { isSafeFolderPath, normaliseFolderPath } from '../ingest/folder-path';
 
 import { BCRYPT_COST } from '../common/bcrypt';
+import { canonicalTimeZone } from '../common/validators/is-time-zone.validator';
 
 export interface CreateCustomerInput {
   name: string;
@@ -271,7 +272,10 @@ export class PlatformService {
       slug,
       contactEmail: (input.contactEmail ?? adminEmail).trim().toLowerCase(),
       country: (input.country ?? 'AU').trim(),
-      timezone: (input.timezone ?? 'UTC').trim(),
+      // Canonicalised, so the database holds one spelling per zone — `Intl`
+      // matches case-insensitively, and the DTO has already refused anything
+      // that is not a real zone.
+      timezone: canonicalTimeZone(input.timezone ?? 'UTC') ?? 'UTC',
       uploadFolder,
     });
 
