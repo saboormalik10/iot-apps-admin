@@ -11,7 +11,14 @@ import {
   MetMeasuresEvent,
 } from '../realtime/realtime.events';
 import { NotificationsService } from '../notifications/notifications.service';
-import { evaluate, NEP_SENSOR_MAP, MET_SENSOR_MAP } from './evaluate';
+import {
+  evaluate,
+  NEP_SENSOR_MAP,
+  MET_SENSOR_MAP,
+  thresholdInStoredUnit,
+  valueInRuleUnit,
+} from './evaluate';
+import { convertUnit } from '../analytics/analytics.util';
 
 const MAX_TRIGGER_HISTORY = 50;
 
@@ -82,7 +89,13 @@ export class AlertEvaluationService {
 
       const value = typeof raw === 'number' ? raw : Number(raw);
       if (!Number.isFinite(value)) continue;
-      if (!evaluate(rule.condition, value, rule.threshold)) continue;
+
+      // Compare like with like. `value` comes out of the database in the sensor's
+      // STORED unit (wind is m/s); `rule.threshold` is in whatever unit the
+      // operator picked. Converting the threshold — rather than the reading —
+      // keeps the stored value untouched for the history entry below.
+      const threshold = thresholdInStoredUnit(rule.sensor, rule.threshold, rule.unit, convertUnit);
+      if (!evaluate(rule.condition, value, threshold)) continue;
 
       // Cooldown: skip if triggered within cooldownMinutes.
       if (rule.lastTriggeredAt && now - new Date(rule.lastTriggeredAt).getTime() < rule.cooldownMinutes * 60_000) {
@@ -90,11 +103,15 @@ export class AlertEvaluationService {
       }
 
       rule.lastTriggeredAt = new Date();
+      // History keeps the STORED value — it is the raw measurement, and the unit
+      // it is in is a property of the sensor, not of whatever rule observed it.
       rule.triggerHistory.push({ triggeredAt: new Date(), sensorValue: value, notifiedCount: rule.notifyUserIds.length });
       if (rule.triggerHistory.length > MAX_TRIGGER_HISTORY) {
         rule.triggerHistory = rule.triggerHistory.slice(-MAX_TRIGGER_HISTORY);
       }
       await rule.save();
+
+      const displayValue = valueInRuleUnit(rule.sensor, value, rule.unit, convertUnit);
 
       await this.notifications.notify(
         organizationId,
@@ -102,7 +119,10 @@ export class AlertEvaluationService {
         {
           type: 'alert',
           title: rule.name,
-          body: `${rule.sensor} ${rule.condition} ${rule.threshold}${rule.unit} — read ${value}${rule.unit}`,
+          // Reported in the RULE's unit. Printing the stored value with the
+          // rule's unit label said "read 9.97km/h" for a 9.97 m/s reading —
+          // the number and the unit came from different systems.
+          body: `${rule.sensor} ${rule.condition} ${rule.threshold}${rule.unit} — read ${displayValue}${rule.unit}`,
           data: {
             ruleId: (rule._id as Types.ObjectId).toString(),
             deviceId,
@@ -120,7 +140,9 @@ export class AlertEvaluationService {
       // never awaited into it. A wind alarm has to reach someone who is not
       // looking at a screen — but an SMTP outage must not stop the alert being
       // recorded, pushed, or shown in the feed.
-      void this.emailRecipients(organizationId, deviceId, rule, value).catch((err: Error) =>
+      // `displayValue`, not `value` — the email prints the reading beside the
+      // rule's unit, so it has to be in that unit for the two to agree.
+      void this.emailRecipients(organizationId, deviceId, rule, displayValue).catch((err: Error) =>
         this.logger.warn(`alert email dispatch failed: ${err.message}`),
       );
     }

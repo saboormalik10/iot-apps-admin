@@ -8,22 +8,38 @@ import type { AlertAppType, AlertCondition, DeviceType } from '@/lib/api/types';
 export interface SensorOption {
   key: string;
   label: string;
-  /** Sensible default unit pre-filled when the sensor is picked (editable). */
+  /**
+   * The unit the sensor is STORED in, and the default when it is picked.
+   *
+   * Must match `SENSOR_STORED_UNIT` in the backend's alert-rules/evaluate.ts —
+   * it is the unit the raw reading is compared in, so it is also the one
+   * conversion is measured from.
+   */
   unit: string;
+  /**
+   * Units a threshold may be written in for this sensor.
+   *
+   * Constrained rather than free text: the server converts the threshold into
+   * `unit` before comparing, and it can only convert units it recognises. A
+   * typed-in unit it cannot parse would leave the threshold unconverted — a rule
+   * that looks armed and silently never fires, which is exactly the defect this
+   * replaced.
+   */
+  units: string[];
 }
 
 export const MET_SENSOR_OPTIONS: SensorOption[] = [
-  { key: 'wind_speed', label: 'Wind speed', unit: 'm/s' },
-  { key: 'wind_dir', label: 'Wind direction', unit: '°' },
-  { key: 'temperature', label: 'Temperature', unit: '°C' },
-  { key: 'humidity', label: 'Humidity', unit: '%' },
-  { key: 'pressure', label: 'Pressure', unit: 'hPa' },
-  { key: 'dew_point', label: 'Dew point', unit: '°C' },
+  { key: 'wind_speed', label: 'Wind speed', unit: 'm/s', units: ['km/h', 'm/s', 'knots', 'mph'] },
+  { key: 'wind_dir', label: 'Wind direction', unit: '°', units: ['°'] },
+  { key: 'temperature', label: 'Temperature', unit: '°C', units: ['°C', '°F'] },
+  { key: 'humidity', label: 'Humidity', unit: '%', units: ['%'] },
+  { key: 'pressure', label: 'Pressure', unit: 'hPa', units: ['hPa', 'mbar', 'inHg', 'mmHg'] },
+  { key: 'dew_point', label: 'Dew point', unit: '°C', units: ['°C', '°F'] },
 ];
 
 export const NEP_SENSOR_OPTIONS: SensorOption[] = [
-  { key: 'turbidity', label: 'Turbidity', unit: 'NTU' },
-  { key: 'temperature', label: 'Temperature', unit: '°C' },
+  { key: 'turbidity', label: 'Turbidity', unit: 'NTU', units: ['NTU'] },
+  { key: 'temperature', label: 'Temperature', unit: '°C', units: ['°C', '°F'] },
 ];
 
 export function sensorOptionsFor(appType: AlertAppType): SensorOption[] {

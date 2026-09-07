@@ -106,10 +106,25 @@ export function AlertRuleDialog({
 
   const onSensorChange = (key: string) => {
     setSensor(key);
-    // Pre-fill the sensor's conventional unit (still editable).
+    // Default to the sensor's stored unit — the one needing no conversion.
     const opt = sensorOptions.find((s) => s.key === key);
     if (opt) setUnit(opt.unit);
   };
+
+  /**
+   * Units offered for the chosen sensor.
+   *
+   * Sensor-specific because the server converts the threshold into the sensor's
+   * stored unit before comparing, and only recognises units in that sensor's
+   * family — offering °F for a wind rule would produce a threshold it cannot
+   * convert, and the rule would silently never fire.
+   *
+   * Empty until a sensor is picked, which is also when the field is disabled.
+   */
+  const unitOptions = useMemo(
+    () => sensorOptions.find((s) => s.key === sensor)?.units ?? [],
+    [sensorOptions, sensor],
+  );
 
   const toggleDevice = (id: string) =>
     setDeviceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -184,16 +199,16 @@ export function AlertRuleDialog({
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <Label>Rule name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. High turbidity" aria-invalid={Boolean(errors.name)} />
+            <Label htmlFor="rule-name">Rule name</Label>
+            <Input id="rule-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. High turbidity" aria-invalid={Boolean(errors.name)} />
             {errors.name ? <p className="text-xs text-status-error">{errors.name}</p> : null}
           </div>
 
           {/* App type */}
           <div className="space-y-1">
-            <Label>Application</Label>
+            <Label htmlFor="rule-app">Application</Label>
             <Select value={appType} onValueChange={(v) => onAppTypeChange(v as AlertAppType)} disabled={isEdit}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="rule-app"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="MET">MET-LINK (weather)</SelectItem>
                 {/* NEP is switched off (M15 W4) — it has no live data source, so a
@@ -252,9 +267,9 @@ export function AlertRuleDialog({
           {/* Sensor + condition + threshold */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.3fr_1.2fr_1fr]">
             <div className="space-y-1">
-              <Label>Sensor</Label>
+              <Label htmlFor="rule-sensor">Sensor</Label>
               <Select value={sensor} onValueChange={onSensorChange}>
-                <SelectTrigger aria-invalid={Boolean(errors.sensor)}><SelectValue placeholder="Sensor" /></SelectTrigger>
+                <SelectTrigger id="rule-sensor" aria-invalid={Boolean(errors.sensor)}><SelectValue placeholder="Sensor" /></SelectTrigger>
                 <SelectContent>
                   {sensorOptions.map((s) => (
                     <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
@@ -264,9 +279,9 @@ export function AlertRuleDialog({
               {errors.sensor ? <p className="text-xs text-status-error">{errors.sensor}</p> : null}
             </div>
             <div className="space-y-1">
-              <Label>Condition</Label>
+              <Label htmlFor="rule-condition">Condition</Label>
               <Select value={condition} onValueChange={(v) => setCondition(v as AlertCondition)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="rule-condition"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {CONDITION_OPTIONS.map((c) => (
                     <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
@@ -275,8 +290,9 @@ export function AlertRuleDialog({
               </Select>
             </div>
             <div className="space-y-1">
-              <Label>Threshold</Label>
+              <Label htmlFor="rule-threshold">Threshold</Label>
               <Input
+                id="rule-threshold"
                 type="number"
                 inputMode="decimal"
                 value={threshold}
@@ -289,13 +305,25 @@ export function AlertRuleDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Unit</Label>
-              <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. NTU" aria-invalid={Boolean(errors.unit)} />
+              <Label htmlFor="rule-unit">Unit</Label>
+              <Select value={unit} onValueChange={setUnit} disabled={!sensor}>
+                <SelectTrigger id="rule-unit" aria-invalid={Boolean(errors.unit)}>
+                  <SelectValue placeholder={sensor ? 'Select a unit' : 'Pick a sensor first'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {unitOptions.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.unit ? <p className="text-xs text-status-error">{errors.unit}</p> : null}
             </div>
             <div className="space-y-1">
-              <Label>Cooldown (minutes)</Label>
+              <Label htmlFor="rule-cooldown">Cooldown (minutes)</Label>
               <Input
+                id="rule-cooldown"
                 type="number"
                 inputMode="numeric"
                 value={cooldown}

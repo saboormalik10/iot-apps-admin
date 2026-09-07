@@ -5,3 +5,6 @@ dist/
 uploads/
 
 backups/
+
+# Local dev server output
+devserver.log
