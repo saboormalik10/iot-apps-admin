@@ -43,7 +43,6 @@ import type {
   MetWindGust,
   MetWindRoseAgg,
   MetWindrose,
-  MobileUser,
   NepCorrelation,
   NepCrossSessionTrend,
   NepDailySummary,
@@ -112,8 +111,6 @@ export const listUsers = async (signal?: AbortSignal): Promise<Page<OrgUser>> =>
   const rows = await http.get<OrgUser[]>('/organizations/me/users', signal);
   return fullArrayPage(rows);
 };
-export const listMobileUsers = (signal?: AbortSignal) =>
-  http.get<MobileUser[]>('/organizations/me/mobile-users', signal);
 export const inviteUser = (input: InviteUserInput) =>
   http.post<{ user: OrgUser }>('/organizations/me/users/invite', input);
 export const updateUser = (id: string, input: UpdateUserInput) =>

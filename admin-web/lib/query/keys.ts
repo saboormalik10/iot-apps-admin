@@ -16,7 +16,6 @@ export const queryKeys = {
   session: ['session'] as const,
   org: ['org'] as const,
   users: ['users'] as const,
-  mobileUsers: ['users', 'mobile'] as const,
   audit: (q: AuditQuery) => ['audit', q] as const,
   profile: ['profile'] as const,
   notifications: (opts: { unread?: boolean; limit?: number }) => ['notifications', opts] as const,

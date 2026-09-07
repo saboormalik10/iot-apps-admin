@@ -119,6 +119,7 @@ regression — worth clearing before it is relied on.
 | Doc | Covers |
 | --- | --- |
 | [months13-24.md](months13-24.md) | The live plan: SFTP ingestion, tenancy, consolidation. Includes newly discovered scope from 26 Aug |
+| [WORKLOG_2026-09-07.md](WORKLOG_2026-09-07.md) | 7 Sep: the 605-minute ingest delay found and fixed in production, alert unit conversion, the per-minute alert timeline, and time filters across the panel |
 | `CLIENT_REPLY_*.md` | Correspondence with the client, most recent first |
 | [creds_&_questions.md](creds_&_questions.md) | Server access details and open questions |
 | [deliveryreport-month24/](deliveryreport-month24/MONTH_24_DELIVERY_REPORT.md) | **Final delivery report** — Months 13–24 summary, what was built, and every known gap |

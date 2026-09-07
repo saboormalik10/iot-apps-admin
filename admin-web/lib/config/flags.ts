@@ -60,7 +60,27 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   notifications: true,
   share: true,
   // Month 12 lands the import wizard + batch export and the global command palette.
-  importExport: true,
+  /**
+   * Import wizard — OFF.
+   *
+   * Switched off at the client's request. Data now arrives one way, over SFTP,
+   * and the wizard is a second write path into the same collections: a hand-
+   * uploaded CSV lands in `MetRecord`/`MetMeasure` beside the agent's rows, on
+   * the same day-record, with no station folder behind it.
+   *
+   * The flag gates BOTH the nav entry (`nav-config.ts`) and the route itself,
+   * which returns 404 — so a bookmarked `/import` cannot reach it either. The
+   * code is untouched and still type-checked and built, which is the point of
+   * using the flag rather than commenting the files out: it compiles the day it
+   * is wanted back.
+   *
+   * EXPORTS ARE UNAFFECTED despite the flag's name — nothing in the export menus
+   * reads it. Records, analytics and session exports all still work.
+   *
+   * To restore: set this to `true`, or add `importExport` to
+   * NEXT_PUBLIC_FEATURE_FLAGS in any single environment.
+   */
+  importExport: false,
   commandPalette: true,
   // Email invitations are switched off (M15 W3): the backend routes
   // `POST /organizations/me/users/invite` and `POST /organizations/accept-invite`

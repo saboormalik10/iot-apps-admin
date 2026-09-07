@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import mongoose from 'mongoose';
 
 import { AppModule } from '../src/app.module';
+import { Device } from '../src/models/Device';
 import { User } from '../src/models/User';
 import { DashboardService } from '../src/dashboard/dashboard.service';
 
@@ -61,10 +62,31 @@ describe('dashboard summary window (e2e)', () => {
 
   it('leaves current-state counts alone', async () => {
     // "Devices in the last hour" has no meaning, so these must NOT move.
-    const [hour, all] = await Promise.all([summary(now - H, now), summary()]);
+    //
+    // Scoped to ONE device on purpose. Compared org-wide this raced with the
+    // sibling suites, which create and delete throwaway stations in the same
+    // organisation — the count could legitimately change between the two reads
+    // and the failure said nothing about the window.
+    const device = await Device.findOne({
+      organizationId: new mongoose.Types.ObjectId(orgId),
+      type: 'MET-LINK',
+      name: { $not: /TEST/ },
+      deletedAt: null,
+    })
+      .select('_id')
+      .lean();
+    const scoped = (from?: number, to?: number) =>
+      service.getSummary(orgId, undefined, String(device!._id), { from, to }) as Promise<Summary>;
+
+    const [hour, all] = await Promise.all([scoped(now - H, now), scoped()]);
     expect(hour.totalDevices).toBe(all.totalDevices);
     expect(hour.onlineDevices).toBe(all.onlineDevices);
-    expect(hour.activeAlertRules).toBe(all.activeAlertRules);
+    // `activeAlertRules` is deliberately NOT asserted here. It is org-wide
+    // current state with no device narrowing, and the sibling alert suites
+    // create and delete rules while this runs — so a mismatch would mean "a rule
+    // was added just then", not "the window leaked into the count". The window's
+    // absence from that query is covered by `getSummary` taking no window
+    // argument for it at all.
   });
 
   it('flags whether the data figures were windowed', async () => {

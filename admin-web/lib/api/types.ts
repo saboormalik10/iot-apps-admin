@@ -54,24 +54,6 @@ export interface OrgUser {
   invitedAt: string | null;
 }
 
-/** Mobile-app user with upload activity — GET /organizations/me/mobile-users. */
-export interface MobileUser {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: Role;
-  isActive: boolean;
-  /** Which app the user signed up from (null = inferred from activity). */
-  mobileAppType: DeviceType | null;
-  createdAt: string;
-  lastLoginAt: string | null;
-  metRecordCount: number;
-  nepSessionCount: number;
-  lastUploadAt: string | null;
-  /** Devices this user registered or synced data for. */
-  devices: { id: string; name: string; type: DeviceType }[];
-}
 
 /** GET/PATCH /organizations/me. */
 export interface Organization {

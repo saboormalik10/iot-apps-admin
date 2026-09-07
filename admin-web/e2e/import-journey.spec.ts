@@ -39,7 +39,18 @@ async function signIn(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-test.describe('Month 12 — import wizard', () => {
+/**
+ * SKIPPED while the import wizard is switched off.
+ *
+ * `importExport` is `false` in `lib/config/flags.ts`, so `/import` returns 404 —
+ * every test here would fail on a missing heading and say nothing about the
+ * wizard's correctness. Skipping states that deliberately, rather than leaving
+ * four red tests that a reader has to work out are expected.
+ *
+ * The code under test is untouched and still compiles. Re-enable the flag and
+ * remove this `.skip` together.
+ */
+test.describe.skip('Month 12 — import wizard', () => {
   test('admin imports a MET CSV and the server writes exactly what the preview predicted', async ({ page }) => {
     const ROWS = 12;
     await signIn(page);
@@ -104,6 +115,7 @@ test.describe('Month 12 — import wizard', () => {
   });
 });
 
+// The palette itself is unaffected by the import flag; it keeps running.
 test.describe('Month 12 — command palette', () => {
   test('⌘K opens the palette and routes to a destination', async ({ page }) => {
     await signIn(page);
