@@ -22,8 +22,8 @@ import { log } from './log';
  *            least STABLE_MS old.
  *   Gate 2 — structural: the file ends with a line terminator. A write cut
  *            mid-row does not.
- *   Gate 3 — semantic: the filename encodes a minute, and a complete 1 Hz file
- *            for minute M runs to at least second 59.
+ *   Gate 3 — semantic: a complete 1 Hz file for minute M runs to at least
+ *            second 59, or past the end of M into the next minute.
  *
  * Gate 3 has an escape hatch. The station's uploader has a known bug — it runs on
  * a drifting ~61s timer and uploads the current file while it is still being
@@ -94,9 +94,11 @@ export function minuteFromName(name: string): number | null {
   const hour = Number(hm.slice(0, 2));
   const min = Number(hm.slice(2, 4));
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59) return null;
-  // The name is in the station's LOCAL time and we do not know its offset here,
-  // so this is only ever used as an age heuristic, never as a timestamp. The
-  // authoritative time is the ISO offset inside each row.
+  // The name is in the station's LOCAL time and the offset is NOT known here,
+  // so the result is only comparable to another value read the same way. It is
+  // NOT a wall-clock instant: comparing it to Date.now() is wrong by the
+  // station's UTC offset, which is exactly the defect that made every deferred
+  // file 605 minutes late. The authoritative time is the ISO offset in each row.
   return Date.UTC(year, month - 1, day, hour, min);
 }
 
@@ -105,15 +107,41 @@ export function endsCleanly(text: string): boolean {
   return /\r?\n$/.test(text);
 }
 
-/** Gate 3 — does the last data row reach the end of its minute? */
+/** `…T04:09:59+10:00…` → the row's hour, minute and second. */
+const ROW_TIME = /T(\d{2}):(\d{2}):(\d{2})/;
+
+/**
+ * Gate 3 — does the last data row reach the end of the minute the file covers?
+ *
+ * Decided from the rows themselves rather than the filename, so it needs no
+ * knowledge of the station's UTC offset.
+ *
+ * The subtlety is the ROLLOVER. The logger frequently writes the next minute's
+ * `:00` row as its last line — `_2213.csv` ending `12:14:00` — which is a full
+ * minute and one sample more. Testing `seconds >= 59` alone read that `00` as
+ * "stopped at the start of the minute" and judged the file unfinished. It was
+ * measured on the live station at **193 of 199** deferred files: a quarter of
+ * every upload took the late path for being MORE than complete.
+ */
 export function looksComplete(text: string): boolean {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
   if (lines.length < 2) return false;
-  const last = lines[lines.length - 1];
-  // `2026-08-20T04:09:59+10:00,...` — seconds are chars 17-19 of the ISO stamp.
-  const m = /T\d{2}:\d{2}:(\d{2})/.exec(last);
-  if (!m) return false;
-  return Number(m[1]) >= 59;
+
+  const last = ROW_TIME.exec(lines[lines.length - 1]);
+  if (!last) return false;
+
+  // The earliest parsable row fixes which minute this file covers. The header
+  // carries no timestamp, so it simply does not match. The search includes the
+  // LAST line: a file holding a single data row still has a minute, and
+  // excluding it made every one-row file unparseable.
+  let first: RegExpExecArray | null = null;
+  for (let i = 0; i < lines.length && first === null; i++) first = ROW_TIME.exec(lines[i]);
+  if (first === null) return false;
+
+  // Crossed into another minute — the file ran past the end of its own.
+  if (last[1] !== first[1] || last[2] !== first[2]) return true;
+
+  return Number(last[3]) >= 59;
 }
 
 export class Watcher {
@@ -249,10 +277,18 @@ export class Watcher {
         continue;
       }
 
-      // Grace period, measured from the minute the name claims — an independent
-      // clock reading, so it still works if mtime is odd.
-      const minute = minuteFromName(name);
-      const age = minute !== null ? now - minute : now - st.mtimeMs;
+      // Grace period, measured from mtime — the same clock gate 1 already
+      // trusts, on the same box that received the file.
+      //
+      // It used to be measured from the minute in the FILENAME, which is the
+      // station's LOCAL time parsed as if it were UTC. For a station at +10 that
+      // put every file ten hours in the future, making `age` negative and the
+      // five-minute grace period a 605-minute one. Measured on the live station:
+      // every deferred file arrived 605.0-605.1 minutes late — 600 for the
+      // offset, 5 for the grace — and the alert it should have raised was that
+      // late with it. The name cannot be used for this without knowing the
+      // station's offset, and the agent does not.
+      const age = now - st.mtimeMs;
       if (age > this.cfg.lateMs) {
         out.push(candidate(name, path, st.size, st.mtimeMs, true));
       }

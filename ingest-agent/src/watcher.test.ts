@@ -61,6 +61,36 @@ describe('looksComplete — gate 3', () => {
   test('rejects a row with no recognisable time', () => {
     assert.equal(looksComplete(header + 'garbage,291,1.80,K,A\r\n'), false);
   });
+
+  /**
+   * The rollover. The logger routinely closes a file with the NEXT minute's
+   * `:00` row, so `_0409.csv` ends `04:10:00`. Read as a bare seconds value that
+   * is `0`, which the old gate called "stopped at the start of the minute" — the
+   * exact inverse of the truth. Measured on the live station at 193 of 199
+   * deferred files.
+   */
+  const minute = (mm: string, secs: number[]) =>
+    secs.map((sc) => `2026-08-20T04:${mm}:${String(sc).padStart(2, '0')}+10:00,291,1.80,K,A`).join('\r\n') + '\r\n';
+
+  test('accepts a file that rolls into the next minute', () => {
+    const text = header + minute('09', [57, 58, 59]) + minute('10', [0]);
+    assert.equal(looksComplete(text), true);
+  });
+
+  test('accepts a rollover across the hour', () => {
+    const text =
+      header +
+      '2026-08-20T04:59:58+10:00,291,1.80,K,A\r\n' +
+      '2026-08-20T05:00:00+10:00,291,1.80,K,A\r\n';
+    assert.equal(looksComplete(text), true);
+  });
+
+  test('still rejects a truncated file that never leaves its own minute', () => {
+    // A single :00 row is the start of a minute, not a rollover — the
+    // distinction the fix has to preserve, or every truncated file passes.
+    assert.equal(looksComplete(header + minute('09', [0])), false);
+    assert.equal(looksComplete(header + minute('09', [0, 1, 2])), false);
+  });
 });
 
 describe('backoffMs', () => {
