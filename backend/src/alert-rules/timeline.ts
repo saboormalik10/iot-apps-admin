@@ -5,9 +5,25 @@ export type MinuteReason =
   | 'fired'
   | 'cooldown'
   | 'not_crossed'
+  /** Empty, but too recent to call missing — its file may still be on its way. */
+  | 'pending'
   | 'no_data'
   | 'paused'
   | 'not_recorded';
+
+/**
+ * How long after a minute ends its readings may still legitimately turn up.
+ *
+ * The station writes one file per minute and the agent holds each one until it
+ * looks complete, force-releasing it after its grace period (`OBSERVATOR_LATE_MS`,
+ * 5 minutes) — then uploads. So an empty recent minute is normal, and calling it
+ * "no readings" states as fact something we do not yet know. Past this window the
+ * file really is not coming.
+ *
+ * Measured after the watcher fix: median delivery is ~2 minutes, so this is
+ * deliberately generous rather than tuned to the median.
+ */
+export const PENDING_WINDOW_MS = 6 * 60_000;
 
 export interface MinuteBucket {
   /** Bucket start, epoch ms (minute-aligned). */
@@ -68,8 +84,14 @@ export function buildTimeline(opts: {
   fires: number[];
   priorFireMs: number | null;
   toDisplay: (storedValue: number) => number | null;
+  /** Wall clock. Injected so the pending window is testable. */
+  now?: number;
 }): MinuteBucket[] {
   const { buckets, condition, thresholdStored, cooldownMs, isActive, toDisplay } = opts;
+  const now = opts.now ?? Date.now();
+  // A minute is only "missing" once its file can no longer arrive. Measured from
+  // the END of the minute, since that is when the station closes the file.
+  const settledBefore = now - PENDING_WINDOW_MS;
   const fires = [...opts.fires].sort((a, b) => a - b);
   let lastFireMs = opts.priorFireMs;
 
@@ -80,7 +102,8 @@ export function buildTimeline(opts: {
 
     let reason: MinuteReason;
     if (firedHere) reason = 'fired';
-    else if (b.count === 0 || value == null) reason = 'no_data';
+    else if (b.count === 0 || value == null)
+      reason = b.ts + 60_000 > settledBefore ? 'pending' : 'no_data';
     else if (!isActive) reason = 'paused';
     else if (!breached) reason = 'not_crossed';
     else if (lastFireMs != null && b.ts - lastFireMs < cooldownMs) reason = 'cooldown';

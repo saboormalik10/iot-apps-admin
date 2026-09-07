@@ -1,4 +1,4 @@
-import { buildTimeline, evaluatedValue, BucketInput } from '../src/alert-rules/timeline';
+import { buildTimeline, evaluatedValue, BucketInput, PENDING_WINDOW_MS } from '../src/alert-rules/timeline';
 
 /**
  * The timeline answers "it says armed — why is my feed empty?". Its two real
@@ -17,6 +17,9 @@ const bucket = (ts: number, over: Partial<BucketInput> = {}): BucketInput => ({
 
 const run = (o: Partial<Parameters<typeof buildTimeline>[0]> = {}) =>
   buildTimeline({
+    // Fixed far-future clock so the fixtures at ts=0 are long settled and the
+    // pending window never colours the older assertions.
+    now: 1_900_000_000_000,
     buckets: [bucket(0), bucket(M), bucket(2 * M)],
     condition: 'gt',
     thresholdStored: 0.5,
@@ -77,6 +80,37 @@ describe('alert timeline reconstruction', () => {
     // 6 minutes later the 5-minute cooldown has expired, so a breach here is
     // genuinely unexplained rather than suppressed.
     expect(out[1].reason).toBe('not_recorded');
+  });
+
+  /**
+   * An empty minute that has only just happened is not a missing minute — its
+   * file is written at the end of the minute, held by the agent until it looks
+   * complete, and only then uploaded. Calling it "no readings" asserts something
+   * we do not know yet, one minute after the fact.
+   */
+  describe('the pending window', () => {
+    const NOW = 1_800_000_000_000;
+    const empty = (ts: number) => bucket(ts, { count: 0, max: null, min: null, avg: null });
+
+    it('calls a just-finished empty minute pending, not missing', () => {
+      const out = run({ buckets: [empty(NOW - 2 * M)], now: NOW });
+      expect(out[0].reason).toBe('pending');
+    });
+
+    it('calls it missing once its file can no longer arrive', () => {
+      const out = run({ buckets: [empty(NOW - PENDING_WINDOW_MS - 2 * M)], now: NOW });
+      expect(out[0].reason).toBe('no_data');
+    });
+
+    it('a minute WITH readings is never pending', () => {
+      const out = run({ buckets: [bucket(NOW - M, { max: 0.1 })], now: NOW });
+      expect(out[0].reason).toBe('not_crossed');
+    });
+
+    it('a fire still wins over pending', () => {
+      const out = run({ buckets: [empty(NOW - M)], fires: [NOW - M + 10], now: NOW });
+      expect(out[0].reason).toBe('fired');
+    });
   });
 
   it('reports an empty minute as no_data, never as a calm reading', () => {

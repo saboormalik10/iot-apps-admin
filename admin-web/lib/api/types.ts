@@ -898,7 +898,15 @@ export interface TriggerHistoryEntry {
 
 /** GET /alert-rules — a per-device+sensor threshold rule (list row + detail). */
 /** Why one minute did — or did not — raise an alert. */
-export type AlertMinuteReason = 'fired' | 'cooldown' | 'not_crossed' | 'no_data' | 'paused' | 'not_recorded';
+export type AlertMinuteReason =
+  | 'fired'
+  | 'cooldown'
+  | 'not_crossed'
+  /** Empty, but too recent to call missing — its file may still be arriving. */
+  | 'pending'
+  | 'no_data'
+  | 'paused'
+  | 'not_recorded';
 
 export interface AlertTimelineBucket {
   /** Minute start, epoch ms. */

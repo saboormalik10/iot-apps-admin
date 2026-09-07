@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { AlertTriangle, Ban, CircleSlash, Minus, Pause, Zap } from 'lucide-react';
+import { AlertTriangle, Ban, CircleSlash, Loader2, Minus, Pause, Zap } from 'lucide-react';
 import { LoadingState, ErrorState, EmptyState } from '@/components/screen-states';
 import { roleColor } from '@/components/charts/chart-utils';
 import { cn } from '@/lib/utils';
@@ -48,9 +48,17 @@ const REASON: Record<AlertMinuteReason, { label: string; why: string; icon: type
     icon: Minus,
     tone: 'text-muted-foreground',
   },
+  pending: {
+    label: 'Waiting for data',
+    why:
+      'This minute has only just happened. The station writes one file per minute and uploads it once ' +
+      'it is complete, so its readings are most likely still on their way.',
+    icon: Loader2,
+    tone: 'text-status-info-strong',
+  },
   no_data: {
     label: 'No readings',
-    why: 'The station sent nothing for this minute, so there was nothing to test.',
+    why: 'The station sent nothing for this minute, and its file is no longer expected.',
     icon: CircleSlash,
     tone: 'text-muted-foreground',
   },
@@ -124,6 +132,10 @@ function TimelineBody({ data, compact }: { data: AlertTimeline; compact: boolean
   );
   const fired = useMemo(() => data.buckets.filter((b) => b.fired), [data.buckets]);
   const withData = data.buckets.filter((b) => b.count > 0).length;
+  // Minutes still on their way are not minutes the station missed, so they are
+  // kept out of the coverage figure rather than counted against it.
+  const waiting = data.buckets.filter((b) => b.reason === 'pending').length;
+  const settled = data.buckets.length - waiting;
 
   const counts = useMemo(() => {
     const c = {} as Record<AlertMinuteReason, number>;
@@ -149,7 +161,8 @@ function TimelineBody({ data, compact }: { data: AlertTimeline; compact: boolean
           {data.sensor.replace(/_/g, ' ')} {data.condition === 'gt' ? '>' : data.condition === 'gte' ? '≥' : data.condition === 'lt' ? '<' : '≤'}{' '}
           {num(data.threshold)}
           {unit} · cooldown {data.cooldownMinutes} min ·{' '}
-          {withData} of {data.buckets.length} minutes had readings
+          {withData} of {settled} minute{settled === 1 ? '' : 's'} had readings
+          {waiting > 0 ? `, ${waiting} still arriving` : ''}
         </span>
       </p>
 
@@ -232,7 +245,8 @@ function TimelineBody({ data, compact }: { data: AlertTimeline; compact: boolean
         </ResponsiveContainer>
         <p className="mt-1 text-[11px] text-muted-foreground">
           Thick line is the per-minute {word} — the reading the rule actually tests. Thin line is the minute
-          average, for context. Gaps are minutes the station sent nothing.
+          average, for context. Gaps are minutes with no readings
+          {waiting > 0 ? ', including the most recent ones still arriving' : ''}.
         </p>
       </div>
 
@@ -243,7 +257,7 @@ function TimelineBody({ data, compact }: { data: AlertTimeline; compact: boolean
           const Icon = meta.icon;
           return (
             <span key={r} className={cn('inline-flex items-center gap-1.5', meta.tone)} title={meta.why}>
-              <Icon className="h-3.5 w-3.5" aria-hidden />
+              <Icon className={cn('h-3.5 w-3.5', r === 'pending' && 'animate-spin')} aria-hidden />
               {meta.label}
               <span className="text-muted-foreground">· {counts[r]} min</span>
             </span>
@@ -305,19 +319,29 @@ function MinuteTable({
           {rows.map((b) => {
             const meta = reasonMeta(b.reason);
             const Icon = meta.icon;
+            const waiting = b.reason === 'pending';
             return (
-              <tr key={b.ts} className={cn(b.fired && 'bg-status-error/5')}>
+              <tr
+                key={b.ts}
+                className={cn(b.fired && 'bg-status-error/5', waiting && 'bg-status-info/5')}
+              >
                 <td className="whitespace-nowrap px-3 py-1.5 tabular-nums">{hhmm(b.ts)}</td>
+                {/* A placeholder that reads as "not yet", rather than an en-dash
+                    that reads as "nothing here". */}
                 <td className={cn('px-3 py-1.5 tabular-nums', b.breached && 'font-medium')}>
-                  {num(b.displayValue)}
-                  {b.displayValue == null ? '' : unit}
+                  {waiting ? <Shimmer className="w-14" /> : `${num(b.displayValue)}${b.displayValue == null ? '' : unit}`}
                 </td>
-                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{num(b.displayAvg)}</td>
-                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{b.count || '–'}</td>
+                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
+                  {waiting ? <Shimmer className="w-10" /> : num(b.displayAvg)}
+                </td>
+                <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
+                  {waiting ? <Shimmer className="w-8" /> : b.count || '–'}
+                </td>
                 <td className="px-3 py-1.5">
-                  {/* Icon + words, never colour alone. */}
+                  {/* Icon + words, never colour alone — and the words still carry
+                      the meaning when the spin is removed for reduced motion. */}
                   <span className={cn('inline-flex items-center gap-1.5', meta.tone)} title={meta.why}>
-                    <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <Icon className={cn('h-3.5 w-3.5 shrink-0', waiting && 'animate-spin')} aria-hidden />
                     {meta.label}
                   </span>
                 </td>
@@ -327,5 +351,21 @@ function MinuteTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Stand-in for a value that has not arrived yet.
+ *
+ * Deliberately not an en-dash: the whole point of the `pending` state is that an
+ * empty recent minute is unknown, not empty. The global reduced-motion rule
+ * neutralises the pulse, which is why the row's label carries the meaning.
+ */
+function Shimmer({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn('inline-block h-3 animate-pulse rounded bg-status-info/25 align-middle', className)}
+    />
   );
 }

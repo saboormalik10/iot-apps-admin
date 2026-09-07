@@ -51,8 +51,10 @@ describe('alert rule timeline (e2e)', () => {
     });
     deviceId = device._id as mongoose.Types.ObjectId;
 
-    // Ten whole minutes ending one minute ago, so "now" never bisects a bucket.
-    base = Math.floor((Date.now() - 11 * MIN) / MIN) * MIN;
+    // Ten whole minutes, far enough back that every one is past the pending
+    // window — otherwise a genuinely absent minute reads as "still on its way"
+    // and the gap assertions below would be testing the wrong thing.
+    base = Math.floor((Date.now() - 40 * MIN) / MIN) * MIN;
     const record = await MetRecord.create({
       organizationId: user!.organizationId,
       deviceId,
@@ -123,6 +125,16 @@ describe('alert rule timeline (e2e)', () => {
     expect(silent?.count).toBe(0);
     expect(silent?.value).toBeNull();
     expect(silent?.reason).toBe('no_data');
+  });
+
+  it('marks a just-finished empty minute as pending rather than missing', async () => {
+    // The window ends NOW, so its last minutes are inside the pending window and
+    // this station has sent nothing for them in this test.
+    const rule = await makeRule();
+    const { data } = await service.timeline(orgId, String(rule._id), { minutes: 5 });
+    const last = data.buckets[data.buckets.length - 1];
+    expect(last.count).toBe(0);
+    expect(last.reason).toBe('pending');
   });
 
   it('applies the rule UNIT — a 20 km/h rule is not a 20 m/s rule', async () => {
