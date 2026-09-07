@@ -9,6 +9,7 @@ import { BatteryGauge } from '@/components/charts/battery-gauge';
 import { CompassTile } from '@/components/charts/compass-tile';
 import { WindDial } from '@/components/charts/wind-dial';
 import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
+import { useUnits } from '@/lib/units/use-units';
 import { StatTile } from '@/components/charts/stat-tile';
 import { BeaufortBadge } from '@/components/charts/beaufort-scale';
 import { LoadingState, EmptyState } from '@/components/screen-states';
@@ -30,12 +31,19 @@ const PRESSURE_BANDS: GaugeBand[] = [
   { from: 1025, to: 1050, role: 'status-info', label: 'High' },
 ];
 
-/** Wind-speed threshold bands (km/h) — the 4 Parklife bands, mapped to sequential roles. */
+/**
+ * Wind-speed threshold bands, in m/s.
+ *
+ * These ARE the 4 Parklife bands (25/50/75/100 km/h) — restated in m/s because
+ * the gauge domain is now canonical, so the displayed unit can change without
+ * moving a threshold. Same visual boundaries, different arithmetic.
+ */
+const WIND_MAX_MS = 100 / 3.6;
 const WIND_BANDS: GaugeBand[] = [
-  { from: 0, to: 25, role: 'seq-1' },
-  { from: 25, to: 50, role: 'seq-3' },
-  { from: 50, to: 75, role: 'seq-4' },
-  { from: 75, to: 100, role: 'seq-5' },
+  { from: 0, to: 25 / 3.6, role: 'seq-1' },
+  { from: 25 / 3.6, to: 50 / 3.6, role: 'seq-3' },
+  { from: 50 / 3.6, to: 75 / 3.6, role: 'seq-4' },
+  { from: 75 / 3.6, to: WIND_MAX_MS, role: 'seq-5' },
 ];
 
 /**
@@ -64,10 +72,11 @@ const WIND_BANDS: GaugeBand[] = [
  * looking at, so the API returns null and it is omitted rather than printed as a
  * meaningless 0.0.
  */
-function RangeSummary({ deviceId, unitLabel, convert }: {
+function RangeSummary({ deviceId, unitLabel, format }: {
   deviceId: string;
   unitLabel: string;
-  convert: (v: number) => number;
+  /** Canonical m/s → printed string, so Beaufort shows as a whole force. */
+  format: (v: number) => string;
 }) {
   const { scope } = useScope();
   const { data, isLoading } = useMetRangeSummary(deviceId, 'wind_speed');
@@ -76,9 +85,9 @@ function RangeSummary({ deviceId, unitLabel, convert }: {
   if (!data || !data.count || data.max == null) return null;
 
   const parts = [
-    `max ${convert(data.max).toFixed(1)}`,
-    data.mean != null ? `avg ${convert(data.mean).toFixed(1)}` : null,
-    data.min != null ? `min ${convert(data.min).toFixed(1)}` : null,
+    `max ${format(data.max)}`,
+    data.mean != null ? `avg ${format(data.mean)}` : null,
+    data.min != null ? `min ${format(data.min)}` : null,
   ].filter(Boolean);
 
   return (
@@ -108,6 +117,7 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
    * badges it once past ten minutes.
    */
   const { scope } = useScope();
+  const units = useUnits();
   const { data, isLoading } = useMetLatest(deviceId);
   const scoped = scope.range !== 'all';
   const { data: layouts } = useDashboardLayouts(deviceId);
@@ -181,9 +191,13 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
             </h2>
             <DataFreshness tsMs={data.measuredAtMs} />
             {scoped && deviceId ? (
-              // m/s from the API; the panel speaks km/h, so convert rather than
-              // printing two different units side by side.
-              <RangeSummary deviceId={deviceId} unitLabel="km/h" convert={(v) => v * 3.6} />
+              // m/s from the API, rendered in the organisation's chosen unit —
+              // the alternative is two different units side by side on one panel.
+              <RangeSummary
+                deviceId={deviceId}
+                unitLabel={units.unitFor('m/s')}
+                format={(v) => units.format(v, 'm/s')}
+              />
             ) : null}
           </div>
           <div className="flex items-center gap-2">
@@ -207,12 +221,23 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
                 speedKmh={data.windSpeedKmh}
                 dirDeg={data.windDirTrueDeg}
                 headingOffsetDeg={data.headingOffsetDeg ?? 0}
+                speedUnit={units.unitFor('m/s')}
+                formatSpeed={(ms) => units.format(ms, 'm/s', 2)}
               />
             </Widget>
           ) : null}
           {show('wind_speed') ? (
             <Widget>
-              <Gauge value={data.windSpeedKmh} min={0} max={100} label="Wind speed" unit="km/h" valueRole="seq-3" bands={WIND_BANDS} />
+              <Gauge
+                value={data.windSpeedMs}
+                min={0}
+                max={WIND_MAX_MS}
+                label="Wind speed"
+                unit={units.unitFor('m/s')}
+                format={(v) => units.format(v, 'm/s')}
+                valueRole="seq-3"
+                bands={WIND_BANDS}
+              />
             </Widget>
           ) : null}
           {show('humidity') ? (
@@ -222,7 +247,16 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
           ) : null}
           {show('pressure') ? (
             <Widget>
-              <Gauge value={data.pressureHpa} min={950} max={1050} label="Pressure" unit="hPa" valueRole="seq-4" bands={PRESSURE_BANDS} />
+              <Gauge
+                value={data.pressureHpa}
+                min={950}
+                max={1050}
+                label="Pressure"
+                unit={units.unitFor('hPa')}
+                format={(v) => units.format(v, 'hPa')}
+                valueRole="seq-4"
+                bands={PRESSURE_BANDS}
+              />
             </Widget>
           ) : null}
           {show('solar') ? (
@@ -232,12 +266,26 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
           ) : null}
           {show('temperature') ? (
             <Widget>
-              <Thermometer value={data.tempC} min={-10} max={50} label="Temperature" />
+              <Thermometer
+                value={data.tempC}
+                min={-10}
+                max={50}
+                label="Temperature"
+                unit={units.unitFor('°C')}
+                format={(v) => units.format(v, '°C')}
+              />
             </Widget>
           ) : null}
           {show('dew_point') ? (
             <Widget>
-              <Thermometer value={data.dewPointC} min={-10} max={30} label="Dew point" />
+              <Thermometer
+                value={data.dewPointC}
+                min={-10}
+                max={30}
+                label="Dew point"
+                unit={units.unitFor('°C')}
+                format={(v) => units.format(v, '°C')}
+              />
             </Widget>
           ) : null}
           {show('wind_dir') ? (

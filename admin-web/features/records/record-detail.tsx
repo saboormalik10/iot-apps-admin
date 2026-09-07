@@ -14,9 +14,11 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { MEASURE_FIELDS, measureFieldLabel } from './measure-fields';
+import { useUnits } from '@/lib/units/use-units';
 import { GpsTrackMap } from './gps-track-map';
 import { ExportMenu } from '@/components/data/export-menu';
 import { ShareButton } from '@/features/share/share-button';
+import { useOrg } from '@/features/org/use-org';
 import { useRecord, useRecordMeasures } from './use-records';
 
 const VIZ_LIMIT = 2000; // cap the series/map/stats fetch; the table paginates separately
@@ -50,7 +52,10 @@ const fmtDate = (ms: number) => new Date(ms).toLocaleString(undefined, { dateSty
  * raw-NMEA inspector, a paginated measures table, CSV export, and attachments.
  */
 export function RecordDetail({ id }: { id: string }) {
+  const units = useUnits();
   const { data: record, isLoading: recordLoading } = useRecord(id);
+  // Read only for its timezone, so the station day can name the zone it is in.
+  const { data: org } = useOrg();
   const { data: viz } = useRecordMeasures(id, 1, VIZ_LIMIT);
   const [tablePage, setTablePage] = useState(1);
   const { data: tablePageData, isLoading: tableLoading } = useRecordMeasures(id, tablePage, TABLE_LIMIT);
@@ -64,14 +69,18 @@ export function RecordDetail({ id }: { id: string }) {
   const columns = useMemo<ColumnDef<MetMeasureRow, unknown>[]>(
     () => [
       { header: 'Time', cell: ({ row }) => new Date(row.original.timestampMs).toLocaleTimeString() },
-      { header: 'Temp °C', cell: ({ row }) => fmt(row.original.tempC, 1) },
+      // Headers carry the ACTIVE unit, not the stored one: a column of numbers
+      // silently converted under a "°C" heading is worse than no conversion.
+      { header: `Temp ${units.unitFor('°C')}`, cell: ({ row }) => units.format(row.original.tempC, '°C') },
       { header: 'RH %', cell: ({ row }) => fmt(row.original.humidityPct, 0) },
-      { header: 'Press hPa', cell: ({ row }) => fmt(row.original.pressureHpa, 1) },
-      { header: 'Wind m/s', cell: ({ row }) => fmt(row.original.windSpeedMs, 1) },
+      { header: `Press ${units.unitFor('hPa')}`, cell: ({ row }) => units.format(row.original.pressureHpa, 'hPa') },
+      { header: `Wind ${units.unitFor('m/s')}`, cell: ({ row }) => units.format(row.original.windSpeedMs, 'm/s') },
       { header: 'Dir °', cell: ({ row }) => fmt(row.original.windDirTrueDeg, 0) },
-      { header: 'Dew °C', cell: ({ row }) => fmt(row.original.dewPointC, 1) },
+      { header: `Dew ${units.unitFor('°C')}`, cell: ({ row }) => units.format(row.original.dewPointC, '°C') },
     ],
-    [],
+    // `units` matters now: without it the headers and cells would keep the units
+    // that were in force when the table first mounted.
+    [units],
   );
 
   const backLink = (
@@ -105,7 +114,22 @@ export function RecordDetail({ id }: { id: string }) {
             {record.dateEndMs != null ? ` – ${fmtDate(record.dateEndMs)}` : ''} · {record.measureCount.toLocaleString()}{' '}
             measures
           </p>
-          {record.comment ? <p className="mt-1 text-sm">{record.comment}</p> : null}
+          {/* The station's own day, named as such.
+              A record groups one calendar day AT THE STATION, and that boundary
+              is frozen when the data is written. Rendered beside a start time in
+              the viewer's timezone it looks contradictory — "2026-09-08" next to
+              "Sep 7, 7:00 PM" — so it is labelled with whose day it is and in
+              which zone, rather than left as the raw ingest comment. */}
+          {record.dayKey ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Station day {record.dayKey}
+              {org?.timezone ? ` · ${org.timezone}` : ''}
+              {record.source === 'sftp' ? ' · SFTP ingest' : ''}
+            </p>
+          ) : null}
+          {/* A human's note. The ingest comment is machine-written provenance and
+              is shown above instead, so it is not repeated here. */}
+          {record.comment && !record.dayKey ? <p className="mt-1 text-sm">{record.comment}</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <ShareButton resourceType="metRecord" resourceId={record._id} resourceLabel={record.deviceName} />
@@ -171,13 +195,18 @@ export function RecordDetail({ id }: { id: string }) {
           <div className="grid gap-3 md:grid-cols-2">
             {fields.map((key, idx) => {
               const field = MEASURE_FIELDS.find((f) => f.key === key)!;
-              const rows = vizRows.map((m) => ({ timestampMs: m.timestampMs, value: m[key as keyof MetMeasureRow] as number | null }));
+              // Converted here rather than at the axis: the chart draws whatever
+              // it is handed, so the values and the unit label have to move together.
+              const rows = vizRows.map((m) => ({
+                timestampMs: m.timestampMs,
+                value: units.value(m[key as keyof MetMeasureRow] as number | null, field.unit),
+              }));
               return (
                 <TimeSeriesChart
                   key={key}
                   data={rows}
                   xKey="timestampMs"
-                  unit={field.unit}
+                  unit={units.unitFor(field.unit)}
                   title={measureFieldLabel(key)}
                   series={[{ key: 'value', label: field.label, role: SERIES_ROLES[idx % SERIES_ROLES.length] }]}
                   height={200}

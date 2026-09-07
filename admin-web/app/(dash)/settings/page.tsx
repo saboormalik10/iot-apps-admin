@@ -2,6 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import { ProfileForm } from '@/features/profile/profile-form';
 import { AccessibilityCard } from '@/features/profile/accessibility-card';
 import { BrandingForm } from '@/features/org/branding-form';
+import { DisplayUnitsForm } from '@/features/org/display-units-form';
 
 export default async function SettingsPage() {
   const t = await getTranslations('profile');
@@ -13,6 +14,7 @@ export default async function SettingsPage() {
       </div>
       <ProfileForm />
       <BrandingForm />
+      <DisplayUnitsForm />
       <AccessibilityCard />
     </div>
   );

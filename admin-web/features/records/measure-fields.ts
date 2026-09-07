@@ -1,6 +1,12 @@
 import type { MetMeasureRow } from '@/lib/api/types';
 
-/** Numeric measure channels for the record-detail column-picker chart. */
+/**
+ * Numeric measure channels for the record-detail column-picker chart.
+ *
+ * `unit` is the CANONICAL unit these fields are stored in — see the note in
+ * `features/analytics/sensors.ts`. The record-detail chart and table convert at
+ * render time via `useUnits()`.
+ */
 export interface MeasureField {
   key: keyof MetMeasureRow;
   label: string;

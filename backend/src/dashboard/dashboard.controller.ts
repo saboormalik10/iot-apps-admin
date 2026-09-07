@@ -34,12 +34,17 @@ export class DashboardController {
   async getSummary(
     @Query('type') type: string,
     @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
     @CurrentUser() user: JWTPayload,
   ) {
     return this.dashboardService.getSummary(
       user.organizationId,
       type === 'MET-LINK' || type === 'NEP-LINK' ? type : undefined,
       deviceId || undefined,
+      // Only the data tiles narrow to this; device and alert counts are current
+      // state. Absent means "all time", which is the previous behaviour.
+      { from: from ? Number(from) : undefined, to: to ? Number(to) : undefined },
     );
   }
 

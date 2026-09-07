@@ -4,6 +4,8 @@ import { Cpu, Wifi, WifiOff, FileText } from 'lucide-react'; // BellRing, Waves 
 import { StatTile } from '@/components/charts/stat-tile';
 
 import { fmt } from '@/components/charts/chart-utils';
+import { RANGE_LABELS } from '@/components/data/date-range-picker';
+import { useScope } from '@/lib/hooks/use-scope';
 import { useSummary } from './use-dashboard';
 import { useEffectiveDeviceType } from './use-scoped-device';
 
@@ -16,15 +18,28 @@ import { useEffectiveDeviceType } from './use-scoped-device';
  */
 export function KpiRow() {
   const { data, isLoading, isError } = useSummary();
+  const { scope } = useScope();
   const effectiveType = useEffectiveDeviceType();
   const showMet = !effectiveType || effectiveType === 'MET-LINK';
+
+  // Name the window the readings were counted in, using the same wording as the
+  // picker so the tile and the control cannot describe it differently.
+  const rangeSub = RANGE_LABELS[scope.range].toLowerCase();
 
   if (isLoading) return <KpiSkeleton />;
   if (isError || !data) return null;
 
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <StatTile label="Devices" value={fmt(data.totalDevices, 0)} icon={<Cpu className="h-4 w-4" />} />
+      {/* Current state, deliberately NOT narrowed to the range: "devices in the
+          last hour" is not a question with an answer. When a range is active the
+          tiles say so, rather than looking as though they ignored the filter. */}
+      <StatTile
+        label="Devices"
+        value={fmt(data.totalDevices, 0)}
+        sub={data.windowed ? 'now' : undefined}
+        icon={<Cpu className="h-4 w-4" />}
+      />
       <StatTile
         label="Online"
         value={fmt(data.onlineDevices, 0)}
@@ -44,7 +59,13 @@ export function KpiRow() {
            */
           label="MET readings"
           value={fmt(data.totalMetRecords, 0)}
-          sub={data.totalMetDays ? `over ${fmt(data.totalMetDays, 0)} days` : undefined}
+          sub={
+            data.windowed
+              ? rangeSub
+              : data.totalMetDays
+                ? `over ${fmt(data.totalMetDays, 0)} days`
+                : undefined
+          }
           icon={<FileText className="h-4 w-4" />}
           spark={data.sparklines?.records}
           sparkRole="chart-2"

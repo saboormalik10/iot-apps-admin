@@ -26,7 +26,45 @@ const ALL_TYPES = '__all_types__';
  * no device-type select (each tab is locked to one family) — so the global bar
  * steps aside there. That bar carries its own demo toggle.
  */
-const HIDDEN_PREFIXES = ['/org', '/settings', '/profile', '/import', '/analytics', '/roles', '/platform', '/stream-types'];
+const HIDDEN_PREFIXES = [
+  '/org',
+  '/settings',
+  '/profile',
+  '/import',
+  '/analytics',
+  '/roles',
+  '/platform',
+  '/stream-types',
+  // Below: pages that render no scoped data. The bar was still drawn on these,
+  // so its three controls wrote to the URL and nothing read them — a filter row
+  // that visibly does nothing reads as a broken filter, not an absent one.
+  //
+  // `/alerts` and `/notifications` are here because they carry their OWN
+  // filters; two filter rows disagreeing about what is shown is worse than one.
+  '/fleet',
+  '/alerts',
+  '/notifications',
+  '/share',
+  '/users',
+];
+
+/**
+ * Detail routes — `/records/<id>`, `/devices/<id>`.
+ *
+ * The LIST at each of these paths is scoped and keeps its bar; the detail page
+ * is already pinned to one record or one device, so a device filter above it
+ * would be asking to narrow to something other than the thing on screen.
+ */
+const DETAIL_ROUTE = /^\/(records|devices)\/[^/]+/;
+
+/**
+ * Routes where the DEVICE and TYPE filters work but the RANGE reads nothing.
+ *
+ * Stations lists current state — status, last seen, battery, firmware — none of
+ * which is bounded by a time window, so a range control there changes the URL
+ * and nothing else. The rest of the bar stays, because it does filter.
+ */
+const NO_RANGE_PREFIXES = ['/devices'];
 
 /**
  * ScopeBar — the persistent, URL-synced filter row inherited by every data page
@@ -42,7 +80,9 @@ export function ScopeBar() {
   const { data: devices = [] } = useDashboardDevices();
   const availableTypes = Array.from(new Set(devices.map((d) => d.type)));
 
-  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)) || DETAIL_ROUTE.test(pathname)) return null;
+
+  const showRange = !NO_RANGE_PREFIXES.some((p) => pathname.startsWith(p));
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b bg-card/40 px-4 py-2 text-sm md:px-6">
@@ -74,7 +114,9 @@ export function ScopeBar() {
         className="h-8 w-[190px]"
       />
 
-      <DateRangePicker value={scope.range} onChange={(range) => setScope({ range })} className="h-8 w-[150px]" />
+      {showRange ? (
+        <DateRangePicker value={scope.range} onChange={(range) => setScope({ range })} className="h-8 w-[150px]" />
+      ) : null}
 
       {!isDefault ? (
         <Button variant="ghost" size="sm" className="ml-auto h-8 gap-1 text-xs" onClick={reset}>

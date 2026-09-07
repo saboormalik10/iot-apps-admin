@@ -8,6 +8,7 @@ import { LoadingState, EmptyState } from '@/components/screen-states';
 import { fmt } from '@/components/charts/chart-utils';
 import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import { MET_SENSORS, sensorUnit } from '../sensors';
+import { useUnits } from '@/lib/units/use-units';
 import { useMetStatistics } from '../use-analytics';
 
 /**
@@ -27,8 +28,22 @@ export function StatisticsPanel({ deviceId }: { deviceId?: string }) {
    */
   const [sensor, setSensor] = useState('wind_speed');
   const { data, isLoading } = useMetStatistics(deviceId, sensor);
+  const units = useUnits();
   const unit = sensorUnit(sensor);
-  const withUnit = (v?: number | null) => (v == null ? '—' : `${fmt(v, 2)} ${unit}`);
+  /** Mean, median, min, max, percentiles — READINGS, so a full conversion. */
+  const withUnit = (v?: number | null) =>
+    v == null ? '—' : `${units.format(v, unit, 2)} ${units.unitFor(unit)}`;
+  /**
+   * Std dev and range are DISPERSIONS — distances between readings, not
+   * readings. °C → °F scales them by 9/5 with no +32: a 2 °C spread is a 3.6 °F
+   * spread, not 35.6. Sending these through `withUnit` would have produced a
+   * plausible-looking number that is simply wrong, and only for temperature.
+   */
+  const withSpread = (v?: number | null) => {
+    if (v == null) return '—';
+    const d = units.delta(v, unit, 2);
+    return `${d.text} ${d.unit}`;
+  };
 
   // Offer only the sensors this station reports. A wind-only device otherwise
   // lists 15 options, 13 of which return an empty chart.
@@ -76,8 +91,8 @@ export function StatisticsPanel({ deviceId }: { deviceId?: string }) {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatTile label="Mean" value={withUnit(data.mean)} sub={`n = ${data.count.toLocaleString()}`} />
             <StatTile label="Median" value={withUnit(data.median)} />
-            <StatTile label="Std dev" value={withUnit(data.stdDev)} sub={`skew ${fmt(data.skewness, 2)}`} />
-            <StatTile label="Range" value={withUnit(data.range)} />
+            <StatTile label="Std dev" value={withSpread(data.stdDev)} sub={`skew ${fmt(data.skewness, 2)}`} />
+            <StatTile label="Range" value={withSpread(data.range)} />
             <StatTile label="Min" value={withUnit(data.min)} />
             <StatTile label="Max" value={withUnit(data.max)} />
             <StatTile label="P90" value={withUnit(data.p90)} />

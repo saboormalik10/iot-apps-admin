@@ -21,6 +21,28 @@ const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 const INVITE_TOKEN_EXPIRY_DAYS = 7;
 const VALID_ROLES: UserRole[] = ['admin', 'operator', 'viewer'];
 
+export interface DisplayUnitsInput {
+  windSpeed: string;
+  pressure: string;
+  temperature: string;
+  altitude: string;
+}
+
+/** The units values are STORED in — and therefore the safe fallback. */
+const CANONICAL_UNITS: DisplayUnitsInput = {
+  windSpeed: 'm/s',
+  pressure: 'hPa',
+  temperature: '°C',
+  altitude: 'm',
+};
+
+const ALLOWED_UNITS: Record<keyof DisplayUnitsInput, readonly string[]> = {
+  windSpeed: ['m/s', 'km/h', 'knots', 'mph', 'bft'],
+  pressure: ['hPa', 'mbar', 'inHg', 'mmHg'],
+  temperature: ['°C', '°F'],
+  altitude: ['m', 'ft'],
+};
+
 export interface BrandingInput {
   displayName: string;
   logoUrl: string;
@@ -234,6 +256,75 @@ export class OrganizationsService {
     }).catch(() => void 0);
 
     return this.getBranding(organizationId);
+  }
+
+  /**
+   * Resolve this organisation's display units.
+   *
+   * Falls back PER FIELD, not per object: a document written before this feature
+   * existed has no subdocument at all, and one written by an older client may
+   * carry only some keys. Returning a partial object would leave the client
+   * without a unit to render, so each missing key resolves to its canonical
+   * value — which is also what the raw stored number already is.
+   */
+  async getDisplayUnits(organizationId: string) {
+    const org = await this.getOrganization(organizationId);
+    const u = org.displayUnits ?? ({} as IOrganization['displayUnits']);
+    const resolve = (k: keyof DisplayUnitsInput) =>
+      u[k] && ALLOWED_UNITS[k].includes(u[k]) ? u[k] : CANONICAL_UNITS[k];
+    return {
+      windSpeed: resolve('windSpeed'),
+      pressure: resolve('pressure'),
+      temperature: resolve('temperature'),
+      altitude: resolve('altitude'),
+      /** False means "never chosen" — the client may say so rather than imply a choice. */
+      isCustomised: (Object.keys(ALLOWED_UNITS) as (keyof DisplayUnitsInput)[]).some(
+        (k) => u[k] && u[k] !== CANONICAL_UNITS[k],
+      ),
+      updatedAt: u.updatedAt ?? null,
+    };
+  }
+
+  /**
+   * Update display units. Presentation only — NOTHING is rewritten in any
+   * measurement collection, and the canonical stored values are unaffected.
+   *
+   * The DTO already rejects an out-of-list value; this re-checks because the
+   * service is also reachable from scripts, and a bad unit here would silently
+   * blank a number on every screen rather than fail loudly.
+   */
+  async updateDisplayUnits(organizationId: string, input: Partial<DisplayUnitsInput>, actor: ActorMeta) {
+    const org = await this.getOrganization(organizationId);
+    const changes: Record<string, unknown> = {};
+
+    for (const key of Object.keys(ALLOWED_UNITS) as (keyof DisplayUnitsInput)[]) {
+      const v = input[key];
+      if (v === undefined) continue;
+      if (!ALLOWED_UNITS[key].includes(v)) {
+        throw badRequest(`${v} is not a supported ${key} unit`, 'UNSUPPORTED_UNIT');
+      }
+      changes[key] = v;
+    }
+
+    if (Object.keys(changes).length === 0) return this.getDisplayUnits(organizationId);
+
+    await Organization.updateOne(
+      { _id: org._id },
+      { $set: Object.fromEntries(Object.entries({ ...changes, updatedAt: new Date() }).map(([k, v]) => [`displayUnits.${k}`, v])) },
+    );
+
+    AuditLog.create({
+      organizationId: org._id,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(org._id),
+      resourceName: org.name + ' display units',
+      changes,
+    }).catch(() => void 0);
+
+    return this.getDisplayUnits(organizationId);
   }
 
   /**

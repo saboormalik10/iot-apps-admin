@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
-import { COMPASS_16, sectorIndex, fmt } from '@/components/charts/chart-utils';
+import { COMPASS_16, sectorIndex } from '@/components/charts/chart-utils';
 import { StatTile } from '@/components/charts/stat-tile';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { IntervalSelect } from './interval-select';
 import { useMetWindGust } from '../use-analytics';
+import { useUnits } from '@/lib/units/use-units';
 
 const INTERVALS = [
   { key: '1h', label: '1 hour' },
@@ -23,6 +24,7 @@ const xFmt = (v: number | null) =>
  * window is called out with its gust direction (a compass label, not a 2nd axis).
  */
 export function WindGustChart({ deviceId }: { deviceId?: string }) {
+  const units = useUnits();
   const [interval, setInterval] = useState('1h');
   const { data, isLoading } = useMetWindGust(deviceId, interval);
 
@@ -45,14 +47,14 @@ export function WindGustChart({ deviceId }: { deviceId?: string }) {
           {peak ? (
             <StatTile
               label="Peak gust"
-              value={`${fmt(peak.gustMs, 1)} m/s`}
+              value={`${units.format(peak.gustMs, 'm/s')} ${units.unitFor('m/s')}`}
               sub={`from ${compass(peak.dirDeg)} · ${new Date(peak.ts).toLocaleString()}`}
             />
           ) : null}
           <TimeSeriesChart
-            data={points.map((d) => ({ timestampMs: d.ts, gust: d.gustMs }))}
+            data={points.map((d) => ({ timestampMs: d.ts, gust: units.value(d.gustMs, 'm/s') }))}
             xKey="timestampMs"
-            unit="m/s"
+            unit={units.unitFor('m/s')}
             title="Peak wind per bucket"
             xFormatter={xFmt}
             series={[{ key: 'gust', label: 'Gust', role: 'chart-1' }]}

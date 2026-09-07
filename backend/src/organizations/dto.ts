@@ -116,6 +116,44 @@ export class UpdateBrandingDto {
 }
 
 /**
+ * Display units for this organisation's readings.
+ *
+ * `@IsIn` is what makes this endpoint safe: the whole point of the field is that
+ * the web client looks the value up in a conversion table, so an unrecognised
+ * string would render every affected number as a blank or a NaN. The allow-lists
+ * mirror the conversion families in `analytics.util.ts` — keep them in step.
+ *
+ * NOTE: the global ValidationPipe runs with `whitelist: true`, so an undecorated
+ * property is silently STRIPPED.
+ */
+export const WIND_SPEED_UNITS = ['m/s', 'km/h', 'knots', 'mph', 'bft'] as const;
+export const PRESSURE_UNITS = ['hPa', 'mbar', 'inHg', 'mmHg'] as const;
+export const TEMPERATURE_UNITS = ['°C', '°F'] as const;
+export const ALTITUDE_UNITS = ['m', 'ft'] as const;
+
+export class UpdateDisplayUnitsDto {
+  @ApiPropertyOptional({ enum: WIND_SPEED_UNITS, example: 'knots' })
+  @IsOptional()
+  @IsIn(WIND_SPEED_UNITS as unknown as string[])
+  windSpeed?: string;
+
+  @ApiPropertyOptional({ enum: PRESSURE_UNITS, example: 'hPa' })
+  @IsOptional()
+  @IsIn(PRESSURE_UNITS as unknown as string[])
+  pressure?: string;
+
+  @ApiPropertyOptional({ enum: TEMPERATURE_UNITS, example: '°C' })
+  @IsOptional()
+  @IsIn(TEMPERATURE_UNITS as unknown as string[])
+  temperature?: string;
+
+  @ApiPropertyOptional({ enum: ALTITUDE_UNITS, example: 'm' })
+  @IsOptional()
+  @IsIn(ALTITUDE_UNITS as unknown as string[])
+  altitude?: string;
+}
+
+/**
  * Create a user directly, with a password rather than an invitation.
  *
  * There is no invite email in this deployment (M15 W3), so the operator sets the

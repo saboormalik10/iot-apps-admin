@@ -39,6 +39,28 @@ export interface IOrganization extends Document {
     supportEmail: string;
     updatedAt: Date | null;
   };
+  /**
+   * The units this customer's readings are RENDERED in.
+   *
+   * Storage is untouched by this: every measurement stays in its canonical unit
+   * on `MetMeasure` (m/s, hPa, °C, m) and conversion happens at display time.
+   * Anything else would make a stored number meaningless without also knowing
+   * which preference was in force when it was written.
+   *
+   * Org-scoped rather than per-user so that a reading quoted between two people
+   * at the same customer means the same thing — and so the choice is auditable.
+   */
+  displayUnits: {
+    /** m/s | km/h | knots | mph | bft */
+    windSpeed: string;
+    /** hPa | mbar | inHg | mmHg */
+    pressure: string;
+    /** °C | °F */
+    temperature: string;
+    /** m | ft */
+    altitude: string;
+    updatedAt: Date | null;
+  };
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -58,6 +80,15 @@ const organizationSchema = new Schema<IOrganization>(
       logoStorageKey: { type: String, default: '' },
       accentColor: { type: String, default: '' },
       supportEmail: { type: String, default: '' },
+      updatedAt: { type: Date, default: null },
+    },
+    // Defaults are the CANONICAL units, i.e. exactly how the values are stored.
+    // A customer who never opens the form therefore sees unconverted numbers.
+    displayUnits: {
+      windSpeed: { type: String, default: 'm/s' },
+      pressure: { type: String, default: 'hPa' },
+      temperature: { type: String, default: '°C' },
+      altitude: { type: String, default: 'm' },
       updatedAt: { type: Date, default: null },
     },
     deletedAt: { type: Date, default: null },

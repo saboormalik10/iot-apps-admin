@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Types } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { MetRecord, IMetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
@@ -40,11 +40,25 @@ export interface ListMeasuresOptions {
   limit?: number;
 }
 
+/**
+ * One row of the records list.
+ *
+ * `IMetRecord` extends Mongoose's `Document`, so it carries the document
+ * METHODS as well as the fields. `.lean()` returns plain objects, and spreading
+ * one to add a derived field drops those methods — hence the data-only shape.
+ */
+type LeanRecord = Omit<IMetRecord, keyof Document> & { _id: Types.ObjectId };
+export type ListedRecord = LeanRecord & { measuresInRange?: number };
+export interface ListRecordsResult {
+  data: ListedRecord[];
+  meta: { page: number; limit: number; total: number; pages: number };
+}
+
 @Injectable()
 export class RecordsService {
   constructor(private readonly eventEmitter: EventEmitter2) {}
 
-  async listRecords(opts: ListRecordsOptions) {
+  async listRecords(opts: ListRecordsOptions): Promise<ListRecordsResult> {
     const { organizationId, deviceId, from, to, page = 1, limit = 20 } = opts;
     const orgId = new Types.ObjectId(organizationId);
     const query: Record<string, unknown> = {
@@ -54,16 +68,79 @@ export class RecordsService {
     };
     if (deviceId) query.deviceId = new Types.ObjectId(deviceId);
     if (from || to) {
-      query.dateStartMs = {};
-      if (from) (query.dateStartMs as Record<string, number>).$gte = from;
-      if (to) (query.dateStartMs as Record<string, number>).$lte = to;
+      /**
+       * OVERLAP, not containment.
+       *
+       * A `MetRecord` is one document per station per LOCAL DAY, so it SPANS
+       * hours — the open one starts at local midnight and runs until the station
+       * stops. Matching `dateStartMs` against the window asked "did the day
+       * BEGIN inside it?", which is false for every range shorter than a day:
+       * `?range=1h` returned nothing while the current day's record held that
+       * exact hour.
+       *
+       * A record is in range when it overlaps the window. `dateEndMs: null` is
+       * the still-open day and must always be included, or the newest record —
+       * the one anybody looking at a recent range actually wants — is the single
+       * row that never matches. This mirrors `metRecordIds` in
+       * analytics.service.ts, which already resolved records this way.
+       */
+      if (to) query.dateStartMs = { $lte: to };
+      if (from) query.$or = [{ dateEndMs: null }, { dateEndMs: { $gte: from } }];
     }
     const skip = (page - 1) * limit;
+    // The lean shape is spelled out rather than inferred: adding a derived field
+    // below pushed the inferred type past what TypeScript will serialize
+    // (TS7056), and an explicit row type is clearer than the alternative anyway.
     const [items, total] = await Promise.all([
-      MetRecord.find(query).sort({ dateStartMs: -1 }).skip(skip).limit(limit).lean(),
+      MetRecord.find(query)
+        .sort({ dateStartMs: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean<LeanRecord[]>(),
       MetRecord.countDocuments(query),
     ]);
-    return { data: items, meta: { page, limit, total, pages: Math.ceil(total / limit) } };
+
+    /**
+     * How many of each record's readings fall INSIDE the requested window.
+     *
+     * A record is one document per station per local DAY, so a window narrower
+     * than a day selects the whole day's record and the row then reported the
+     * whole day: picking "last hour" showed 8,636 measures. The filter was
+     * right; the number beside it was answering a different question.
+     *
+     * Counted only for the records on THIS page (at most `limit`), and only when
+     * a window was actually given, so the cost is bounded and absent when there
+     * is nothing to qualify. Served by the existing
+     * `recordId_1_rowType_1_timestampMs_-1` index — measured at ~80ms.
+     */
+    let inRange: Map<string, number> | null = null;
+    if ((from || to) && items.length) {
+      const span: Record<string, number> = {};
+      if (from) span.$gte = from;
+      if (to) span.$lte = to;
+      const rows = await MetMeasure.aggregate<{ _id: Types.ObjectId; n: number }>([
+        {
+          $match: {
+            recordId: { $in: items.map((r) => r._id as Types.ObjectId) },
+            rowType: 'data',
+            timestampMs: span,
+          },
+        },
+        { $group: { _id: '$recordId', n: { $sum: 1 } } },
+      ]);
+      inRange = new Map(rows.map((r) => [String(r._id), r.n]));
+    }
+
+    const data = items.map((r) =>
+      inRange === null
+        ? r
+        : // A record with no rows in the window reports 0 rather than being
+          // omitted — it still overlaps the range, and "0 in range" is the
+          // answer to why it looks empty.
+          { ...r, measuresInRange: inRange.get(String(r._id)) ?? 0 },
+    );
+
+    return { data, meta: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   async createRecord(organizationId: string, input: CreateRecordInput, actor: { userId: string; email: string }) {

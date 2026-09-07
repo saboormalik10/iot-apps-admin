@@ -17,7 +17,20 @@ export type AuditResourceType =
   | 'record'
   | 'alertRule'
   | 'shareToken'
-  | 'org'
+  /**
+   * Organisation-level changes: branding, logo, display units, and the platform
+   * / auth flows that touch an organisation.
+   *
+   * This value was `'org'` until M25. Nothing ever wrote `'org'` — all six
+   * `AuditLog.create` call sites passed `'organization'`, which the enum
+   * rejected, and every one of those writes is fire-and-forget
+   * (`.catch(() => void 0)`). So the failures were silent and the audit
+   * collection contained ZERO organisation rows: 2082 user rows, 1431 station
+   * rows, and nothing at all for the branding changes the UI promised were
+   * "recorded in the audit log". Renamed rather than added because no stored row
+   * used the old value.
+   */
+  | 'organization'
   | 'settings'
   // M18: roles are audited like any other governed resource — who changed who
   // could do what is exactly the question an audit log exists to answer.
@@ -52,7 +65,7 @@ const auditLogSchema = new Schema<IAuditLog>(
     },
     resourceType: {
       type: String,
-      enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings', 'role', 'serviceCredential', 'station'],
+      enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'organization', 'settings', 'role', 'serviceCredential', 'station'],
       required: true,
     },
     resourceId: { type: String, default: null },

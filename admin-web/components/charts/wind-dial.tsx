@@ -35,6 +35,8 @@ export function WindDial({
   speedMs,
   speedKmh,
   dirDeg,
+  speedUnit = 'km/h',
+  formatSpeed,
   /**
    * Degrees added to the raw sensor bearing to reach true north. 0 means the mast
    * has not been surveyed, so the bearing is RELATIVE and the dial says so rather
@@ -48,6 +50,10 @@ export function WindDial({
   speedMs: number | null;
   speedKmh: number | null;
   dirDeg: number | null;
+  /** Label for the printed speed. The BANDS and Beaufort force stay on `speedMs`. */
+  speedUnit?: string;
+  /** Print the speed from the canonical m/s reading; defaults to the km/h value. */
+  formatSpeed?: (ms: number | null) => string;
   headingOffsetDeg?: number;
   label?: string;
   size?: number;
@@ -68,7 +74,7 @@ export function WindDial({
   const rTick = rRing - 7;
 
   const ariaLabel = hasSpeed
-    ? `${label}: ${speedKmh?.toFixed(2) ?? '–'} kilometres per hour` +
+    ? `${label}: ${formatSpeed ? `${formatSpeed(speedMs)} ${speedUnit}` : `${speedKmh?.toFixed(2) ?? '–'} kilometres per hour`}` +
       (bearing != null ? `, bearing ${Math.round(bearing)} degrees ${sector}` : ', no bearing — below the sensor threshold') +
       (calibrated ? '' : ', bearing relative to the mast, uncalibrated')
     : `${label}: no data`;
@@ -169,9 +175,9 @@ export function WindDial({
       <div className="-mt-2 flex flex-col items-center gap-1 text-center">
         <div className="flex items-baseline gap-1">
           <span className="text-3xl font-semibold tabular-nums leading-none">
-            {hasSpeed ? speedKmh?.toFixed(2) : fmt(null)}
+            {formatSpeed ? formatSpeed(speedMs) : hasSpeed ? speedKmh?.toFixed(2) : fmt(null)}
           </span>
-          <span className="text-sm text-muted-foreground">km/h</span>
+          <span className="text-sm text-muted-foreground">{speedUnit}</span>
         </div>
 
         {/* Band + force only when there is a reading to band. With no speed this

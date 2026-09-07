@@ -4,7 +4,9 @@ import { RANGE_PRESETS, type RangePreset } from '@/lib/hooks/use-scope';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -16,7 +18,23 @@ export const RANGE_LABELS: Record<RangePreset, string> = {
   '7d': 'Last 7 days',
   '30d': 'Last 30 days',
   all: 'All time',
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last7days: 'Last 7 days',
 };
+
+/**
+ * Which family a preset belongs to, spelled out for the reader.
+ *
+ * Rolling and calendar presets can name the same span — "Last 7 days" means both
+ * "the last 168 hours" and "the last 7 calendar days", and they are genuinely
+ * different windows. The group heading is what tells them apart, so it is not
+ * decoration: without it the menu offers the same words twice.
+ */
+const GROUPS: { kind: 'rolling' | 'day'; heading: string; hint: string }[] = [
+  { kind: 'rolling', heading: 'Rolling', hint: 'counted back from right now' },
+  { kind: 'day', heading: 'Calendar days', hint: 'your local midnight' },
+];
 
 /**
  * DateRangePicker — the quick-preset range control used by the Scope Bar. The
@@ -38,11 +56,22 @@ export function DateRangePicker({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {RANGE_PRESETS.map((p) => (
-          <SelectItem key={p.key} value={p.key}>
-            {RANGE_LABELS[p.key]}
-          </SelectItem>
-        ))}
+        {GROUPS.map(({ kind, heading, hint }) => {
+          const presets = RANGE_PRESETS.filter((p) => p.kind === kind);
+          if (presets.length === 0) return null;
+          return (
+            <SelectGroup key={kind}>
+              <SelectLabel>
+                {heading} <span className="normal-case opacity-70">· {hint}</span>
+              </SelectLabel>
+              {presets.map((p) => (
+                <SelectItem key={p.key} value={p.key}>
+                  {RANGE_LABELS[p.key]}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          );
+        })}
       </SelectContent>
     </Select>
   );

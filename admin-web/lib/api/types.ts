@@ -100,7 +100,7 @@ export type AuditResourceType =
   | 'record'
   | 'alertRule'
   | 'shareToken'
-  | 'org'
+  | 'organization'
   | 'settings';
 
 export interface AuditEntry {
@@ -155,6 +155,12 @@ export interface DashboardSummary {
   /** §10.8 — last-14-day daily counts, oldest→newest. */
   sparklines: { records: number[]; sessions: number[] };
   serverTime: string;
+  /**
+   * True when the reading/day figures were counted inside the scope-bar window.
+   * Device, online and armed-rule counts are current state either way — the UI
+   * says so rather than letting them look like they ignored the filter.
+   */
+  windowed?: boolean;
 }
 
 /** GET /dashboard/devices — one row per device with live-ish status. */
@@ -366,39 +372,10 @@ export interface FirmwareStatus {
   outdated: number;
 }
 
-/** One row of the per-sensor NMEA show/log grid. */
-export interface SensorPref {
-  NMEA: string;
-  Type: string;
-  Unit: string;
-  Desc: string;
-  EnShow?: number;
-  EnLog?: number;
-}
-
-/** GET/PATCH /devices/:id/settings — the full instrument config. */
-export interface DeviceSettings {
-  deviceId: string;
-  qqEnabled: boolean;
-  qqGpsHeight: boolean;
-  qfeHeightM: number;
-  qnhHeightM: number;
-  dewPointEnabled: boolean;
-  windRoseUnit: string;
-  windRosePeriod: string;
-  windRoseOrient: string;
-  graphicalType: string;
-  graphItem: number;
-  colorScheme: number;
-  pageLayout: number;
-  unitWindSpeed: string;
-  unitPressure: string;
-  unitTemperature: string;
-  unitAltitude: string;
-  sensorShowPrefs: SensorPref[] | null;
-  sensorLogPrefs: SensorPref[] | null;
-  updatedAt: string;
-}
+// `DeviceSettings` / `SensorPref` lived here for the device-settings editor, which
+// was deleted in M25 — nothing in this portal read the values back. The backend
+// still serves GET/PATCH /devices/:id/settings; re-add the types if a display
+// layer ever consumes them.
 
 // ── Analytics (Month 9 — MET deep-dive) ──────────────────────────────────────
 
@@ -547,6 +524,21 @@ export interface MetRecordRow {
   measureCount: number;
   hasHeaderRow: boolean;
   createdAt: string;
+  /**
+   * The STATION's local calendar day this record groups (YYYY-MM-DD), fixed when
+   * the data was written. It is not the viewer's day: a Sydney station's
+   * 2026-09-08 begins at 7:00 PM on 2026-09-07 for a viewer in Karachi.
+   */
+  dayKey?: string | null;
+  source?: 'sftp' | 'mobile' | null;
+  /**
+   * Readings inside the requested window, when one was given.
+   *
+   * A record spans a whole local day, so a narrower range still returns the
+   * whole record — `measureCount` then describes the day, not the selection.
+   * Absent when no window was requested.
+   */
+  measuresInRange?: number;
 }
 
 /** GET /records/:id/measures — one measure row (full measure set). */
@@ -1232,6 +1224,31 @@ export interface Branding {
 }
 
 export type BrandingInput = Partial<Pick<Branding, 'displayName' | 'logoUrl' | 'accentColor' | 'supportEmail'>>;
+
+/**
+ * The units this organisation's readings are rendered in.
+ *
+ * Every field is already resolved by the server, so there is no undefined case
+ * to handle at a render site — an organisation that has never chosen gets the
+ * canonical units, which is what the stored numbers already are.
+ */
+export interface DisplayUnits {
+  /** m/s | km/h | knots | mph | bft */
+  windSpeed: string;
+  /** hPa | mbar | inHg | mmHg */
+  pressure: string;
+  /** °C | °F */
+  temperature: string;
+  /** m | ft */
+  altitude: string;
+  /** False when the customer has never chosen — do not imply a choice was made. */
+  isCustomised: boolean;
+  updatedAt: string | null;
+}
+
+export type DisplayUnitsInput = Partial<
+  Pick<DisplayUnits, 'windSpeed' | 'pressure' | 'temperature' | 'altitude'>
+>;
 
 /** A provisioned station and the state of its most recent provisioning job. */
 export interface PlatformStation {

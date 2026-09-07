@@ -7,6 +7,7 @@ import { WIND_SPEED_BANDS, windBandIndex, cssVar } from '@/lib/api/scales';
 import { ChartTextureDefs, textureFill } from './chart-texture';
 import { COMPASS_16, sectorIndex, downloadCsv, downloadSvgPng } from './chart-utils';
 import { ChartFrame } from './chart-frame';
+import { useUnits } from '@/lib/units/use-units';
 
 export interface WindDatum {
   speedMs: number | null;
@@ -34,6 +35,7 @@ export function WindRose({
   title?: string;
   exportName?: string;
 }) {
+  const units = useUnits();
   const [tableView, setTableView] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -156,8 +158,11 @@ export function WindRose({
               <li key={b.label} className="flex items-center gap-1">
                 <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cssVar(b.role) }} aria-hidden />
                 {b.label}
+                {/* Band edges are readings, so they convert like any other —
+                    the legend has to speak the same unit as the rose's tooltip. */}
                 <span className="tabular-nums">
-                  ({b.minMs}–{b.maxMs === Infinity ? '∞' : b.maxMs} m/s)
+                  ({units.format(b.minMs, 'm/s')}–
+                  {b.maxMs === Infinity ? '∞' : units.format(b.maxMs, 'm/s')} {units.unitFor('m/s')})
                 </span>
               </li>
             ))}

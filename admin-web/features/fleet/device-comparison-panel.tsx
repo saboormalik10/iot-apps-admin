@@ -9,6 +9,7 @@ import { SERIES_ROLES } from '@/components/charts/chart-utils';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { useDashboardDevices } from '@/features/dashboard/use-dashboard';
 import { MET_SENSORS, sensorUnit } from '@/features/analytics/sensors';
+import { useUnits } from '@/lib/units/use-units';
 import { INTERVALS } from '@/lib/api/scales';
 import { useDeviceComparison } from './use-fleet';
 
@@ -20,6 +21,7 @@ const MAX_DEVICES = 5;
  * (fixed order). MET-LINK devices only, since the comparison uses the MET sensor map.
  */
 export function DeviceComparisonPanel() {
+  const units = useUnits();
   const { data: devices = [] } = useDashboardDevices();
   const metDevices = useMemo(() => devices.filter((d) => d.type === 'MET-LINK'), [devices]);
 
@@ -94,12 +96,14 @@ export function DeviceComparisonPanel() {
           row = { ts: pt.ts };
           byTs.set(pt.ts, row);
         }
-        row[s.deviceId] = pt.value;
+        // Converted as the rows are assembled: every series on this chart is
+        // the SAME sensor across devices, so one unit covers the whole overlay.
+        row[s.deviceId] = units.value(pt.value, sensorUnit(sensor));
       }
     }
     const rows = Array.from(byTs.values()).sort((a, b) => (a.ts as number) - (b.ts as number));
     return { rows, series };
-  }, [data]);
+  }, [data, sensor, units]);
 
   if (metDevices.length === 0) {
     return (
@@ -171,7 +175,7 @@ export function DeviceComparisonPanel() {
           data={rows}
           series={series}
           xKey="ts"
-          unit={sensorUnit(sensor)}
+          unit={units.unitFor(sensorUnit(sensor))}
           xFormatter={(v) => new Date(Number(v)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
           exportName={`device-comparison-${sensor}`}
         />

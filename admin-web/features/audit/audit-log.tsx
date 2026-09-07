@@ -22,7 +22,7 @@ import { formatDateTime } from '@/lib/time';
 import type { AuditQuery } from '@/lib/api/endpoints';
 
 const ACTIONS = ['create', 'update', 'delete', 'invite', 'revoke', 'export', 'login', 'logout'];
-const RESOURCES = ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'];
+const RESOURCES = ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'organization', 'settings'];
 const ALL = '__all__';
 
 export function AuditLog() {

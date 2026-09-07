@@ -172,8 +172,18 @@ export class DashboardService {
     organizationId: string,
     type?: 'MET-LINK' | 'NEP-LINK',
     deviceId?: string,
+    /**
+     * The scope bar's window. Only the DATA tiles narrow to it — device counts
+     * and armed-rule counts are "now" facts, and "devices in the last hour" is
+     * not a question with an answer.
+     */
+    window?: { from?: number; to?: number },
   ) {
-    const cacheKey = `summary:${organizationId}:${type ?? 'all'}:${deviceId ?? 'all'}`;
+    const from = window?.from;
+    const to = window?.to;
+    // The window is part of the identity of this result: without it a range
+    // change is served the previous range's numbers from cache.
+    const cacheKey = `summary:${organizationId}:${type ?? 'all'}:${deviceId ?? 'all'}:${from ?? 'x'}-${to ?? 'x'}`;
     const cached = fromCache<unknown>(cacheKey);
     if (cached) return cached;
 
@@ -218,12 +228,7 @@ export class DashboardService {
       // day, which reads as a broken number rather than a slow one. `measureCount`
       // is maintained on the record as rows are ingested, so summing 17 documents
       // gives the reading count without touching the 1.1M measures themselves.
-      countMet
-        ? MetRecord.aggregate<{ readings: number; days: number }>([
-            { $match: { organizationId: orgId, deletedAt: null, ...dataMatch } },
-            { $group: { _id: null, readings: { $sum: '$measureCount' }, days: { $sum: 1 } } },
-          ]).then((r) => r[0] ?? { readings: 0, days: 0 })
-        : Promise.resolve({ readings: 0, days: 0 }),
+      countMet ? this.metReadings(orgId, dataMatch, from, to) : Promise.resolve({ readings: 0, days: 0 }),
       countNep ? NepSession.countDocuments({ organizationId: orgId, deletedAt: null, ...dataMatch }) : Promise.resolve(0),
       AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
       countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, dataMatch, 'measureCount') : zeros(),
@@ -242,6 +247,14 @@ export class DashboardService {
       totalMetRecords: totalRecords.readings,
       totalMetDays: totalRecords.days,
       totalNepSessions: totalSessions,
+      /**
+       * Which figures the window applies to.
+       *
+       * Devices, online and armed rules are current state; narrowing them to a
+       * range would be meaningless. Saying so lets the tiles label themselves
+       * instead of appearing to ignore the filter — the reported complaint.
+       */
+      windowed: from != null || to != null,
       // §10.8 enrichment — armed alert rules + last-14-day daily-count sparklines
       activeAlertRules,
       sparklines: { records: recordsSparkline, sessions: sessionsSparkline },
@@ -249,6 +262,60 @@ export class DashboardService {
     };
 
     return toCache(cacheKey, result);
+  }
+
+  /**
+   * MET readings and days, narrowed to the window when one is given.
+   *
+   * With no window this stays the cheap path: `measureCount` is maintained on
+   * each record, so summing a handful of day-documents answers it without
+   * touching the measures at all.
+   *
+   * With a window that shortcut is wrong — a record spans a whole local day, so
+   * a range shorter than a day would still contribute the day's full count. The
+   * readings are counted directly instead, over the records the window actually
+   * overlaps, using the same `recordId + rowType + timestampMs` index that
+   * serves the records list.
+   */
+  private async metReadings(
+    orgId: Types.ObjectId,
+    dataMatch: Record<string, unknown>,
+    from?: number,
+    to?: number,
+  ): Promise<{ readings: number; days: number }> {
+    const base: Record<string, unknown> = { organizationId: orgId, deletedAt: null, ...dataMatch };
+
+    if (from == null && to == null) {
+      const agg = await MetRecord.aggregate<{ readings: number; days: number }>([
+        { $match: base },
+        { $group: { _id: null, readings: { $sum: '$measureCount' }, days: { $sum: 1 } } },
+      ]);
+      return agg[0] ?? { readings: 0, days: 0 };
+    }
+
+    // Records OVERLAPPING the window — matching on `dateStartMs` alone would ask
+    // whether the day BEGAN inside it, which is false for every sub-day range.
+    const overlap: Record<string, unknown> = { ...base };
+    if (to != null) overlap.dateStartMs = { $lte: to };
+    if (from != null) overlap.$or = [{ dateEndMs: null }, { dateEndMs: { $gte: from } }];
+
+    const records = await MetRecord.find(overlap).select('_id').lean();
+    if (records.length === 0) return { readings: 0, days: 0 };
+
+    const span: Record<string, number> = {};
+    if (from != null) span.$gte = from;
+    if (to != null) span.$lte = to;
+    const counted = await MetMeasure.aggregate<{ n: number }>([
+      {
+        $match: {
+          recordId: { $in: records.map((r) => r._id as Types.ObjectId) },
+          rowType: 'data',
+          timestampMs: span,
+        },
+      },
+      { $count: 'n' },
+    ]);
+    return { readings: counted[0]?.n ?? 0, days: records.length };
   }
 
   // ── GET /dashboard/devices ────────────────────────────────────────────────

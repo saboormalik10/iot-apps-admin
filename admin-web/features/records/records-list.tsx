@@ -10,8 +10,26 @@ import { DataTable } from '@/components/data/data-table';
 import { useRecords } from './use-records';
 
 const fmt = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-const duration = (r: MetRecordRow) =>
-  r.dateEndMs != null ? `${Math.max(1, Math.round((r.dateEndMs - r.dateStartMs) / 60000))} min` : '—';
+
+const minutes = (ms: number) => `${Math.max(1, Math.round(ms / 60000)).toLocaleString()} min`;
+
+/** How long the record itself ran. `null` while the day is still open. */
+const recordSpanMs = (r: MetRecordRow) => (r.dateEndMs != null ? r.dateEndMs - r.dateStartMs : null);
+
+/**
+ * How much of the record falls INSIDE the selected window.
+ *
+ * A record is one document per station per local day, so any range shorter than
+ * a day still returns the whole record — and the row then reported the whole
+ * day. Picking "last hour" showed `153 min`, which read as the filter being
+ * ignored when in fact only the number beside it was wrong.
+ */
+const overlapMs = (r: MetRecordRow, window: { from?: number; to: number }): number | null => {
+  const end = r.dateEndMs;
+  if (end == null) return null;
+  const start = Math.max(r.dateStartMs, window.from ?? Number.NEGATIVE_INFINITY);
+  return Math.max(0, Math.min(end, window.to) - start);
+};
 
 /**
  * MET records list (plan §Month 9) — logging records filtered by the global Scope
@@ -43,10 +61,47 @@ export function RecordsList() {
         ),
       },
       { header: 'Started', cell: ({ row }) => fmt(row.original.dateStartMs) },
-      { header: 'Duration', cell: ({ row }) => duration(row.original) },
-      { header: 'Measures', cell: ({ row }) => row.original.measureCount.toLocaleString() },
+      {
+        header: 'Duration',
+        cell: ({ row }) => {
+          const full = recordSpanMs(row.original);
+          if (full == null) return '—';
+          const inWindow = overlapMs(row.original, window);
+          // Qualify only when the window actually cuts the record — a fully
+          // contained day would otherwise read "1440 min of 1440 min".
+          if (inWindow == null || Math.round(inWindow / 60000) === Math.round(full / 60000)) {
+            return minutes(full);
+          }
+          return (
+            <span className="flex flex-col leading-tight">
+              <span className="tabular-nums">{minutes(inWindow)}</span>
+              <span className="text-xs text-muted-foreground">of {minutes(full)} that day</span>
+            </span>
+          );
+        },
+      },
+      {
+        header: 'Measures',
+        cell: ({ row }) => {
+          const { measureCount, measuresInRange } = row.original;
+          // Only qualify the number when the window actually cuts the record.
+          // A record fully inside the range would otherwise read "8,636 of
+          // 8,636", which is noise.
+          if (measuresInRange == null || measuresInRange === measureCount) {
+            return measureCount.toLocaleString();
+          }
+          return (
+            <span className="flex flex-col leading-tight">
+              <span className="tabular-nums">{measuresInRange.toLocaleString()}</span>
+              <span className="text-xs text-muted-foreground">of {measureCount.toLocaleString()} that day</span>
+            </span>
+          );
+        },
+      },
     ],
-    [],
+    // `window` is read by the Duration cell, so the columns must be rebuilt when
+    // the range changes — otherwise the table keeps clipping to the old window.
+    [window],
   );
 
   return (

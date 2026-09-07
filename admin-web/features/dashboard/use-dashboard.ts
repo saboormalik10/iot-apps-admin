@@ -25,13 +25,27 @@ import { useScope } from '@/lib/hooks/use-scope';
  */
 
 export function useSummary() {
-  const { scope } = useScope();
+  const { scope, window } = useScope();
   return useQuery({
-    // Scope (type/device/demo) appended AFTER the prefix so realtime
+    // Scope (type/device) appended AFTER the prefix so realtime
     // prefix-invalidations on queryKeys.summary still match.
-    queryKey: [...queryKeys.summary, scope.deviceType ?? null, scope.deviceId ?? null] as const,
+    //
+    // The WINDOW is part of the key too: the data tiles are counted within it,
+    // so without it a range change would be served the previous range's numbers
+    // from cache. `window` is minute-quantised and memoised by `useScope`, so
+    // this does not churn (see the note in use-scope.ts).
+    queryKey: [
+      ...queryKeys.summary,
+      scope.deviceType ?? null,
+      scope.deviceId ?? null,
+      window.from ?? null,
+      window.to,
+    ] as const,
     queryFn: ({ signal }) =>
-      getSummary({ type: scope.deviceType, deviceId: scope.deviceId }, signal),
+      getSummary(
+        { type: scope.deviceType, deviceId: scope.deviceId, from: window.from, to: window.to },
+        signal,
+      ),
   });
 }
 

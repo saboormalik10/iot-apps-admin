@@ -27,6 +27,7 @@ export function Gauge({
   label,
   unit,
   digits = 1,
+  format,
   /** Arc sweep in degrees (180 = semicircle, up to 300 for a fuller dial). */
   sweep = 220,
   valueRole = 'seq-3',
@@ -38,6 +39,18 @@ export function Gauge({
   min?: number;
   max?: number;
   label?: string;
+  /**
+   * Override how the number is PRINTED, without touching the geometry.
+   *
+   * `value`, `min`, `max` and `bands` stay in one consistent unit — the arc
+   * position, the threshold colours and the aria range are all computed from
+   * them — while this controls the text. That separation is what lets an
+   * organisation read a gauge in knots or °F while the bands still mean what
+   * whoever set them intended: converting the domain instead would silently
+   * move every threshold, and for a non-linear scale like Beaufort it would
+   * distort the arc as well.
+   */
+  format?: (v: number | null) => string;
   unit?: string;
   digits?: number;
   sweep?: number;
@@ -76,7 +89,16 @@ export function Gauge({
       className={cn('flex flex-col items-center', className)}
       aria-label={label}
       {...(hasValue
-        ? { role: 'meter', 'aria-valuenow': value!, 'aria-valuemin': min, 'aria-valuemax': max }
+        ? {
+            role: 'meter',
+            'aria-valuenow': value!,
+            'aria-valuemin': min,
+            'aria-valuemax': max,
+            // aria-valuenow stays in the gauge's own units; when the text is
+            // formatted differently, valuetext is what a screen reader should
+            // announce, so the two never disagree.
+            ...(format ? { 'aria-valuetext': `${format(value)}${unit ? ` ${unit}` : ''}` } : {}),
+          }
         : { role: 'img' })}
     >
       <svg
@@ -132,14 +154,14 @@ export function Gauge({
       </svg>
       <div className="-mt-2 flex flex-col items-center gap-0.5 text-center">
         <span className="text-2xl font-semibold tabular-nums leading-none">
-          {fmt(value, digits)}
+          {format ? format(value) : fmt(value, digits)}
           {unit ? <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span> : null}
         </span>
         {label ? (
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
         ) : null}
         <span className="text-[10px] tabular-nums text-muted-foreground">
-          {fmt(min, 0)}–{fmt(max, 0)}
+          {format ? format(min) : fmt(min, 0)}–{format ? format(max) : fmt(max, 0)}
           {unit ? ` ${unit}` : ''}
         </span>
       </div>

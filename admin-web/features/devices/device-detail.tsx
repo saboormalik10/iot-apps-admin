@@ -2,9 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
-import { Cpu, Waves, Pencil, Trash2, Settings } from 'lucide-react';
+import { Cpu, Waves, Pencil, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/charts/status-badge';
@@ -22,9 +21,13 @@ import { useDevice, useDeviceHealth, useDeleteDevice } from './use-devices';
 
 /**
  * Device detail (plan §Month 8) — live status header + the health facts the
- * ingestion pipeline actually writes, with admin edit/soft-delete and a link to
- * the full settings editor. Subscribes to this device's room so status updates
- * live.
+ * ingestion pipeline actually writes, with admin edit/soft-delete. Subscribes to
+ * this device's room so status updates live.
+ *
+ * The "Settings" link is gone (M25): the device-settings editor it opened stored
+ * eighteen preferences that no surface in this portal — and no shipped app — ever
+ * read back. See the deleted `device-settings-form.tsx` in git history. The
+ * GET/PATCH endpoints and the stored documents are untouched.
  *
  * Deliberately NOT shown here (M25): sessions, last activity, firmware version,
  * firmware age, firmware history and battery percentage. Every one of those is
@@ -80,11 +83,6 @@ export function DeviceDetail({ id }: { id: string }) {
         </div>
         <div className="flex gap-2">
           <Can capability="manageDevices">
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/devices/${id}/settings`}>
-                <Settings className="h-4 w-4" /> Settings
-              </Link>
-            </Button>
             <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
               <Pencil className="h-4 w-4" /> Edit
             </Button>

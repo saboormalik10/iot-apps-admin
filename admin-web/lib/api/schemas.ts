@@ -159,41 +159,24 @@ export const firmwareTargetSchema = z.object({
 });
 export type FirmwareTargetInput = z.infer<typeof firmwareTargetSchema>;
 
-/**
- * Device settings — client Zod is the SOLE guard: the backend `UpdateDeviceSettingsDto`
- * has ZERO server-side validation (§10.6), yet these writes reach the live field device.
- * Every field is optional (PATCH is partial) but strictly typed/bounded when present.
- */
-const sensorPrefSchema = z.object({
-  NMEA: z.string(),
-  Type: z.string(),
-  Unit: z.string(),
-  Desc: z.string(),
-  EnShow: z.number().int().min(0).max(1).optional(),
-  EnLog: z.number().int().min(0).max(1).optional(),
-});
+// `deviceSettingsSchema` lived here as the SOLE guard for PATCH /devices/:id/settings,
+// because the backend DTO validates nothing. It went with the device-settings editor
+// in M25. Nothing in this portal calls that endpoint any more; if one ever does, it
+// must bring its own Zod back — the server still will not check the body.
 
-export const deviceSettingsSchema = z.object({
-  qqEnabled: z.boolean().optional(),
-  qqGpsHeight: z.boolean().optional(),
-  qfeHeightM: z.number().min(-500).max(10000).optional(),
-  qnhHeightM: z.number().min(-500).max(10000).optional(),
-  dewPointEnabled: z.boolean().optional(),
-  windRoseUnit: z.string().max(20).optional(),
-  windRosePeriod: z.string().max(20).optional(),
-  windRoseOrient: z.enum(['true', 'relative']).optional(),
-  graphicalType: z.string().max(20).optional(),
-  graphItem: z.number().int().min(0).max(50).optional(),
-  colorScheme: z.number().int().min(0).max(10).optional(),
-  pageLayout: z.number().int().min(0).max(10).optional(),
-  unitWindSpeed: z.string().max(10).optional(),
-  unitPressure: z.string().max(10).optional(),
-  unitTemperature: z.string().max(10).optional(),
-  unitAltitude: z.string().max(10).optional(),
-  sensorShowPrefs: z.array(sensorPrefSchema).nullable().optional(),
-  sensorLogPrefs: z.array(sensorPrefSchema).nullable().optional(),
+/**
+ * Display units. The server validates these with `@IsIn` (unlike most DTOs here),
+ * so this is a convenience guard rather than the sole one — but the lists must
+ * still match `lib/units/convert.ts`, because a value that passes here and has no
+ * conversion entry would render every affected number blank.
+ */
+export const displayUnitsSchema = z.object({
+  windSpeed: z.enum(['m/s', 'km/h', 'knots', 'mph', 'bft']).optional(),
+  pressure: z.enum(['hPa', 'mbar', 'inHg', 'mmHg']).optional(),
+  temperature: z.enum(['°C', '°F']).optional(),
+  altitude: z.enum(['m', 'ft']).optional(),
 });
-export type DeviceSettingsInput = z.infer<typeof deviceSettingsSchema>;
+export type DisplayUnitsFormInput = z.infer<typeof displayUnitsSchema>;
 
 // ── Sessions (Month 10) ───────────────────────────────────────────────────────
 // The session PATCH only mutates the comment from the admin panel; the server DTO

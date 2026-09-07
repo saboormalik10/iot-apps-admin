@@ -8,6 +8,7 @@ import { useScope } from '@/lib/hooks/use-scope';
 import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import type { MetHistorySeries } from '@/lib/api/types';
 import { useMetHistoryMulti } from './use-dashboard';
+import { useUnits } from '@/lib/units/use-units';
 
 /**
  * The per-sensor stack (mirrors the mobile "graphs" layout + the Parklife graph
@@ -81,6 +82,7 @@ function SensorPanel({
   label: string;
   brush?: boolean;
 }) {
+  const units = useUnits();
   // The chart branch supplies its own Card (via ChartFrame); the state branches
   // wear a plain Card so the stack reads consistently.
   if (isLoading) {
@@ -102,9 +104,19 @@ function SensorPanel({
   return (
     <TimeSeriesChart
       title={label}
-      data={series.data as unknown as Array<Record<string, number | null>>}
+      // avg / min / max are all readings on one axis, so all three convert.
+      data={
+        // Cast back after the map: spreading a Record<string, …> and then naming
+        // three keys makes TS forget the index signature, which `xKey` needs.
+        (series.data as unknown as Array<Record<string, number | null>>).map((row) => ({
+          ...row,
+          avg: units.value(row.avg, series.unit),
+          min: units.value(row.min, series.unit),
+          max: units.value(row.max, series.unit),
+        })) as Array<Record<string, number | null>>
+      }
       xKey="timestampMs"
-      unit={series.unit}
+      unit={units.unitFor(series.unit)}
       height={brush ? 200 : 160}
       brush={brush}
       series={[

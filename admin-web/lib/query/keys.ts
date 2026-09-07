@@ -100,6 +100,7 @@ export const queryKeys = {
   roles: ['roles'] as const,
   organizations: ['organizations'] as const,
   branding: ['branding'] as const,
+  displayUnits: ['display-units'] as const,
   platformOverview: ['platform', 'overview'] as const,
   stations: (organizationId: string) => ['platform', 'stations', organizationId] as const,
   streamTypes: ['platform', 'stream-types'] as const,
@@ -109,7 +110,6 @@ export const queryKeys = {
   deviceStats: (id: string) => ['devices', id, 'stats'] as const,
   deviceHealth: (id: string) => ['devices', id, 'health'] as const,
   firmwareHistory: (id: string) => ['devices', id, 'firmware-history'] as const,
-  deviceSettings: (id: string) => ['devices', id, 'settings'] as const,
   firmwareTargets: ['devices', 'firmware-target'] as const,
   firmwareStatus: (type?: string) => ['devices', 'firmware-status', type ?? 'all'] as const,
 

@@ -8,6 +8,8 @@ import type {
   AuditEntry,
   Branding,
   BrandingInput,
+  DisplayUnits,
+  DisplayUnitsInput,
   CreateCustomerInput,
   CreatedCustomer,
   DashboardDevice,
@@ -16,7 +18,6 @@ import type {
   Device,
   DeviceCustomer,
   DeviceHealth,
-  DeviceSettings,
   DeviceStats,
   DeviceType,
   FirmwareHistory,
@@ -84,7 +85,6 @@ import type {
   AlertRuleInput,
   CreateDeviceInput,
   CreateShareInput,
-  DeviceSettingsInput,
   InviteUserInput,
   CreateUserInput,
   UpdateAlertRuleInput,
@@ -182,11 +182,18 @@ export const markAllNotificationsRead = () => http.post<{ updated: number }>('/n
 export interface SummaryScope {
   type?: DeviceType;
   deviceId?: string;
+  /** Scope-bar window. Narrows the data tiles only — see `getSummary`. */
+  from?: number;
+  to?: number;
 }
 export const getSummary = (scope: SummaryScope = {}, signal?: AbortSignal) => {
   const params = new URLSearchParams();
   if (scope.type) params.set('type', scope.type);
   if (scope.deviceId) params.set('deviceId', scope.deviceId);
+  // The window narrows the DATA tiles only; the server leaves device and alert
+  // counts as current state. Omitted means all time.
+  if (scope.from != null) params.set('from', String(scope.from));
+  if (scope.to != null) params.set('to', String(scope.to));
   const qs = params.toString();
   return http.get<DashboardSummary>(`/dashboard/summary${qs ? `?${qs}` : ''}`, signal);
 };
@@ -293,10 +300,6 @@ export const getDeviceHealth = (id: string, signal?: AbortSignal) =>
   http.get<DeviceHealth>(`/devices/${id}/health`, signal);
 export const getFirmwareHistory = (id: string, signal?: AbortSignal) =>
   http.get<FirmwareHistory>(`/devices/${id}/firmware-history`, signal);
-export const getDeviceSettings = (id: string, signal?: AbortSignal) =>
-  http.get<DeviceSettings>(`/devices/${id}/settings`, signal);
-export const updateDeviceSettings = (id: string, input: DeviceSettingsInput) =>
-  http.patch<DeviceSettings>(`/devices/${id}/settings`, input);
 export const getFirmwareTargets = (signal?: AbortSignal) =>
   http.get<FirmwareTarget[]>('/devices/firmware-target', signal);
 export const setFirmwareTarget = (input: FirmwareTarget) =>
@@ -708,6 +711,11 @@ export const getPlatformOverview = (signal?: AbortSignal) =>
 /** Create a customer and its first administrator. Platform administrators only. */
 export const createCustomer = (input: CreateCustomerInput) =>
   http.post<CreatedCustomer>('/platform/customers', input);
+
+export const getDisplayUnits = (signal?: AbortSignal) =>
+  http.get<DisplayUnits>('/organizations/me/display-units', signal);
+export const updateDisplayUnits = (input: DisplayUnitsInput) =>
+  http.patch<DisplayUnits>('/organizations/me/display-units', input);
 
 export const getBranding = (signal?: AbortSignal) => http.get<Branding>('/organizations/me/branding', signal);
 export const updateBranding = (input: BrandingInput) => http.patch<Branding>('/organizations/me/branding', input);

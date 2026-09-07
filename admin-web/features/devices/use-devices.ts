@@ -8,8 +8,6 @@ import {
   updateDevice,
   deleteDevice,
   getDeviceHealth,
-  getDeviceSettings,
-  updateDeviceSettings,
   getFirmwareTargets,
   setFirmwareTarget,
   getFirmwareStatus,
@@ -20,7 +18,6 @@ import {
 import type { DeviceType, FirmwareTarget } from '@/lib/api/types';
 import type {
   CreateDeviceInput,
-  DeviceSettingsInput,
   UpdateDeviceInput,
 } from '@/lib/api/schemas';
 import { queryKeys } from '@/lib/query/keys';
@@ -42,10 +39,6 @@ export function useFirmwareTargets() {
 export function useFirmwareStatus(type?: DeviceType) {
   return useQuery({ queryKey: queryKeys.firmwareStatus(type), queryFn: ({ signal }) => getFirmwareStatus(type, signal) });
 }
-export function useDeviceSettings(id: string) {
-  return useQuery({ queryKey: queryKeys.deviceSettings(id), queryFn: ({ signal }) => getDeviceSettings(id, signal), enabled: Boolean(id) });
-}
-
 function invalidateDeviceLists(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['devices'] });
   qc.invalidateQueries({ queryKey: queryKeys.dashboardDevices });
@@ -75,16 +68,6 @@ export function useDeleteDevice() {
   return useMutation({
     mutationFn: (id: string) => deleteDevice(id),
     onSuccess: () => invalidateDeviceLists(qc),
-  });
-}
-export function useUpdateDeviceSettings(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: DeviceSettingsInput) => updateDeviceSettings(id, input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.deviceSettings(id) });
-      qc.invalidateQueries({ queryKey: ['audit'] });
-    },
   });
 }
 export function useSetFirmwareTarget() {

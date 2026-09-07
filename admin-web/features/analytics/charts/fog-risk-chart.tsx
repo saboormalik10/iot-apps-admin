@@ -7,6 +7,7 @@ import { LoadingState, EmptyState } from '@/components/screen-states';
 import type { MetFogPoint } from '@/lib/api/types';
 import { IntervalSelect } from './interval-select';
 import { useMetFogRisk } from '../use-analytics';
+import { useUnits } from '@/lib/units/use-units';
 
 const INTERVALS = [
   { key: '1h', label: '1 hour' },
@@ -21,6 +22,7 @@ const fogTone = (level: MetFogPoint['fogRisk']): StatusTone =>
  * small spread (temp ≈ dew point) means fog. Latest bucket gets a risk badge.
  */
 export function FogRiskChart({ deviceId }: { deviceId?: string }) {
+  const units = useUnits();
   const [interval, setInterval] = useState('1h');
   const { data, isLoading } = useMetFogRisk(deviceId, interval);
 
@@ -32,7 +34,14 @@ export function FogRiskChart({ deviceId }: { deviceId?: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">Fog risk</h3>
         <div className="flex items-center gap-2">
-          {latest ? <StatusBadge tone={fogTone(latest.fogRisk)} label={`${latest.fogRisk} · spread ${latest.spread}°C`} /> : null}
+          {/* Spread is a difference, so `delta` supplies both the number and the
+              unit it is safe to print it in. */}
+          {latest ? (
+            <StatusBadge
+              tone={fogTone(latest.fogRisk)}
+              label={`${latest.fogRisk} · spread ${units.delta(latest.spread, '°C').text}${units.delta(latest.spread, '°C').unit}`}
+            />
+          ) : null}
           <IntervalSelect value={interval} onChange={setInterval} options={INTERVALS} />
         </div>
       </div>
@@ -43,14 +52,20 @@ export function FogRiskChart({ deviceId }: { deviceId?: string }) {
         <EmptyState title="No dew-point data in range" body="Widen the date range or pick another device." />
       ) : (
         <TimeSeriesChart
+          /**
+           * `spread` is temp MINUS dew point — a difference, not a reading — so it
+           * goes through `delta`, which scales without the offset. Converting it
+           * like a reading would add °C→°F's +32 and turn a 2° spread into 36°,
+           * on the same axis as two correctly-converted series.
+           */
           data={points.map((d) => ({
             timestampMs: d.ts,
-            tempC: d.tempC,
-            dewPointC: d.dewPointC,
-            spread: d.spread,
+            tempC: units.value(d.tempC, '°C'),
+            dewPointC: units.value(d.dewPointC, '°C'),
+            spread: units.deltaValue(d.spread, '°C'),
           }))}
           xKey="timestampMs"
-          unit="°C"
+          unit={units.unitFor('°C')}
           series={[
             { key: 'tempC', label: 'Air temp', role: 'chart-1' },
             { key: 'dewPointC', label: 'Dew point', role: 'chart-2' },

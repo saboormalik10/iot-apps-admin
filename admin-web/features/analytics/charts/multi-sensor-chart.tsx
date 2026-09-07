@@ -9,6 +9,7 @@ import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import { MET_SENSORS, sensorLabel } from '../sensors';
 import { IntervalSelect } from './interval-select';
 import { useMetMultiSensor } from '../use-analytics';
+import { useUnits } from '@/lib/units/use-units';
 
 const INTERVALS = [
   { key: '1min', label: '1 min' },
@@ -24,6 +25,7 @@ const MAX_SENSORS = 5;
  * sensors from the shared 15-sensor allow-list (§10.5).
  */
 export function MultiSensorChart({ deviceId }: { deviceId?: string }) {
+  const units = useUnits();
   const sensors = useDeviceSensors(deviceId);
   const [selected, setSelected] = useState<string[]>(DEFAULT_SENSORS);
   const [interval, setInterval] = useState('5min');
@@ -72,13 +74,18 @@ export function MultiSensorChart({ deviceId }: { deviceId?: string }) {
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {(data.series ?? []).map((s, idx) => {
-            const rows = data.timestamps.map((t, i) => ({ timestampMs: t, value: s.values?.[i] ?? null }));
+            // `s.unit` is the canonical unit the API reports in; non-family units
+            // (%, W/m², V) pass through both helpers untouched.
+            const rows = data.timestamps.map((t, i) => ({
+              timestampMs: t,
+              value: units.value(s.values?.[i] ?? null, s.unit),
+            }));
             return (
               <TimeSeriesChart
                 key={s.sensor}
                 data={rows}
                 xKey="timestampMs"
-                unit={s.unit}
+                unit={units.unitFor(s.unit)}
                 title={sensorLabel(s.sensor)}
                 series={[{ key: 'value', label: sensorLabel(s.sensor), role: SERIES_ROLES[idx % SERIES_ROLES.length] }]}
                 height={200}

@@ -123,6 +123,12 @@ export function StreamPreviewPanel({ streamKey }: { streamKey: string }) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
+                    {/* NOT converted to the organisation's display units, on
+                        purpose: this table exists to show what actually ARRIVED
+                        in the stream, so a diagnostic view has to match the raw
+                        payload byte for byte. Converting here would mean an
+                        operator comparing this against the source file saw two
+                        different numbers and had to guess which was the bug. */}
                     <th className="py-1 pr-3 font-medium">Timestamp</th>
                     <th className="py-1 pr-3 font-medium">Speed m/s</th>
                     <th className="py-1 pr-3 font-medium">Direction</th>

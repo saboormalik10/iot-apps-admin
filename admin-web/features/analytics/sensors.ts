@@ -3,6 +3,11 @@
  * statistics, comparison). Mirrors the backend MET_SENSOR_FIELD map — §10.5 grew
  * it 12 → 15 by adding qnh / qfe / gps_altitude (fields already on MetMeasure).
  * Single source so every picker stays in sync.
+ *
+ * `unit` is the CANONICAL unit — what the API returns and what MetMeasure stores
+ * — never the organisation's chosen display unit. Render sites pass it through
+ * `useUnits().unitFor()` / `.value()`; converting it here would leave the raw
+ * numbers labelled in a unit nothing had converted them to.
  */
 export interface SensorOption {
   key: string;

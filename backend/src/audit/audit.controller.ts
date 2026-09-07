@@ -18,7 +18,7 @@ export class AuditController {
 
   @ApiOperation({ summary: 'List organization audit-log entries (admin only)' })
   @ApiQuery({ name: 'action', required: false, enum: ['create', 'update', 'delete', 'invite', 'revoke', 'export', 'login', 'logout'], description: 'Filter by audit action, e.g. device.create' })
-  @ApiQuery({ name: 'resourceType', required: false, enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'org', 'settings'], description: 'Filter by audited resource, e.g. device | session | user' })
+  @ApiQuery({ name: 'resourceType', required: false, enum: ['device', 'user', 'session', 'record', 'alertRule', 'shareToken', 'organization', 'settings'], description: 'Filter by audited resource, e.g. device | session | user' })
   @ApiQuery({ name: 'userId', required: false, description: 'Filter by acting user id' })
   @ApiQuery({ name: 'from', required: false, description: 'ISO date — inclusive lower bound' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date — inclusive upper bound' })

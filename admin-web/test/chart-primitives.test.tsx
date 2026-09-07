@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
+// WindRose now resolves the org's display units through react-query, so it
+// needs a QueryClientProvider — a bare `render` throws.
+import { renderWithProviders as render } from './utils';
 import { StatTile } from '@/components/charts/stat-tile';
 import { Meter } from '@/components/charts/meter';
 import { StatusBadge } from '@/components/charts/status-badge';

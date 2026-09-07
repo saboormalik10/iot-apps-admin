@@ -32,7 +32,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
 import { OrganizationsService } from './organizations.service';
-import { AcceptInviteDto, CreateOrgUserDto, InviteUserDto, UpdateBrandingDto, UpdateOrgDto, UpdateUserDto } from './dto';
+import { AcceptInviteDto, CreateOrgUserDto, InviteUserDto, UpdateBrandingDto, UpdateOrgDto, UpdateUserDto, UpdateDisplayUnitsDto } from './dto';
 import { assertAllowedFileType } from '../utils/storage.util';
 
 /** Logos only: raster images the browser can render inline. */
@@ -163,6 +163,60 @@ export class OrganizationsController {
   async updateBranding(@Body() body: UpdateBrandingDto, @CurrentUser() user: JWTPayload) {
     return {
       data: await this.organizationsService.updateBranding(user.organizationId, body, {
+        userId: user.userId,
+        email: user.email ?? '',
+      }),
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Get this organisation\'s display units',
+    description:
+      'The units readings are RENDERED in. Presentation only — measurements are stored in their canonical ' +
+      'units (m/s, hPa, °C, m) and converted at display time, so a stored number never depends on which ' +
+      'preference was in force when it was written. Every field is resolved: a missing or unrecognised value ' +
+      'comes back as the canonical unit, so a client always has something to render. `isCustomised` is false ' +
+      'when the customer has never chosen.',
+  })
+  @ApiOkResponse({
+    description: 'Resolved display units',
+    schema: {
+      example: {
+        data: {
+          windSpeed: 'knots',
+          pressure: 'hPa',
+          temperature: '°C',
+          altitude: 'm',
+          isCustomised: true,
+          updatedAt: '2026-09-07T09:15:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiErrors('unauthorized')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('org:read')
+  @Get('me/display-units')
+  async getDisplayUnits(@CurrentUser() user: JWTPayload) {
+    return { data: await this.organizationsService.getDisplayUnits(user.organizationId) };
+  }
+
+  @ApiOperation({
+    summary: 'Update this organisation\'s display units',
+    description:
+      'Admin only, and recorded in the audit log, because it changes what every user in the organisation ' +
+      'reads. NOTHING is rewritten in any measurement collection — this only affects rendering.',
+  })
+  @ApiBody({ type: UpdateDisplayUnitsDto })
+  @ApiOkResponse({ description: 'The updated display units' })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden')
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @RequirePermissions('org:write')
+  @Roles('admin')
+  @Patch('me/display-units')
+  async updateDisplayUnits(@Body() body: UpdateDisplayUnitsDto, @CurrentUser() user: JWTPayload) {
+    return {
+      data: await this.organizationsService.updateDisplayUnits(user.organizationId, body, {
         userId: user.userId,
         email: user.email ?? '',
       }),

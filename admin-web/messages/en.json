@@ -186,6 +186,25 @@
       "logoUploading": "Uploading…",
       "accentOk": "Readable in both light and dark mode.",
       "accentPreview": "Preview"
+    },
+    "displayUnits": {
+      "title": "Display units",
+      "subtitle": "The units readings are shown in throughout the panel. Stations always record in m/s, hPa, °C and metres — this only changes how those values are displayed, and applies to everyone in your organisation.",
+      "windSpeed": "Wind speed",
+      "windSpeedHint": "Beaufort is a force scale, so it shows as a whole number with no decimals.",
+      "pressure": "Pressure",
+      "pressureHint": "hPa and mbar are the same measurement under two names.",
+      "temperature": "Temperature",
+      "altitude": "Altitude",
+      "altitudeHint": "Applies to GPS altitude on records and maps.",
+      "save": "Save units",
+      "saving": "Saving…",
+      "saved": "Display units updated",
+      "readOnly": "Only an administrator can change display units.",
+      "default": "Using the recorded units",
+      "errors": {
+        "save": "Could not save your display units."
+      }
     }
   },
   "mobileUsers": {

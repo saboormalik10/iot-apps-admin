@@ -2,6 +2,7 @@
 
 import { Area, ComposedChart, Line, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { useUnits } from '@/lib/units/use-units';
 import { cssVar, type PaletteRole } from '@/lib/api/scales';
 import type { MetDailySummary } from '@/lib/api/types';
 
@@ -66,14 +67,26 @@ function RangeBandChart({ title, unit, rows, role }: { title: string; unit: stri
  * no dual axis) for temperature, pressure and humidity.
  */
 export function RangeBandCharts({ summaries }: { summaries: MetDailySummary[] }) {
-  const tempRows = summaries.map((s) => ({ date: fmtDate(s.dateMs), band: band(s.tempMinC, s.tempMaxC), mean: s.tempAvgC }));
-  const pressRows = summaries.map((s) => ({ date: fmtDate(s.dateMs), band: band(s.pressureMinHpa, s.pressureMaxHpa), mean: s.pressureAvgHpa }));
+  const units = useUnits();
+  // Min, max and mean are all readings, so all three convert the same way — the
+  // band would otherwise sit under an axis in a different unit from the line.
+  const v = (n: number | null, canonical: string) => units.value(n, canonical);
+  const tempRows = summaries.map((s) => ({
+    date: fmtDate(s.dateMs),
+    band: band(v(s.tempMinC, '°C'), v(s.tempMaxC, '°C')),
+    mean: v(s.tempAvgC, '°C'),
+  }));
+  const pressRows = summaries.map((s) => ({
+    date: fmtDate(s.dateMs),
+    band: band(v(s.pressureMinHpa, 'hPa'), v(s.pressureMaxHpa, 'hPa')),
+    mean: v(s.pressureAvgHpa, 'hPa'),
+  }));
   const humRows = summaries.map((s) => ({ date: fmtDate(s.dateMs), band: band(s.humidityMinPct, s.humidityMaxPct), mean: s.humidityAvgPct }));
 
   return (
     <div className="grid gap-3 md:grid-cols-3">
-      <RangeBandChart title="Temperature" unit="°C" rows={tempRows} role="chart-1" />
-      <RangeBandChart title="Pressure" unit="hPa" rows={pressRows} role="chart-2" />
+      <RangeBandChart title="Temperature" unit={units.unitFor('°C')} rows={tempRows} role="chart-1" />
+      <RangeBandChart title="Pressure" unit={units.unitFor('hPa')} rows={pressRows} role="chart-2" />
       <RangeBandChart title="Humidity" unit="%" rows={humRows} role="chart-6" />
     </div>
   );

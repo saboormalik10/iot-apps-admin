@@ -6,6 +6,7 @@ import { StatusBadge, type StatusTone } from '@/components/charts/status-badge';
 import { LoadingState, EmptyState } from '@/components/screen-states';
 import { IntervalSelect } from './interval-select';
 import { useMetComfort } from '../use-analytics';
+import { useUnits } from '@/lib/units/use-units';
 
 const INTERVALS = [
   { key: '1h', label: '1 hour' },
@@ -25,6 +26,7 @@ function comfortTone(label: string): StatusTone {
  * axis, with a live comfort-label badge for the latest bucket.
  */
 export function ComfortIndicesChart({ deviceId }: { deviceId?: string }) {
+  const units = useUnits();
   const [interval, setInterval] = useState('1h');
   const { data, isLoading } = useMetComfort(deviceId, interval);
 
@@ -47,14 +49,15 @@ export function ComfortIndicesChart({ deviceId }: { deviceId?: string }) {
         <EmptyState title="No data in range" body="Widen the date range or pick another device." />
       ) : (
         <TimeSeriesChart
+          // All three are temperature READINGS, so all three convert identically.
           data={points.map((d) => ({
             timestampMs: d.ts,
-            tempC: d.tempC,
-            heatIndexC: d.heatIndexC,
-            windChillC: d.windChillC,
+            tempC: units.value(d.tempC, '°C'),
+            heatIndexC: units.value(d.heatIndexC, '°C'),
+            windChillC: units.value(d.windChillC, '°C'),
           }))}
           xKey="timestampMs"
-          unit="°C"
+          unit={units.unitFor('°C')}
           series={[
             { key: 'tempC', label: 'Air temp', role: 'chart-1' },
             { key: 'heatIndexC', label: 'Heat index', role: 'chart-8' },

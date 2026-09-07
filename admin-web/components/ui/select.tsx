@@ -7,6 +7,23 @@ import { cn } from '@/lib/utils';
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
+
+/**
+ * Heading for a group of options. Rendered by Radix as the group's accessible
+ * label, so it names the group for a screen reader as well as sighted readers —
+ * which is the point when two groups hold options with the same wording.
+ */
+const SelectLabel = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn('px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground', className)}
+    {...props}
+  />
+));
+SelectLabel.displayName = SelectPrimitive.Label.displayName;
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
@@ -82,4 +99,4 @@ const SelectItem = React.forwardRef<
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
-export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectItem };
+export { Select, SelectGroup, SelectLabel, SelectValue, SelectTrigger, SelectContent, SelectItem };

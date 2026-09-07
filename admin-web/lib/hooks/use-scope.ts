@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { DeviceType } from '@/lib/api/types';
+import { RANGE_PRESETS, rangeWindow, type RangePreset } from '@/lib/time/range-window';
 
 /**
  * Global scope state (plan §3.6) — the app-wide filter shared by every data page.
@@ -11,15 +12,20 @@ import type { DeviceType } from '@/lib/api/types';
  * bookmarkable, and preserved across navigation.
  *
  */
-export type RangePreset = '1h' | '24h' | '7d' | '30d' | 'all';
-
-export const RANGE_PRESETS: { key: RangePreset; labelKey: string; ms: number | null }[] = [
-  { key: '1h', labelKey: 'scope.range.1h', ms: 3_600_000 },
-  { key: '24h', labelKey: 'scope.range.24h', ms: 86_400_000 },
-  { key: '7d', labelKey: 'scope.range.7d', ms: 7 * 86_400_000 },
-  { key: '30d', labelKey: 'scope.range.30d', ms: 30 * 86_400_000 },
-  { key: 'all', labelKey: 'scope.range.all', ms: null },
-];
+/**
+ * Range presets live in `lib/time/range-window.ts` — pure, React-free, and
+ * therefore testable in a subprocess under a different `TZ`, which is how the
+ * calendar presets are proven to follow the viewer. Re-exported here so the
+ * existing importers keep working.
+ */
+export {
+  RANGE_PRESETS,
+  rangeWindow,
+  localMidnight,
+  type RangePreset,
+  type RangeKind,
+  type RangePresetDef,
+} from '@/lib/time/range-window';
 
 export interface Scope {
   deviceId?: string;
@@ -28,12 +34,6 @@ export interface Scope {
 }
 
 const DEFAULT_RANGE: RangePreset = '24h';
-
-/** Resolve a preset to an epoch-ms window; `all` → an open (undefined) lower bound. */
-export function rangeWindow(range: RangePreset, now = Date.now()): { from?: number; to: number } {
-  const preset = RANGE_PRESETS.find((p) => p.key === range) ?? RANGE_PRESETS[1];
-  return preset.ms == null ? { to: now } : { from: now - preset.ms, to: now };
-}
 
 export function useScope() {
   const router = useRouter();

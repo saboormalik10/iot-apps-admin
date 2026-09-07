@@ -14,6 +14,14 @@ export interface StationWidget {
   type: string;
 }
 
+/**
+ * These `unit` strings are PERSISTED metadata, not rendered text: `keysToTiles`
+ * writes them into a saved `DashboardTile[]` layout. They are deliberately not
+ * run through the organisation's display units — a saved layout would then carry
+ * whichever unit happened to be selected when someone pressed save, and reading
+ * that layout back later would misreport it. The live tiles get their labels
+ * from `useUnits()` at render time instead.
+ */
 export const MET_STATION_WIDGETS: StationWidget[] = [
   // The live dial combines speed and bearing in one instrument. It sits first
   // because it is the reading the client asked to lead with.

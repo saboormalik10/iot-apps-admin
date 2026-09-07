@@ -28,6 +28,7 @@ export function Thermometer({
   label,
   unit = '°C',
   digits = 1,
+  format,
   height = 150,
   className,
 }: {
@@ -37,6 +38,14 @@ export function Thermometer({
   label?: string;
   unit?: string;
   digits?: number;
+  /**
+   * Override how the number is PRINTED, leaving the geometry alone.
+   *
+   * `value`/`min`/`max` must stay in °C: the mercury height AND the band colour
+   * (`tempRole`) are both derived from them, and °C thresholds applied to a
+   * Fahrenheit number would colour every reading wrongly.
+   */
+  format?: (v: number | null) => string;
   height?: number;
   className?: string;
 }) {
@@ -67,7 +76,13 @@ export function Thermometer({
       className={cn('flex items-center gap-3', className)}
       aria-label={label}
       {...(hasValue
-        ? { role: 'meter', 'aria-valuenow': value!, 'aria-valuemin': min, 'aria-valuemax': max }
+        ? {
+            role: 'meter',
+            'aria-valuenow': value!,
+            'aria-valuemin': min,
+            'aria-valuemax': max,
+            ...(format ? { 'aria-valuetext': `${format(value)} ${unit}` } : {}),
+          }
         : { role: 'img' })}
     >
       <svg width={W} height={height} viewBox={`0 0 ${W} ${height}`} role="presentation">
@@ -91,7 +106,7 @@ export function Thermometer({
       </svg>
       <div className="flex flex-col gap-0.5">
         <span className="text-2xl font-semibold tabular-nums leading-none">
-          {fmt(value, digits)}
+          {format ? format(value) : fmt(value, digits)}
           <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>
         </span>
         {label ? (
