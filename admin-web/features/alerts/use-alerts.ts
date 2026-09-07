@@ -8,6 +8,7 @@ import {
   updateAlertRule,
   deleteAlertRule,
   type AlertRulesQuery,
+  getAlertTimeline,
 } from '@/lib/api/endpoints';
 import type { AlertRuleInput, UpdateAlertRuleInput } from '@/lib/api/schemas';
 import { queryKeys } from '@/lib/query/keys';
@@ -78,5 +79,21 @@ export function useBulkCreateAlertRules() {
       return { created, failed };
     },
     onSuccess: () => invalidateAlerts(qc),
+  });
+}
+
+/**
+ * Per-minute account of a rule's window. Kept fresh while open — the point of
+ * the panel is the last few minutes, and a stale one answers the wrong question.
+ *
+ * `at` (a trigger time) makes the window fixed and historical, so it is NOT
+ * polled; only a live "ending now" window is.
+ */
+export function useAlertTimeline(id: string, minutes: number, at?: number, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.alertTimeline(id, minutes, at),
+    queryFn: ({ signal }) => getAlertTimeline(id, { minutes, at }, signal),
+    enabled: enabled && Boolean(id),
+    refetchInterval: at === undefined ? 30_000 : false,
   });
 }

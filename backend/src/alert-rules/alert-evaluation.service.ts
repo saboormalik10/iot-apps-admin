@@ -17,6 +17,7 @@ import {
   MET_SENSOR_MAP,
   thresholdInStoredUnit,
   valueInRuleUnit,
+  SENSOR_STORED_UNIT,
 } from './evaluate';
 import { convertUnit } from '../analytics/analytics.util';
 
@@ -103,9 +104,19 @@ export class AlertEvaluationService {
       }
 
       rule.lastTriggeredAt = new Date();
+      // When the reading was TAKEN, as opposed to when we processed it. During a
+      // backlog drain these are hours apart, and only this one can be plotted
+      // against the measurements.
+      const rawMeasuredAt = payload['measuredAtMs'];
+      const measuredAtMs = typeof rawMeasuredAt === 'number' && Number.isFinite(rawMeasuredAt) ? rawMeasuredAt : undefined;
       // History keeps the STORED value — it is the raw measurement, and the unit
       // it is in is a property of the sensor, not of whatever rule observed it.
-      rule.triggerHistory.push({ triggeredAt: new Date(), sensorValue: value, notifiedCount: rule.notifyUserIds.length });
+      rule.triggerHistory.push({
+        triggeredAt: new Date(),
+        sensorValue: value,
+        notifiedCount: rule.notifyUserIds.length,
+        measuredAtMs,
+      });
       if (rule.triggerHistory.length > MAX_TRIGGER_HISTORY) {
         rule.triggerHistory = rule.triggerHistory.slice(-MAX_TRIGGER_HISTORY);
       }
@@ -127,10 +138,19 @@ export class AlertEvaluationService {
             ruleId: (rule._id as Types.ObjectId).toString(),
             deviceId,
             sensor: rule.sensor,
+            // `sensorValue` is the STORED reading (wind is m/s) and stays that
+            // way — it is the raw measurement. `displayValue` is the same
+            // reading in the rule's unit, so a reader never has to pair
+            // `sensorValue` with `unit` and get "1.67 > 3" for a breach.
             sensorValue: value,
+            displayValue,
+            storedUnit: SENSOR_STORED_UNIT[rule.sensor] ?? null,
             threshold: rule.threshold,
+            thresholdStored: threshold,
             condition: rule.condition,
             unit: rule.unit,
+            triggeredAt: rule.lastTriggeredAt.toISOString(),
+            measuredAtMs: measuredAtMs ?? null,
             ...extra,
           },
         },

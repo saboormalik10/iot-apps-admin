@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import type { AppNotification } from '@/lib/api/types';
 import { useNotificationsFeed, useMarkAllRead, useMarkRead } from './use-notifications';
 import { notificationMeta, notificationLink } from './notification-meta';
+import { AlertNotificationDialog } from './alert-notification-dialog';
 
 /**
  * Notifications feed page (plan §Month 11) — the full inbox with an all/unread
@@ -28,6 +29,7 @@ export function NotificationsPage() {
   const router = useRouter();
   const [tab, setTab] = useState<'all' | 'unread'>('all');
   const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState<AppNotification | null>(null);
   const markAll = useMarkAllRead();
   const markRead = useMarkRead();
 
@@ -40,8 +42,18 @@ export function NotificationsPage() {
   const pageCount = data?.page.pageCount ?? 1;
   const unread = data?.unreadCount ?? 0;
 
+  /**
+   * An alert opens IN PLACE with its readings; anything else still deep-links.
+   * Routing an alert away to the station page answered "which station?" and
+   * dropped every other question — how far over, and what the wind did either
+   * side of it.
+   */
   const open = (n: AppNotification) => {
     if (!n.readAt) markRead.mutate(n._id);
+    if (n.type === 'alert') {
+      setDetail(n);
+      return;
+    }
     router.push(notificationLink(n));
   };
 
@@ -130,6 +142,12 @@ export function NotificationsPage() {
           ) : null}
         </>
       )}
+
+      <AlertNotificationDialog
+        notification={detail}
+        open={Boolean(detail)}
+        onOpenChange={(o) => !o && setDetail(null)}
+      />
     </div>
   );
 }

@@ -115,6 +115,7 @@ export const queryKeys = {
 
   // ── Month 11: alerts, notifications feed, share, presets ──
   alertRules: (q: AlertRulesQuery) => ['alert-rules', q] as const,
+  alertTimeline: (id: string, minutes: number, at?: number) => ['alert-rules', id, 'timeline', minutes, at ?? 'now'] as const,
   alertRule: (id: string) => ['alert-rules', id] as const,
   notificationsFeed: (opts: { unread?: boolean; page?: number; limit?: number }) =>
     ['notifications', 'feed', opts] as const,

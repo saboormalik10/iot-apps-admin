@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/screen-states';
 import { useNotifications, useMarkAllRead, useMarkRead } from './use-notifications';
 import { notificationMeta, notificationLink } from './notification-meta';
+import { AlertNotificationDialog } from './alert-notification-dialog';
 import { invalidateForNotification } from './notification-effects';
 import { useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent, type NotificationPayload, type AlertTriggeredPayload } from '@/lib/realtime/events';
@@ -32,6 +33,7 @@ export function NotificationBell() {
   const tn = useTranslations('notifications');
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<AppNotification | null>(null);
   const qc = useQueryClient();
   const { data } = useNotifications();
   const markAll = useMarkAllRead();
@@ -67,11 +69,18 @@ export function NotificationBell() {
   const openNotification = (n: AppNotification) => {
     if (!n.readAt) markRead.mutate(n._id);
     setOpen(false);
+    // An alert opens its own detail — the readings around it are the reason
+    // anyone clicks the bell. Everything else still deep-links.
+    if (n.type === 'alert') {
+      setDetail(n);
+      return;
+    }
     router.push(notificationLink(n));
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -143,6 +152,15 @@ export function NotificationBell() {
           </Button>
         </div>
       </PopoverContent>
-    </Popover>
+      </Popover>
+
+      {/* Rendered OUTSIDE the popover: closing the popover is what opens this,
+          so a child would unmount with it. */}
+      <AlertNotificationDialog
+        notification={detail}
+        open={Boolean(detail)}
+        onOpenChange={(o) => !o && setDetail(null)}
+      />
+    </>
   );
 }

@@ -1,9 +1,20 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface ITriggerHistoryEntry {
+  /** When the evaluator ran — INGEST time, not when the wind blew. */
   triggeredAt: Date;
   sensorValue: number;
   notifiedCount: number;
+  /**
+   * When the reading was actually MEASURED at the station.
+   *
+   * These two diverge whenever the agent is catching up: a backlog file
+   * ingested at 11:45 can carry readings from 08:21, and plotting the trigger
+   * at 11:45 against a measurement-time chart puts the alert where the wind
+   * never was. Optional — entries written before this existed have only
+   * `triggeredAt`, and consumers must say so rather than guess.
+   */
+  measuredAtMs?: number;
 }
 
 export interface IAlertRule extends Document {
@@ -45,6 +56,7 @@ const alertRuleSchema = new Schema<IAlertRule>(
         triggeredAt: { type: Date, required: true },
         sensorValue: { type: Number, required: true },
         notifiedCount: { type: Number, required: true },
+        measuredAtMs: { type: Number, default: null },
         _id: false,
       },
     ],

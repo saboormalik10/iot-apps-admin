@@ -3,6 +3,7 @@ import { uploadWithProgress } from './upload';
 import { normalizePage, fullArrayPage, type Page } from './pagination';
 import type {
   AlertRule,
+  AlertTimeline,
   AppNotification,
   AuditEntry,
   Branding,
@@ -563,6 +564,22 @@ export const createAlertRule = (input: AlertRuleInput) => http.post<AlertRule>('
 export const updateAlertRule = (id: string, input: UpdateAlertRuleInput) =>
   http.patch<AlertRule>(`/alert-rules/${id}`, input);
 export const deleteAlertRule = (id: string) => http.delete<void>(`/alert-rules/${id}`);
+
+/**
+ * Minute-by-minute account of what a rule saw and why it did or did not fire.
+ * `at` centres the window on that instant (a trigger time); omit it for a
+ * window ending now.
+ */
+export const getAlertTimeline = (
+  id: string,
+  q: { minutes?: number; at?: number } = {},
+  signal?: AbortSignal,
+): Promise<AlertTimeline> => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null) params.set(k, String(v));
+  const qs = params.toString();
+  return http.get<AlertTimeline>(`/alert-rules/${id}/timeline${qs ? `?${qs}` : ''}`, signal);
+};
 
 // ── Notifications feed + push-token registry (Month 11) ─────────────────────
 export const listNotificationsPage = async (

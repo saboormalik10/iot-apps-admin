@@ -882,11 +882,59 @@ export type AlertCondition = 'gt' | 'lt' | 'gte' | 'lte';
 /** One entry of a rule's rolling trigger log (server caps at 50). */
 export interface TriggerHistoryEntry {
   triggeredAt: string;
+  /** The raw reading, in the SENSOR's stored unit (wind is m/s). */
   sensorValue: number;
   notifiedCount: number;
+  /**
+   * When the reading was MEASURED, as opposed to processed. Absent on entries
+   * written before this was recorded — render those as "(processed)" rather
+   * than implying the wind blew when the server happened to catch up.
+   */
+  measuredAtMs?: number | null;
+  /** `sensorValue` converted into the rule's unit, by the server. */
+  displayValue?: number | null;
+  displayUnit?: string;
 }
 
 /** GET /alert-rules — a per-device+sensor threshold rule (list row + detail). */
+/** Why one minute did — or did not — raise an alert. */
+export type AlertMinuteReason = 'fired' | 'cooldown' | 'not_crossed' | 'no_data' | 'paused' | 'not_recorded';
+
+export interface AlertTimelineBucket {
+  /** Minute start, epoch ms. */
+  ts: number;
+  count: number;
+  /** The value the evaluator would use, in the sensor's stored unit. */
+  value: number | null;
+  /** The same value in the RULE's unit — what the operator reads. */
+  displayValue: number | null;
+  displayAvg: number | null;
+  breached: boolean;
+  fired: boolean;
+  reason: AlertMinuteReason;
+}
+
+export interface AlertTimeline {
+  ruleId: string;
+  deviceId: string;
+  name: string;
+  sensor: string;
+  condition: AlertCondition;
+  threshold: number;
+  unit: string;
+  storedUnit: string | null;
+  thresholdStored: number;
+  cooldownMinutes: number;
+  isActive: boolean;
+  from: number;
+  to: number;
+  minutes: number;
+  supported: boolean;
+  historyComplete: boolean;
+  firesOnIngestTime?: number;
+  buckets: AlertTimelineBucket[];
+}
+
 export interface AlertRule {
   _id: string;
   name: string;
