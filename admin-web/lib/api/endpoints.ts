@@ -67,7 +67,6 @@ import type {
   ProvisionStationInput,
   ProvisionedStation,
   PublicSnapshot,
-  PushToken,
   Role,
   RoleInput,
   RoleRow,
@@ -582,9 +581,6 @@ export const listNotificationsPage = async (
   return { page: normalizePage<AppNotification>(body as never), unreadCount: body.unreadCount ?? 0 };
 };
 /** Admin push-token registry — GET /notifications/tokens returns the full array. */
-export const listPushTokens = (signal?: AbortSignal) =>
-  http.get<PushToken[]>('/notifications/tokens', signal);
-
 // ── Share links (Month 11) ──────────────────────────────────────────────────
 export const createShare = (input: CreateShareInput) => http.post<ShareLink>('/share', input);
 export const listShares = async (

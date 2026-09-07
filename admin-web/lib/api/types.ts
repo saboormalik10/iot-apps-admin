@@ -906,16 +906,6 @@ export interface AlertRule {
 }
 
 /** GET /notifications/tokens — a registered mobile push target (admin registry). */
-export interface PushToken {
-  _id: string;
-  platform: 'ios' | 'android';
-  appId: string;
-  deviceModel: string;
-  expiresAt: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 /** POST /share response — a created public link (+ the token to build the /s URL). */
 export interface ShareLink {
   _id: string;

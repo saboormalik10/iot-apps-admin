@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   listNotifications,
   listNotificationsPage,
-  listPushTokens,
   markAllNotificationsRead,
   markNotificationRead,
   type NotificationsResult,
@@ -32,12 +31,6 @@ export function useNotificationsFeed(opts: { unread?: boolean; page?: number; li
 }
 
 /** Admin push-token registry (plan §6). */
-export function usePushTokens() {
-  return useQuery({
-    queryKey: queryKeys.pushTokens,
-    queryFn: ({ signal }) => listPushTokens(signal),
-  });
-}
 
 export function useMarkAllRead() {
   const qc = useQueryClient();

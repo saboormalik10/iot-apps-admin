@@ -7,19 +7,22 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-states';
-import { Can } from '@/lib/rbac/guard';
 import { formatRelative } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import type { AppNotification } from '@/lib/api/types';
 import { useNotificationsFeed, useMarkAllRead, useMarkRead } from './use-notifications';
 import { notificationMeta, notificationLink } from './notification-meta';
-import { PushTokenTable } from './push-token-table';
 
 /**
  * Notifications feed page (plan §Month 11) — the full inbox with an all/unread
- * filter, mark-read (per item on click + mark-all), deep-links, and (admin) the
- * push-token registry. The feed is a rolling 90-day window (server TTL), surfaced
- * so it never implies infinite history.
+ * filter, mark-read (per item on click + mark-all) and deep-links. The feed is a
+ * rolling 90-day window (server TTL), surfaced so it never implies infinite
+ * history.
+ *
+ * The mobile push-token registry that used to sit here was removed (M25): the
+ * mobile apps are out of scope and NEP has been off since M15 W4, so the table
+ * could only ever show CI leftovers. Alerts reach people over WebSocket and
+ * email; stations are managed under Stations, not as registered handsets.
  */
 export function NotificationsPage() {
   const router = useRouter();
@@ -127,19 +130,6 @@ export function NotificationsPage() {
           ) : null}
         </>
       )}
-
-      <Can capability="manageOrg">
-        <section className="space-y-3 pt-2">
-          <div>
-            <h2 className="text-lg font-medium">Registered devices</h2>
-            <p className="text-xs text-muted-foreground">
-              Mobile devices registered for push. Delivery is over WebSocket today; these tokens are ready for when
-              native push is enabled.
-            </p>
-          </div>
-          <PushTokenTable />
-        </section>
-      </Can>
     </div>
   );
 }

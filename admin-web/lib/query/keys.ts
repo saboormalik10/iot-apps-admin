@@ -118,7 +118,6 @@ export const queryKeys = {
   alertRule: (id: string) => ['alert-rules', id] as const,
   notificationsFeed: (opts: { unread?: boolean; page?: number; limit?: number }) =>
     ['notifications', 'feed', opts] as const,
-  pushTokens: ['notifications', 'tokens'] as const,
   shares: (q: { page?: number; limit?: number }) => ['share', q] as const,
   dashboardLayouts: (deviceId?: string) => ['dashboard-layouts', deviceId ?? 'all'] as const,
 };
