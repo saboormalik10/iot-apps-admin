@@ -3,6 +3,8 @@ import { Types } from 'mongoose';
 import { Device, IDevice } from '../models/Device';
 import { AuditLog } from '../models/AuditLog';
 import { NepSession } from '../models/NepSession';
+import { MetRecord } from '../models/MetRecord';
+import { MetMeasure } from '../models/MetMeasure';
 import { DeviceSettings } from '../models/DeviceSettings';
 import { FirmwareHistory } from '../models/FirmwareHistory';
 import { FirmwareTarget } from '../models/FirmwareTarget';
@@ -213,14 +215,22 @@ export class DevicesService {
 
   // ── GET /devices/:id/health ───────────────────────────────────────────────
 
+  /**
+   * Health facts the ingestion pipeline actually produces (M25).
+   *
+   * Dropped from this response: `batteryPct`, `batteryCharging`, `firmwareVersion`,
+   * `firmwareAgeDays` and the placeholder `alertCount24h`. The first four are
+   * written ONLY by the mobile BLE heartbeat (`PATCH /sync/device-status`) and by
+   * the FirmwareHistory rows that same heartbeat creates — nothing in the SFTP/CSV
+   * ingestion path touches any of them, so for an ingest-fed station they were
+   * null forever and the detail page rendered a wall of "–". `alertCount24h` was a
+   * hardcoded 0 waiting on work that landed elsewhere. Serving a null is not
+   * neutral: the UI cannot tell "not measured" from "measured as nothing", so the
+   * honest answer is to not carry the field.
+   */
   async getDeviceHealth(organizationId: string, deviceId: string) {
     const device = await this.getDevice(organizationId, deviceId);
     const now = Date.now();
-
-    const latestFw = await FirmwareHistory.findOne({ deviceId: device._id })
-      .sort({ detectedAt: -1 })
-      .select('detectedAt')
-      .lean();
 
     const lastSeenMs = device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : null;
 
@@ -228,15 +238,45 @@ export class DevicesService {
       deviceId,
       isOnline: lastSeenMs ? now - lastSeenMs < ONLINE_THRESHOLD_MS : false,
       lastSeenAt: device.lastSeenAt,
-      batteryPct: device.lastBatteryPct,
-      batteryVoltage: device.lastBatteryVoltage,
-      batteryCharging: device.lastBatteryCharging,
-      firmwareVersion: device.firmwareVersion,
-      firmwareAgeDays: latestFw ? Math.round(((now - new Date(latestFw.detectedAt).getTime()) / 86_400_000) * 10) / 10 : null,
+      batteryVoltage: await this.latestBatteryVoltage(device),
       lastSyncAt: device.lastSeenAt,
       lastSyncLagSeconds: lastSeenMs ? Math.round((now - lastSeenMs) / 1000) : null,
-      alertCount24h: 0, // populated once alert evaluation ships (Month 6)
     };
+  }
+
+  /**
+   * Battery voltage as ingestion reports it.
+   *
+   * `Device.lastBatteryVoltage` comes from the BLE heartbeat and stays null on an
+   * SFTP station. The reading is in the CSV, though — it lands on
+   * `MetMeasure.batteryVoltageV`, which the dashboard live tile already reads. So
+   * for MET-LINK take the most recent row that carries one, and fall back to the
+   * heartbeat field for BLE devices.
+   *
+   * Filtering on `$ne: null` rather than reading the single newest row matters:
+   * battery voltage is an optional column, so the latest row often has none while
+   * a row minutes earlier does. Both queries ride existing indexes
+   * (`{deviceId, dateStartMs}` and `{recordId, rowType, timestampMs}`).
+   */
+  private async latestBatteryVoltage(device: IDevice): Promise<number | null> {
+    if (device.type !== 'MET-LINK') return device.lastBatteryVoltage;
+
+    const latestRecord = await MetRecord.findOne({ deviceId: device._id, deletedAt: null })
+      .sort({ dateStartMs: -1 })
+      .select('_id')
+      .lean();
+    if (!latestRecord) return device.lastBatteryVoltage;
+
+    const latestMeasure = await MetMeasure.findOne({
+      recordId: latestRecord._id,
+      rowType: 'data',
+      batteryVoltageV: { $ne: null },
+    })
+      .sort({ timestampMs: -1 })
+      .select('batteryVoltageV')
+      .lean();
+
+    return latestMeasure?.batteryVoltageV ?? device.lastBatteryVoltage;
   }
 
   // ── Firmware version tracking (Month 6) ───────────────────────────────────

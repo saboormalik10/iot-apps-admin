@@ -319,18 +319,20 @@ export interface DeviceStats {
   lastActivityAt: string | null;
 }
 
+/**
+ * Mirrors `GET /devices/:id/health` after the M25 trim. `batteryPct`,
+ * `batteryCharging`, `firmwareVersion`, `firmwareAgeDays` and `alertCount24h`
+ * are gone: only the BLE heartbeat ever wrote them, so an ingest-fed station
+ * served null for every one. `batteryVoltage` now comes from the ingested
+ * `MetMeasure.batteryVoltageV` for MET-LINK stations.
+ */
 export interface DeviceHealth {
   deviceId: string;
   isOnline: boolean;
   lastSeenAt: string | null;
-  batteryPct: number | null;
   batteryVoltage: number | null;
-  batteryCharging: boolean | null;
-  firmwareVersion: string | null;
-  firmwareAgeDays: number | null;
   lastSyncAt: string | null;
   lastSyncLagSeconds: number | null;
-  alertCount24h: number;
 }
 
 export interface FirmwareHistoryEntry {

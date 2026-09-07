@@ -55,7 +55,9 @@ test('devices module: list → detail, with admin actions and settings link', as
   await firstRow.click();
   await expect(page).toHaveURL(/\/devices\/[a-f0-9]+/i);
   await expect(page.getByRole('link', { name: /settings/i })).toBeVisible();
-  // `exact` matters: the empty state's own "No firmware history" heading also
-  // matches a loose /firmware history/i and trips strict mode.
-  await expect(page.getByRole('heading', { name: 'Firmware history', exact: true })).toBeVisible();
+  // M25: the firmware-history card is gone from the detail page — only the BLE
+  // heartbeat ever created FirmwareHistory rows, so an ingest-fed station showed
+  // nothing but its empty state. The health summary is what the page asserts now.
+  await expect(page.getByText(/last seen/i)).toBeVisible();
+  await expect(page.getByText(/sync lag/i)).toBeVisible();
 });

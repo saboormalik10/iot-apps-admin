@@ -7,9 +7,7 @@ import {
   createDevice,
   updateDevice,
   deleteDevice,
-  getDeviceStats,
   getDeviceHealth,
-  getFirmwareHistory,
   getDeviceSettings,
   updateDeviceSettings,
   getFirmwareTargets,
@@ -35,14 +33,8 @@ export function useDevices(q: DevicesQuery) {
 export function useDevice(id: string) {
   return useQuery({ queryKey: queryKeys.device(id), queryFn: ({ signal }) => getDevice(id, signal), enabled: Boolean(id) });
 }
-export function useDeviceStats(id: string) {
-  return useQuery({ queryKey: queryKeys.deviceStats(id), queryFn: ({ signal }) => getDeviceStats(id, signal), enabled: Boolean(id) });
-}
 export function useDeviceHealth(id: string) {
   return useQuery({ queryKey: queryKeys.deviceHealth(id), queryFn: ({ signal }) => getDeviceHealth(id, signal), enabled: Boolean(id) });
-}
-export function useFirmwareHistory(id: string) {
-  return useQuery({ queryKey: queryKeys.firmwareHistory(id), queryFn: ({ signal }) => getFirmwareHistory(id, signal), enabled: Boolean(id) });
 }
 export function useFirmwareTargets() {
   return useQuery({ queryKey: queryKeys.firmwareTargets, queryFn: ({ signal }) => getFirmwareTargets(signal) });

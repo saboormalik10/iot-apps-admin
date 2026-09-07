@@ -1,0 +1,178 @@
+================================================================================
+CLAUDE WORKLOG — iot-apps-admin
+Purpose: hand-off memory between Claude sessions. Newest entry at the top.
+Read this before starting work; append a new entry when you finish a change.
+================================================================================
+
+
+================================================================================
+ENTRY 001 — 2026-09-07 — Station detail page: remove widgets with no data source
+Requested by: Saboor Malik
+Status: DONE (code edited, not committed to git, not run/tested)
+================================================================================
+
+-- THE PROBLEM ---------------------------------------------------------------
+
+The station detail page (/devices/<id>) rendered a full grid of tiles that were
+permanently empty for a MET-LINK / SFTP-ingested station. Live example, the
+"WindSonic — Sydney" MET-LINK wxstation:
+
+    Sessions            0
+    Last activity       –
+    Firmware            –
+    Battery             – (no reading)
+    Battery voltage     – V
+    Firmware age        –
+    Firmware history    "No firmware history"
+    Last seen           2 minutes ago     <-- real
+    Sync lag            59s               <-- real
+
+Not a bug in the tiles. Those fields have no writer on the ingestion path.
+
+
+-- ROOT CAUSE: WHO WRITES WHAT ------------------------------------------------
+
+Written by SFTP/CSV ingestion — backend/src/ingest/ingest.service.ts, in
+afterBatch() around line 421:
+    Device.lastSeenAt
+    Device.isOnline
+    Device.availableSensors / sensorsUpdatedAt
+    Device.reportedSpeedUnit
+=> Last seen, Sync lag and the Online badge are genuinely live. KEEP.
+
+Written ONLY by the mobile BLE heartbeat — PATCH /sync/device-status,
+backend/src/sync/sync.service.ts updateDeviceStatus() lines ~85-105:
+    Device.lastBatteryPct        -> Battery meter
+    Device.lastBatteryVoltage    -> Battery voltage row
+    Device.lastBatteryCharging
+    Device.firmwareVersion       -> Firmware tile
+    FirmwareHistory rows         -> Firmware history card AND firmwareAgeDays
+=> Null forever on an ingest-fed station. Nothing else in the codebase writes
+   them (verified by grep across all of backend/src).
+
+Written ONLY by NEP-LINK mobile session upload — NepSession collection:
+    getDeviceStats() counts NepSession docs
+=> Sessions and Last activity. A MET-LINK station has no sessions by
+   construction, so these are 0 / "–" by design, not by fault.
+
+alertCount24h was a hardcoded 0 in getDeviceHealth ("populated once alert
+evaluation ships (Month 6)"). Alert evaluation shipped elsewhere; this never
+got wired.
+
+
+-- THE ONE EXCEPTION: BATTERY VOLTAGE IS AVAILABLE ----------------------------
+
+Battery voltage is NOT actually missing — it is ingested, it was just being
+read from the wrong place. The CSV carries it and it lands on:
+
+    MetMeasure.batteryVoltageV
+
+which the dashboard live tile already reads (dashboard.service.ts getMetLatest,
+~line 357). The detail page was reading Device.lastBatteryVoltage (BLE only)
+instead. So battery voltage was REWIRED, not removed.
+
+
+-- DECISIONS TAKEN (confirmed with Saboor) ------------------------------------
+
+1. Remove the dead widgets OUTRIGHT (not conditionally hidden per device type,
+   not hidden-when-null). Simpler page, one code path.
+2. REWIRE battery voltage to the ingested MetMeasure.batteryVoltageV rather
+   than dropping it.
+
+Consequence to be aware of: the removal is unconditional, so NEP-LINK / BLE
+devices also lose these tiles from the detail page even though their heartbeat
+does populate them. That was the explicit choice. If NEP-LINK detail ever needs
+them back, reintroduce them behind `device.type === 'NEP-LINK'`.
+
+
+-- FILES CHANGED (5) ----------------------------------------------------------
+
+1. admin-web/features/devices/device-detail.tsx           [rewritten]
+   Removed: Sessions tile, Last activity tile, Firmware tile, Battery meter
+            Card, the whole Firmware history Card, the Firmware age health row.
+   Removed imports now unused: StatTile, Meter, History icon, EmptyState,
+            formatDateTime, useDeviceStats, useFirmwareHistory.
+   Kept: header (icon, name, type, bleId, Online/Offline badge), the
+            Settings/Edit/Delete actions, EditDeviceDialog, ConfirmDialog.
+   Health Card is now 3 columns: Last seen | Sync lag | Battery voltage,
+            and Battery voltage renders only when non-null.
+   A block comment at the top of the component records WHY each widget went,
+            so nobody re-adds them.
+
+2. admin-web/features/devices/use-devices.ts
+   Deleted hooks useDeviceStats() and useFirmwareHistory() — device-detail.tsx
+   was their only consumer (verified by grep across features/ lib/ test/ e2e/).
+   Deleted the matching getDeviceStats / getFirmwareHistory imports.
+   useDeviceHealth() kept.
+
+3. admin-web/lib/api/types.ts
+   DeviceHealth interface trimmed to: deviceId, isOnline, lastSeenAt,
+   batteryVoltage, lastSyncAt, lastSyncLagSeconds.
+   Dropped: batteryPct, batteryCharging, firmwareVersion, firmwareAgeDays,
+   alertCount24h. Doc comment added explaining why.
+
+4. backend/src/devices/devices.service.ts
+   getDeviceHealth() now returns only the six fields above. The FirmwareHistory
+   lookup it used for firmwareAgeDays is gone.
+   NEW private helper latestBatteryVoltage(device):
+       - MET-LINK  -> newest MetRecord for the device (sort dateStartMs desc)
+                      -> newest MetMeasure on that record with
+                         rowType:'data' AND batteryVoltageV: {$ne: null}
+                      -> falls back to device.lastBatteryVoltage
+       - otherwise -> device.lastBatteryVoltage (BLE heartbeat)
+   The $ne:null filter is deliberate: batteryVoltageV is an optional column, so
+   the single newest row often has none while a row minutes earlier does.
+   Both queries ride existing indexes: {deviceId, dateStartMs} on MetRecord and
+   {recordId, rowType, timestampMs} on MetMeasure.
+   New imports: MetRecord, MetMeasure.
+
+5. admin-web/e2e/dashboard-devices.spec.ts
+   The device-detail assertion looked for the 'Firmware history' heading. Now
+   asserts the health summary (Last seen / Sync lag) instead.
+
+
+-- DELIBERATELY NOT CHANGED ---------------------------------------------------
+
+* Backend routes GET /devices/:id/stats and GET /devices/:id/firmware-history
+  still exist, along with getDeviceStats()/getFirmwareHistory() in the service
+  and getDeviceStats/getFirmwareHistory in admin-web/lib/api/endpoints.ts.
+  Reason: they are documented Swagger surface and the mobile apps may call them.
+  Only the admin-web UI stopped consuming them.
+* admin-web/scripts/check_contract_drift.js checks ROUTES, not response fields,
+  and /devices/{id}/health still exists — so no contract drift is introduced.
+* Device model fields (lastBatteryPct etc.) left in place; the BLE heartbeat
+  still writes them and the dashboard device-status table still reads
+  lastBatteryPct (dashboard.service.ts:282).
+* features/devices/firmware-status-table.tsx is untouched — it uses
+  useFirmwareStatus (the per-org firmware target comparison), a different
+  feature that works fine.
+
+
+-- VERIFICATION DONE / STILL OWED ---------------------------------------------
+
+Done: all five edited files parse cleanly (esbuild transform, no syntax errors).
+Grep-verified that no other file references the removed hooks or fields.
+
+STILL OWED (could not run here — node_modules live on the dev machine):
+    cd admin-web && yarn tsc --noEmit
+    cd admin-web && yarn test
+    cd admin-web && yarn playwright test e2e/dashboard-devices.spec.ts
+    cd backend    && yarn build
+Watch for: any remaining reference to health.data.firmwareAgeDays / batteryPct
+in a file not covered by the grep, and the e2e run against a seeded DB.
+
+
+-- ENVIRONMENT NOTES FOR THE NEXT SESSION -------------------------------------
+
+* Repo root on the dev machine:
+      /home/saboor-malik/Documents/work/iot-apps-admin
+* The local Filesystem MCP tools (read_text_file, edit_file, write_file,
+  search_files, list_directory) are BROKEN in this setup — they fail with
+  "invalid outputSchema ... draft-07". device_bash was also unavailable.
+  Workflow that worked: device_list_dir to browse, device_stage_files to pull
+  files into the container, edit there, then SendUserFile + device_commit_files
+  to write them back. Stage in batches of <= 50 files.
+* device_list_dir with recursive:true on admin-web overflows the tool output
+  cap; it gets saved to a file you then parse with python.
+
+================================================================================
