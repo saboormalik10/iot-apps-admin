@@ -12,6 +12,7 @@ import { MetMeasure } from '../models/MetMeasure';
 import { MetIngestFile } from '../models/MetIngestFile';
 import { ParsedMetRow } from './met-csv/parse-met-csv';
 import { getStreamParser } from './registry';
+import { resolveStreamType, type StreamRoute } from './stream-route';
 import { localDayKey } from '../utils/tz.util';
 import { fromCache, toCache } from '../utils/cache.util';
 import { IngestFileInput, IngestFileResult, IngestResponse } from './dto';
@@ -48,6 +49,11 @@ interface ResolvedStation {
   headingOffsetDeg: number;
   /** Registry key of the parser that reads this station's files. */
   streamType: string;
+  /**
+   * Per-filename-prefix routing, when the folder carries more than one format.
+   * Empty means every file uses `streamType`.
+   */
+  streamRoutes: StreamRoute[];
 }
 
 @Injectable()
@@ -157,6 +163,9 @@ export class IngestService {
       // Which parser reads this station's files. Stored per station because two
       // customers on the same box can send entirely different formats.
       streamType: mapping.streamType || 'met-csv',
+      // This station's folder holds three formats, so the parser is chosen per
+      // FILE below, not once per folder.
+      streamRoutes: (mapping.streamRoutes ?? []).map((r) => ({ prefix: r.prefix, streamType: r.streamType })),
       deviceName: device.name,
       timezone: org?.timezone || 'UTC',
       headingOffsetDeg: device.headingOffsetDeg ?? 0,
@@ -512,6 +521,9 @@ export class IngestService {
       // MET CSV is the only format an operator can upload through the wizard,
       // and the wizard says so — a different one would need its own entry point.
       streamType: 'met-csv',
+      // No folder, so no per-prefix routing: an admin upload is whatever the
+      // wizard says it is.
+      streamRoutes: [],
       headingOffsetDeg: device.headingOffsetDeg ?? 0,
     };
   }
@@ -578,9 +590,28 @@ export class IngestService {
     // ── Parse ──────────────────────────────────────────────────────────────
     // `admin-upload` bytes are a whole file the user chose; only the SFTP agent
     // can hand us something cut mid-write.
-    // Resolved from the STATION, not hard-coded: this is what lets a new sensor
-    // format be onboarded as a registry entry rather than a change here.
-    const parser = getStreamParser(station.streamType);
+    // Resolved per FILE, not once per folder: this station drops three formats
+    // into one directory, and the folder alone cannot say how to read them.
+    const streamType = resolveStreamType(file.name, station.streamRoutes, station.streamType);
+    if (streamType === null) {
+      // No route matched, so this file is REFUSED rather than parsed with the
+      // folder's default. `EnvDiagnostic_*` is an audit log that happens to
+      // carry a `timestamp` column, so the parser's only hard guard would not
+      // reject it — it would land as ~60 all-null rows a minute that look like
+      // readings, which is worse than any error.
+      //
+      // `rejected` (not a new disposition) because the agent already treats that
+      // as "quarantine, never retry", which is exactly right here: a file we
+      // have no route for will not become routable on a retry, and quarantine is
+      // where an operator looks. Nothing is deleted — quarantine is permanent.
+      await MetIngestFile.updateOne(
+        { _id: marker._id },
+        { $set: { state: 'rejected', reason: 'NO_STREAM_ROUTE', completedAt: new Date() } },
+      );
+      return { name: file.name, status: 'rejected', reason: 'NO_STREAM_ROUTE' };
+    }
+
+    const parser = getStreamParser(streamType);
     if (!parser) {
       await MetIngestFile.updateOne(
         { _id: marker._id },

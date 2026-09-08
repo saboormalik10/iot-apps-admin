@@ -163,6 +163,33 @@ function toCache<T>(key: string, data: T, ttlMs = 30_000): T {
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
+/**
+ * Sensor fields worth carrying forward from an earlier row when the newest one
+ * does not have them — see the note in `getMetLatest`.
+ *
+ * Readings only. Nothing derived from the row's own identity (timestamps, ids)
+ * and nothing positional: a GPS fix from fifteen minutes ago is not where the
+ * thing is now, and holding one would be worse than showing none.
+ */
+const COALESCED_FIELDS = [
+  'windSpeedMs',
+  'windSpeedKmh',
+  'windSpeedKnots',
+  'windSpeedRelMs',
+  'windSpeedTrueMs',
+  'windDirRelDeg',
+  'windDirTrueDeg',
+  'tempC',
+  'humidityPct',
+  'pressureHpa',
+  'dewPointC',
+  'precipMm',
+  'precipRateMmHr',
+  'solarWm2',
+  'qnhHpa',
+  'qfeHpa',
+] as const;
+
 @Injectable()
 export class DashboardService {
 
@@ -380,14 +407,53 @@ export class DashboardService {
     if (!latestRecord) return toCache(cacheKey, null);
 
     // Get the latest data row from that record
-    const latestMeasure = await MetMeasure.findOne({
+    const newest = await MetMeasure.findOne({
       recordId: latestRecord._id,
       rowType: 'data',
     })
       .sort({ timestampMs: -1 })
       .lean();
 
-    if (!latestMeasure) return toCache(cacheKey, null);
+    if (!newest) return toCache(cacheKey, null);
+
+    /**
+     * Fill each sensor from the most recent row that actually HAS it.
+     *
+     * A station can write more than one stream into the same day record — wind
+     * at 1 Hz and environmental once a minute — as separate rows at different
+     * timestamps. Taking the newest row wholesale therefore returns wind with a
+     * null temperature, or temperature with a null wind, alternating: the live
+     * panel would flicker between two half-empty states rather than showing the
+     * station.
+     *
+     * Coalescing per field is what makes "latest" mean the station's current
+     * condition rather than whichever row happened to land last. `measuredAtMs`
+     * stays the NEWEST row's, so the freshness indicator still reports the last
+     * time the station said anything.
+     *
+     * Bounded to a short lookback so a sensor that died an hour ago reads as
+     * absent rather than being held alive by a stale value forever.
+     */
+    const COALESCE_WINDOW_MS = 15 * 60 * 1000;
+    const latestMeasure: Record<string, unknown> = { ...newest };
+    const missing = COALESCED_FIELDS.filter((f) => latestMeasure[f] === null || latestMeasure[f] === undefined);
+
+    if (missing.length > 0) {
+      const recent = await MetMeasure.find({
+        recordId: latestRecord._id,
+        rowType: 'data',
+        timestampMs: { $gte: newest.timestampMs - COALESCE_WINDOW_MS, $lte: newest.timestampMs },
+      })
+        .sort({ timestampMs: -1 })
+        .select([...missing, 'timestampMs'].join(' '))
+        .lean();
+
+      for (const field of missing) {
+        // `recent` is newest-first, so the first non-null wins.
+        const hit = recent.find((r) => (r as Record<string, unknown>)[field] != null);
+        if (hit) latestMeasure[field] = (hit as Record<string, unknown>)[field];
+      }
+    }
 
     // The mast's surveyed offset travels with the reading: the live dial needs it
     // to know whether the bearing it is drawing is TRUE or merely relative, and

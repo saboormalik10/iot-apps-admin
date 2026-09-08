@@ -1,5 +1,7 @@
 import { parseMetCsv } from '../met-csv/parse-met-csv';
 import { COLUMNS } from '../met-csv/columns';
+import { parseEnvironmentalCsv } from '../environmental-csv/parse-environmental-csv';
+import { ENV_COLUMNS } from '../environmental-csv/columns';
 import { registerStreamParser, getStreamParser, listStreamParsers } from './stream-parser';
 
 export * from './stream-parser';
@@ -9,9 +11,15 @@ export * from './column-spec';
  * Built-in stream types.
  *
  * Registered at import time, once, from this module — so anything importing the
- * registry sees the same set regardless of load order. `met-csv` is the only
- * real one today: as of 24 Aug the server held 8,828 files and every one was
- * wind.
+ * registry sees the same set regardless of load order.
+ *
+ * `EnvDiagnostic_*` is deliberately NOT here. It is a per-second
+ * `Accepted`/`No data` audit of the environmental sentence, not readings — but
+ * it does carry a `timestamp` column, so the `NO_TIMESTAMP_COLUMN` guard would
+ * not stop it. Parsed as either stream it would write ~60 all-null rows a minute
+ * that look like data. Files reach a parser only through an explicit route (see
+ * `StationAccount.streamRoutes`), so an unrouted prefix is skipped rather than
+ * guessed at.
  */
 let registered = false;
 
@@ -30,6 +38,19 @@ export function registerBuiltInParsers(): void {
     // Published as DATA, so the admin UI can show what this stream understands.
     columns: COLUMNS,
     parse: (content, options) => parseMetCsv(content, options),
+  });
+
+  registerStreamParser({
+    key: 'environmental-csv',
+    label: 'Environmental (temp / humidity / pressure)',
+    description:
+      'Second serial port on the same mast: `timestamp,temperature_C,humidity_percent,pressure_hPa`, one file ' +
+      'per minute at 1 Hz. Stored as ONE row per minute (the mean of that minute) — a whole minute moves the ' +
+      'temperature 0.02 °C, so per-second rows would cost 48× the storage for less than the sensor can resolve. ' +
+      'Dew point is derived from temperature and humidity, since the station does not report it.',
+    filenameHint: /^Environmental_\d{8}_\d{4}\.csv$/i,
+    columns: ENV_COLUMNS,
+    parse: (content, options) => parseEnvironmentalCsv(content, options),
   });
 }
 

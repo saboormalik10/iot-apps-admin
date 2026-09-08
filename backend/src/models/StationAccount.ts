@@ -31,8 +31,26 @@ export interface IStationAccount extends Document {
   folderPath: string;
   organizationId: Types.ObjectId;
   deviceId: Types.ObjectId;
-  /** What the station sends. Keys the parser registry once more streams exist. */
+  /**
+   * What the station sends, when every file in the folder is the same format.
+   *
+   * Used as the fallback when `streamRoutes` is empty, so every station
+   * registered before routing existed keeps working untouched.
+   */
   streamType: string;
+  /**
+   * Per-FILENAME-PREFIX routing, for a folder carrying more than one format.
+   *
+   * The station writes three kinds of file into ONE folder — `WindSonic_*`,
+   * `Environmental_*` and `EnvDiagnostic_*` — so the folder alone cannot say how
+   * to read them. Matched in order, longest-prefix-first, against the basename.
+   *
+   * A file matching NO route is SKIPPED, never parsed as the fallback. That is
+   * the safety property: `EnvDiagnostic_*` is an audit log, but it carries a
+   * `timestamp` column, so the parser's only hard guard would not reject it — it
+   * would ingest ~60 all-null rows a minute that look like readings.
+   */
+  streamRoutes: { prefix: string; streamType: string }[];
   /** Absolute chroot-relative upload path, for the agent's benefit. */
   uploadPath: string;
   isActive: boolean;
@@ -62,6 +80,16 @@ const stationAccountSchema = new Schema<IStationAccount>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
     streamType: { type: String, required: true, default: 'met-csv' },
+    streamRoutes: {
+      type: [
+        {
+          prefix: { type: String, required: true, trim: true },
+          streamType: { type: String, required: true, trim: true },
+          _id: false,
+        },
+      ],
+      default: [],
+    },
     uploadPath: { type: String, default: '/upload' },
     isActive: { type: Boolean, default: true },
     lastIngestAt: { type: Date, default: null },
