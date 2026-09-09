@@ -104,7 +104,9 @@ export function DeviceDetail({ id }: { id: string }) {
         </Card>
       ) : null}
 
-      <EditDeviceDialog device={device} open={editOpen} onOpenChange={setEditOpen} />
+      {/* Conditional so the form reseeds from the CURRENT device each time it
+          opens, rather than from whatever it held when the page first rendered. */}
+      {editOpen ? <EditDeviceDialog device={device} open onOpenChange={setEditOpen} /> : null}
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

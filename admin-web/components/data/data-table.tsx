@@ -9,13 +9,22 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { TableSkeleton } from '@/components/screen-states';
+import { ErrorState, TableSkeleton } from '@/components/screen-states';
 import { cn } from '@/lib/utils';
 
 /**
  * DataTable — the shared, server-paginated table primitive (plan §14). Rendering
  * is column-driven via TanStack Table; paging is controlled by the parent (the
- * server owns the page window). Loading/empty are first-class.
+ * server owns the page window). Loading/empty/error are first-class.
+ *
+ * WHY `error` EXISTS
+ * Until it did, a failed request rendered `emptyLabel` — so "the server returned
+ * a 500" and "this customer has no stations" were the same screen. That is a
+ * confident, wrong statement about a customer's data, and it is worst exactly
+ * where it matters most: right after a platform administrator switches customer.
+ *
+ * Precedence is error -> loading -> empty. A failed REFETCH must not fall
+ * through to "No results." just because stale rows are gone.
  */
 export function DataTable<T>({
   data,
@@ -25,6 +34,9 @@ export function DataTable<T>({
   total,
   onPageChange,
   isLoading,
+  isStale,
+  error,
+  onRetry,
   emptyLabel = 'No results.',
   onRowClick,
   getRowId,
@@ -36,6 +48,18 @@ export function DataTable<T>({
   total?: number;
   onPageChange?: (page: number) => void;
   isLoading?: boolean;
+  /**
+   * Rows shown are from the PREVIOUS query (react-query's `isPlaceholderData`).
+   *
+   * `keepPreviousData` is what stops the table flashing between pages, and it is
+   * right for that. Across a device change it is not: it renders one station's
+   * rows under another station's filter, with nothing to say so. Dimming keeps
+   * the smooth paging and makes the staleness visible instead of silent.
+   */
+  isStale?: boolean;
+  /** Any truthy value (react-query's `isError` or `error`) switches to ErrorState. */
+  error?: unknown;
+  onRetry?: () => void;
   emptyLabel?: string;
   onRowClick?: (row: T) => void;
   getRowId?: (row: T) => string;
@@ -49,13 +73,22 @@ export function DataTable<T>({
     pageCount: pageCount ?? -1,
   });
 
+  // Error first: a failed refetch leaves `isLoading` false and `data` empty, so
+  // checking loading or emptiness first would report "no data" for a failure.
+  if (error) return <ErrorState onRetry={onRetry} />;
   if (isLoading) return <TableSkeleton rows={8} cols={columns.length} />;
 
   const showPager = page != null && pageCount != null && pageCount > 1 && onPageChange;
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-lg border">
+      <div
+        className={cn(
+          'overflow-x-auto rounded-lg border transition-opacity',
+          isStale && 'pointer-events-none opacity-60',
+        )}
+        aria-busy={isStale || undefined}
+      >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

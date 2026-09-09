@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, UseGuards } from '
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { StreamTypesService } from './stream-types.service';
-import { PreviewStreamDto, SetEnabledDto } from './dto';
+import { PreviewStreamDto, SetStationStreamDto } from './dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
@@ -69,14 +69,23 @@ export class StreamTypesController {
   }
 
   @ApiOperation({
-    summary: 'Enable or disable a stream type',
-    description: 'Disabling stops it being assigned to new stations; it strands nothing already using it.',
+    summary: 'Allow or stop ONE station ingesting ONE stream type',
+    description:
+      'Per station, not per format: one customer pausing a feed must not stop everyone else. Checked on the ' +
+      'ingest path — a file for a disabled type is REJECTED and quarantined, never silently dropped, so it can ' +
+      'be replayed once the type is switched back on.\n\nReplaces the old type-level toggle, which was never ' +
+      'enforced anywhere: ingest resolves its parser from the code registry and never read it, so the switch ' +
+      'looked like a kill switch and stopped nothing.',
   })
-  @ApiBody({ type: SetEnabledDto })
-  @ApiOkResponse({ description: 'The updated type' })
-  @ApiErrors('badRequest', 'unauthorized', 'forbidden')
-  @Patch(':id/enabled')
-  async setEnabled(@Param('id') id: string, @Body() body: SetEnabledDto) {
-    return { data: await this.streamTypes.setEnabled(id, body.isEnabled) };
+  @ApiBody({ type: SetStationStreamDto })
+  @ApiOkResponse({ description: 'The updated station' })
+  @ApiErrors('badRequest', 'unauthorized', 'forbidden', 'notFound')
+  @Patch(':key/stations/:stationAccountId')
+  async setStationEnabled(
+    @Param('key') key: string,
+    @Param('stationAccountId') stationAccountId: string,
+    @Body() body: SetStationStreamDto,
+  ) {
+    return { data: await this.streamTypes.setStationEnabled(stationAccountId, key, body.enabled) };
   }
 }

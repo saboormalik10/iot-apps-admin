@@ -38,20 +38,30 @@ test('dashboard home shows KPIs, scope bar, and the fleet table', async ({ page 
 test('devices module: list → detail, with admin actions and settings link', async ({ page }) => {
   await signIn(page);
 
-  await page.getByRole('link', { name: /devices/i }).first().click();
+  // The nav item and the heading both read "Stations" — the label was renamed
+  // from "Devices" while the route stayed /devices, which left this locator
+  // matching nothing and the test timing out.
+  await page.getByRole('link', { name: /stations/i }).first().click();
   await expect(page).toHaveURL(/\/devices/);
-  await expect(page.getByRole('heading', { name: /^devices$/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^stations$/i })).toBeVisible();
 
-  // Admin sees the manual Add-device control and the firmware-status section.
-  await expect(page.getByRole('button', { name: /add device/i })).toBeVisible();
-  await expect(page.getByText(/firmware status/i)).toBeVisible();
+  // Neither the Add-device control nor the firmware-status section is here any
+  // more. Add-station went when provisioning moved to the platform screen;
+  // firmware went on 9 Sep 2026 because `firmwareVersion` is only ever typed in
+  // by hand — a CSV-over-SFTP station cannot report it, so the panel could only
+  // show dashes. Asserted ABSENT so neither quietly comes back.
+  await expect(page.getByText(/firmware status/i)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /add device/i })).toHaveCount(0);
 
   // Open the first device row → detail.
-  // Wait for the row to actually CARRY a device before clicking: under load the
-  // table renders skeleton rows first, and clicking one navigates nowhere — a
-  // flake that only ever showed up in the full suite.
+  //
+  // Wait for the STATUS CELL, not merely for the row to hold a word: while the
+  // table is loading it renders a skeleton whose placeholder markup already
+  // satisfies a bare /\w/, so the old guard let the click land mid-render and
+  // navigate nowhere. Every loaded row carries Online or Offline; a skeleton
+  // carries neither, which makes this a real wait rather than a hopeful one.
   const firstRow = page.getByRole('row').nth(1);
-  await expect(firstRow).toContainText(/\w/);
+  await expect(firstRow.getByText(/online|offline/i).first()).toBeVisible();
   await firstRow.click();
   await expect(page).toHaveURL(/\/devices\/[a-f0-9]+/i);
   await expect(page.getByRole('link', { name: /settings/i })).toBeVisible();

@@ -8,21 +8,23 @@ import {
   updateDevice,
   deleteDevice,
   getDeviceHealth,
-  getFirmwareTargets,
-  setFirmwareTarget,
-  getFirmwareStatus,
   listPlatformDevices,
   listDeviceCustomers,
   type DevicesQuery,
 } from '@/lib/api/endpoints';
-import type { DeviceType, FirmwareTarget } from '@/lib/api/types';
+import type { DeviceType } from '@/lib/api/types';
 import type {
   CreateDeviceInput,
   UpdateDeviceInput,
 } from '@/lib/api/schemas';
 import { queryKeys } from '@/lib/query/keys';
 
-/** Devices module hooks (plan §Month 8). Writes invalidate the relevant keys + audit. */
+/**
+ * Devices module hooks (plan §Month 8). Writes invalidate the relevant keys + audit.
+ *
+ * The firmware hooks were removed on 9 Sep 2026 with the panel they fed — see
+ * devices-list.tsx. The backend endpoints still exist and are untouched.
+ */
 
 export function useDevices(q: DevicesQuery) {
   return useQuery({ queryKey: queryKeys.devices(q), queryFn: ({ signal }) => listDevices(q, signal) });
@@ -32,12 +34,6 @@ export function useDevice(id: string) {
 }
 export function useDeviceHealth(id: string) {
   return useQuery({ queryKey: queryKeys.deviceHealth(id), queryFn: ({ signal }) => getDeviceHealth(id, signal), enabled: Boolean(id) });
-}
-export function useFirmwareTargets() {
-  return useQuery({ queryKey: queryKeys.firmwareTargets, queryFn: ({ signal }) => getFirmwareTargets(signal) });
-}
-export function useFirmwareStatus(type?: DeviceType) {
-  return useQuery({ queryKey: queryKeys.firmwareStatus(type), queryFn: ({ signal }) => getFirmwareStatus(type, signal) });
 }
 function invalidateDeviceLists(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['devices'] });
@@ -70,18 +66,6 @@ export function useDeleteDevice() {
     onSuccess: () => invalidateDeviceLists(qc),
   });
 }
-export function useSetFirmwareTarget() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: FirmwareTarget) => setFirmwareTarget(input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.firmwareTargets });
-      qc.invalidateQueries({ queryKey: ['devices', 'firmware-status'] });
-      qc.invalidateQueries({ queryKey: ['audit'] });
-    },
-  });
-}
-
 /**
  * The stations list, widened across customers for a platform administrator.
  *

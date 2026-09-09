@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
 import { useMetDailySummary } from '../use-analytics';
 import { useAnalyticsRealtime } from '../use-analytics-realtime';
@@ -21,7 +21,7 @@ import { SolarPrecipBars } from './solar-precip-bars';
 export function DailySummaryPage() {
   const met = useScopedDevice('MET-LINK');
   useAnalyticsRealtime();
-  const { data, isLoading } = useMetDailySummary(met.deviceId);
+  const { data, isLoading, isError, refetch } = useMetDailySummary(met.deviceId);
 
   const backLink = (
     <Button asChild variant="ghost" size="sm" className="h-8 gap-1 text-xs">
@@ -32,6 +32,16 @@ export function DailySummaryPage() {
     </Button>
   );
 
+  // Ahead of the "no device" state: an empty device list is what a FAILED load
+  // looks like too, and "adjust the Scope Bar" is unhelpful advice for a 500.
+  if (met.isError) {
+    return (
+      <div className="space-y-3">
+        {backLink}
+        <ErrorState title="Couldn't load your stations" onRetry={() => met.refetch()} />
+      </div>
+    );
+  }
   if (!met.deviceId || !met.device) {
     return (
       <div className="space-y-3">
@@ -54,6 +64,8 @@ export function DailySummaryPage() {
 
       {isLoading ? (
         <LoadingState label="Loading daily summaries…" />
+      ) : isError ? (
+        <ErrorState title="Couldn't load daily summaries" onRetry={() => refetch()} />
       ) : !data || data.length === 0 ? (
         <EmptyState
           title="No daily summaries yet"

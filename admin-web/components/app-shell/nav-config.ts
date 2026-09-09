@@ -63,6 +63,9 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'users', href: '/users', labelKey: 'nav.users', icon: Users, capability: 'manageOrg' },
   { key: 'roles', href: '/roles', labelKey: 'nav.roles', icon: Shield, capability: 'manageOrg' },
   { key: 'platform', href: '/platform', labelKey: 'nav.platform', icon: Globe, superAdminOnly: true },
-  { key: 'streamTypes', href: '/stream-types', labelKey: 'nav.streamTypes', icon: Layers, superAdminOnly: true },
+  // Visible to customers too, read-only: they see the formats THEIR stations
+  // send and whether each is ingesting. The platform endpoint that lists every
+  // customer stays super-admin — a customer reading it is refused (403).
+  { key: 'streamTypes', href: '/stream-types', labelKey: 'nav.streamTypes', icon: Layers, capability: 'viewData' },
   { key: 'settings', href: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];

@@ -10,7 +10,8 @@ import { StatTile } from '@/components/charts/stat-tile';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { DataTable } from '@/components/data/data-table';
 import { Button } from '@/components/ui/button';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
+import { isForbiddenError } from '@/lib/api/errors';
 import { fmt } from '@/components/charts/chart-utils';
 import { WaterQualityBadge } from '@/features/analytics-nep/charts/water-quality-badge';
 import { CorrelationScatter } from '@/features/analytics-nep/charts/correlation-scatter';
@@ -33,7 +34,7 @@ const fmtDate = (ms: number) => new Date(ms).toLocaleString(undefined, { dateSty
  * samples table, CSV export, and the file gallery + comment.
  */
 export function SessionDetail({ id }: { id: string }) {
-  const { data: session, isLoading } = useSession(id);
+  const { data: session, isLoading, isError, error, refetch } = useSession(id);
   const { data: viz } = useSessionSamples(id, { downsample: true });
   const [tablePage, setTablePage] = useState(1);
   const { data: tableData, isLoading: tableLoading } = useSessionSamples(id, { page: tablePage, limit: TABLE_LIMIT });
@@ -75,11 +76,22 @@ export function SessionDetail({ id }: { id: string }) {
   );
 
   if (isLoading) return <LoadingState label="Loading session…" />;
-  if (!session) {
+  if (isError || !session) {
+    // Same distinction as the record detail: a session id reached from a
+    // bookmark, or left open across a customer switch, is forbidden — not gone.
     return (
       <div className="space-y-3">
         {backLink}
-        <EmptyState title="Session not found" body="It may have been deleted." />
+        {isForbiddenError(error) ? (
+          <ErrorState
+            title="You don't have access to this session"
+            body="It belongs to a different customer. Switch back to that organisation to open it."
+          />
+        ) : isError ? (
+          <ErrorState title="Couldn't load this session" onRetry={() => refetch()} />
+        ) : (
+          <EmptyState title="Session not found" body="It may have been deleted." />
+        )}
       </div>
     );
   }

@@ -11,6 +11,14 @@ import type { AlertRulesQuery, AuditQuery, DevicesQuery, RecordsQuery, SessionsQ
  * changes every render, so the key changes every render → fetch → re-render → fetch,
  * forever. The Scope Bar window is quantized to the minute and memoized for exactly
  * this reason (see lib/hooks/use-scope.ts). All Month-9 analytics keys follow this.
+ *
+ * ⚠ Tenancy rule: these keys carry NO organisation identity — `['devices']`, not
+ * `['org', id, 'devices']`. Cache separation between customers therefore rests
+ * entirely on the acting organisation never changing without the cache being
+ * discarded. Today `useSwitchOrganization` guarantees that twice over: it calls
+ * `queryClient.clear()` AND does a full page load. Any NEW path that changes the
+ * acting organisation must preserve that invariant, or it will serve one
+ * customer's cached data under another customer's name.
  */
 export const queryKeys = {
   session: ['session'] as const,

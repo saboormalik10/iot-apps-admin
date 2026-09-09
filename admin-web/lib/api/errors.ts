@@ -70,6 +70,19 @@ function codeForStatus(status: number): string {
   }
 }
 
+/**
+ * "Exists, but not yours" rather than "gone".
+ *
+ * Detail routes are addressed by id, and an id outlives the session that found
+ * it — a bookmark, a shared link, or a platform administrator who switched
+ * customer with a detail page open. Reporting a 403 as "it may have been
+ * deleted" is a false statement about the other customer's data; the two need
+ * different words.
+ */
+export function isForbiddenError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}
+
 /** Map an error to a user-facing i18n key (consumed by the toast/inline layer). */
 export function messageKeyForError(err: unknown): string {
   if (err instanceof ApiError) {

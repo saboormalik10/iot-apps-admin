@@ -26,7 +26,7 @@ const relTime = (iso: string | null) => {
  * Org-wide (not device-scoped) — the whole fleet at a glance.
  */
 export function FleetHealthTable() {
-  const { data, isLoading } = useFleetHealth();
+  const { data, isLoading, isError, refetch } = useFleetHealth();
 
   const columns = useMemo<ColumnDef<FleetHealthRow, unknown>[]>(
     () => [
@@ -88,6 +88,8 @@ export function FleetHealthTable() {
       data={data ?? []}
       columns={columns}
       isLoading={isLoading}
+      error={isError}
+      onRetry={() => refetch()}
       getRowId={(r) => r.deviceId}
       emptyLabel="No devices in this organization yet."
     />

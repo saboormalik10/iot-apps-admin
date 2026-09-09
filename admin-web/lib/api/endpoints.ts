@@ -761,16 +761,35 @@ export const rotateStationPassword = (stationAccountId: string) =>
     {},
   );
 
-/** Stream types with their column specs. Platform administrators only. */
-export const listStreamTypes = (signal?: AbortSignal) =>
-  http.get<StreamTypeRow[]>('/platform/stream-types', signal);
+/**
+ * Stream types with their column specs.
+ *
+ * Two endpoints, deliberately: the platform one lists EVERY customer's stations
+ * and is super-admin only; the org one returns the same formats with the
+ * caller's own stations and nothing else. Splitting them keeps
+ * `SuperAdminGuard` at the platform controller's class level, so "what spans
+ * customers?" stays answerable by grepping one symbol.
+ */
+export const listStreamTypes = (superAdmin: boolean, signal?: AbortSignal) =>
+  http.get<StreamTypeRow[]>(superAdmin ? '/platform/stream-types' : '/stream-types', signal);
 
 /** Parse a sample and report what WOULD be stored. Writes nothing. */
 export const previewStream = (input: { streamKey: string; content: string; filename?: string }) =>
   http.post<StreamPreview>('/platform/stream-types/preview', input);
 
-export const setStreamTypeEnabled = (id: string, isEnabled: boolean) =>
-  http.patch<{ id: string; key: string; isEnabled: boolean }>(`/platform/stream-types/${id}/enabled`, { isEnabled });
+/**
+ * Allow or stop ONE station ingesting ONE stream type. Super-admin only.
+ *
+ * Replaces a type-level toggle that was never enforced anywhere — ingest
+ * resolves its parser from the code registry and never read it, so the switch
+ * looked like a kill switch and stopped nothing. This one is checked on the
+ * ingest path, and a file for a disabled type is quarantined rather than lost.
+ */
+export const setStationStreamEnabled = (key: string, stationAccountId: string, enabled: boolean) =>
+  http.patch<{ stationAccountId: string; streamType: string; enabled: boolean }>(
+    `/platform/stream-types/${key}/stations/${stationAccountId}`,
+    { enabled },
+  );
 
 /**
  * Ask the server what a MET import would do. Writes nothing.

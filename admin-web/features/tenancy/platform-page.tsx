@@ -8,7 +8,7 @@ import { StatTile } from '@/components/charts/stat-tile';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { DataTable } from '@/components/data/data-table';
 import { Button } from '@/components/ui/button';
-import { EmptyState, LoadingState } from '@/components/screen-states';
+import { EmptyState, ErrorState, LoadingState } from '@/components/screen-states';
 import { useQuery } from '@tanstack/react-query';
 import { getPlatformOverview } from '@/lib/api/endpoints';
 import { queryKeys } from '@/lib/query/keys';
@@ -46,7 +46,7 @@ export function PlatformPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [stationsFor, setStationsFor] = useState<{ id: string; name: string } | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.platformOverview,
     queryFn: ({ signal }) => getPlatformOverview(signal),
     enabled: isSuperAdmin,
@@ -142,6 +142,12 @@ export function PlatformPage() {
   if (!isSuperAdmin) {
     return <EmptyState title="Not available" body="This page is for platform administrators." />;
   }
+  // Error before the `!data` gate. Falling through to LoadingState on a failure
+  // spins forever: `isLoading` is false once the request settles, so the old
+  // `isLoading || !data` condition stayed true with no request left to finish.
+  if (isError) {
+    return <ErrorState title="Couldn't load the platform overview" onRetry={() => refetch()} />;
+  }
   if (isLoading || !data) return <LoadingState label="Gathering figures across every customer…" />;
 
   return (
@@ -183,7 +189,10 @@ export function PlatformPage() {
         <DataTable columns={columns} data={data.rows} />
       )}
 
-      <CreateCustomerDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {/* Conditional, and this one matters more than most: the dialog holds the
+          generated password in state, so left mounted it would reopen showing the
+          PREVIOUS customer's credentials. */}
+      {createOpen ? <CreateCustomerDialog open onOpenChange={setCreateOpen} /> : null}
       {stationsFor ? (
         <StationsDialog
           organizationId={stationsFor.id}

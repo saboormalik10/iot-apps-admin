@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import type maplibregl from 'maplibre-gl';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
 import { useSocketEvent } from '@/lib/realtime/hooks';
 import { ClientEvent } from '@/lib/realtime/events';
 import { queryKeys } from '@/lib/query/keys';
@@ -29,7 +29,7 @@ function markerColor(p: FleetMapPoint): string {
  * as a compact home panel and full-screen on /map.
  */
 export function FleetMapPanel({ compact = false }: { compact?: boolean }) {
-  const { data: points, isLoading } = useOrgDeviceMap();
+  const { data: points, isLoading, isError, refetch } = useOrgDeviceMap();
   const qc = useQueryClient();
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -99,7 +99,13 @@ export function FleetMapPanel({ compact = false }: { compact?: boolean }) {
         <h2 className="text-sm font-medium">Fleet map</h2>
         {points ? <span className="text-xs text-muted-foreground">{points.length} located</span> : null}
       </div>
-      {isLoading ? (
+      {isError ? (
+        <div className={height}>
+          {/* Ahead of the empty state: "no located devices" would otherwise be
+              shown for a failed request, implying the fleet has no GPS fix. */}
+          <ErrorState title="Couldn't load the map" onRetry={() => refetch()} />
+        </div>
+      ) : isLoading ? (
         <div className={height}>
           <LoadingState label="Loading map…" />
         </div>

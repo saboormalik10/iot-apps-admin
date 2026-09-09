@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { listOrganizations } from '@/lib/api/endpoints';
@@ -27,12 +26,24 @@ export function useOrganizations() {
  * that data on screen while refetches land, so one customer's devices would be
  * rendered under another customer's name — briefly, and wrongly.
  *
- * `router.refresh()` then re-runs the server components so the layout picks up
- * the new session user, since the shell reads it server-side.
+ * WHY A FULL NAVIGATION AND NOT `router.refresh()`
+ * `router.refresh()` re-runs the server components but PRESERVES every client
+ * component instance, and three of them belong to the previous customer:
+ *
+ *   • the Socket.IO connection, still joined to `roomForOrg(previousOrgId)`, so
+ *     the admin keeps receiving the previous customer's device:status events;
+ *   • `?device=` / `?type=` in the URL, which then query the new organisation
+ *     with the old organisation's device id — empty results, blank picker;
+ *   • the pathname, so an open `/records/<id>` names a record the new
+ *     organisation cannot read.
+ *
+ * A page load resolves all three at once: the socket is torn down and
+ * reconnects with a fresh ticket minted from the NEW token, and `/` carries no
+ * scope params. Switching customers happens a handful of times a day, so one
+ * second of reload is the right trade for making the switch total.
  */
 export function useSwitchOrganization() {
   const qc = useQueryClient();
-  const router = useRouter();
 
   return useMutation({
     mutationFn: async (organizationId: string | null) => {
@@ -46,8 +57,11 @@ export function useSwitchOrganization() {
       return body.data;
     },
     onSuccess: () => {
+      // Kept even though the reload discards the cache anyway: it keeps the
+      // no-stale-data guarantee local to this mutation, so it still holds if the
+      // navigation below is ever softened back to a client-side transition.
       qc.clear();
-      router.refresh();
+      window.location.assign('/');
     },
   });
 }

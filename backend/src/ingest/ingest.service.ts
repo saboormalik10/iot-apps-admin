@@ -54,6 +54,8 @@ interface ResolvedStation {
    * Empty means every file uses `streamType`.
    */
   streamRoutes: StreamRoute[];
+  /** Stream types this station is currently not permitted to ingest. */
+  disabledStreamTypes: string[];
 }
 
 @Injectable()
@@ -166,6 +168,7 @@ export class IngestService {
       // This station's folder holds three formats, so the parser is chosen per
       // FILE below, not once per folder.
       streamRoutes: (mapping.streamRoutes ?? []).map((r) => ({ prefix: r.prefix, streamType: r.streamType })),
+      disabledStreamTypes: mapping.disabledStreamTypes ?? [],
       deviceName: device.name,
       timezone: org?.timezone || 'UTC',
       headingOffsetDeg: device.headingOffsetDeg ?? 0,
@@ -524,6 +527,8 @@ export class IngestService {
       // No folder, so no per-prefix routing: an admin upload is whatever the
       // wizard says it is.
       streamRoutes: [],
+      // Nor a station account to carry a per-station switch.
+      disabledStreamTypes: [],
       headingOffsetDeg: device.headingOffsetDeg ?? 0,
     };
   }
@@ -609,6 +614,18 @@ export class IngestService {
         { $set: { state: 'rejected', reason: 'NO_STREAM_ROUTE', completedAt: new Date() } },
       );
       return { name: file.name, status: 'rejected', reason: 'NO_STREAM_ROUTE' };
+    }
+
+    // Switched off for THIS station. Refused rather than quietly discarded: an
+    // operator turned it off deliberately, and a file that disappeared without
+    // trace would look exactly like a station that had gone quiet. Quarantine
+    // keeps it, so re-enabling and replaying is possible.
+    if (station.disabledStreamTypes.includes(streamType)) {
+      await MetIngestFile.updateOne(
+        { _id: marker._id },
+        { $set: { state: 'rejected', reason: 'STREAM_TYPE_DISABLED', completedAt: new Date() } },
+      );
+      return { name: file.name, status: 'rejected', reason: 'STREAM_TYPE_DISABLED' };
     }
 
     const parser = getStreamParser(streamType);

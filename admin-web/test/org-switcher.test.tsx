@@ -25,8 +25,14 @@ vi.mock('@/lib/api/endpoints', () => ({
   listOrganizations: (...a: unknown[]) => listOrganizations(...a),
 }));
 
-const refresh = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+
+/**
+ * The switch does a full page load, so `window.location.assign` is the thing to
+ * observe. jsdom's real `assign` throws "not implemented", so it is replaced
+ * outright rather than spied on.
+ */
+const assign = vi.fn();
 
 const ORGS = [
   { _id: 'home', name: 'Observator Instruments AU', slug: 'obs', timezone: 'Australia/Sydney', country: 'AU', deviceCount: 3, userCount: 4 },
@@ -55,7 +61,11 @@ function setup(ui: React.ReactElement, u: SessionUser | null) {
 
 beforeEach(() => {
   listOrganizations.mockReset().mockResolvedValue(ORGS);
-  refresh.mockReset();
+  assign.mockReset();
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { ...window.location, assign },
+  });
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { user: {} } }) }));
 });
 
@@ -130,13 +140,24 @@ describe('OrgSwitcher', () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ organizationId: null });
   });
 
-  it('re-runs the server components so the shell picks up the new session', async () => {
+  it('does a FULL page load, not a client-side refresh', async () => {
+    /**
+     * `router.refresh()` used to be enough in theory and was not in practice: it
+     * re-runs the server components but preserves every client component, so
+     * three things belonging to the PREVIOUS customer survived it — the
+     * Socket.IO connection (still in that org's room, still receiving its live
+     * events), the `?device=` scope params in the URL, and any open
+     * `/records/<id>` detail route.
+     *
+     * A page load is what actually makes the switch total, and `/` is a
+     * deliberate part of that: it carries no scope params and no entity id.
+     */
     const u = userEvent.setup();
     setup(<OrgSwitcher />, user());
     await screen.findByText('Observator Instruments AU');
     await u.click(screen.getByRole('button', { name: /switch organisation/i }));
     await u.click(await screen.findByText('Acme Marine Services'));
-    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
   });
 });
 

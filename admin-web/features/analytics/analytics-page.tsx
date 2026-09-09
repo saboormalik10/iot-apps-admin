@@ -4,7 +4,7 @@ import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
 import Link from 'next/link';
 import { CalendarRange } from 'lucide-react';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
-import { EmptyState } from '@/components/screen-states';
+import { EmptyState, ErrorState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
 import { useAnalyticsRealtime } from './use-analytics-realtime';
 import { AnalyticsWindRose } from './charts/analytics-wind-rose';
@@ -24,7 +24,26 @@ import { PressureTendencyWidget } from './charts/pressure-tendency-widget';
 export function AnalyticsPage() {
   const met = useScopedDevice('MET-LINK');
   useAnalyticsRealtime();
+  /**
+   * Called BEFORE the early return below, and unconditionally.
+   *
+   * It used to sit after it. React identifies hooks by call ORDER, so a render
+   * that bailed out early ran one fewer hook than a render that did not — and
+   * the moment the device resolved, the counts disagreed and React threw
+   * ("change in the order of Hooks"). The error boundary turned that into
+   * "Something went wrong" across the whole Analytics page.
+   *
+   * `deviceId` is optional here precisely so this can be called before one is
+   * known; with none it resolves to an empty sensor set.
+   */
+  const sensors = useDeviceSensors(met.deviceId);
 
+  // The device list failing leaves `devices` empty, which is indistinguishable
+  // from owning no stations — so without this the page tells the customer to
+  // pair a device when the request simply failed.
+  if (met.isError) {
+    return <ErrorState title="Couldn't load your stations" onRetry={() => met.refetch()} />;
+  }
   if (!met.deviceId || !met.device) {
     return (
       <EmptyState
@@ -37,7 +56,6 @@ export function AnalyticsPage() {
   // Comfort, fog risk and pressure tendency are derived from temperature,
   // humidity, dew point and pressure. A wind-only station has none of those, so
   // these three panels rendered permanently empty — three dead cards on the page.
-  const sensors = useDeviceSensors(deviceId);
 
   return (
     <div className="space-y-4">

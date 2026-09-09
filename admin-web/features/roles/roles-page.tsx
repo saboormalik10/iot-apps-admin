@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Can } from '@/lib/rbac/guard';
-import { EmptyState, LoadingState } from '@/components/screen-states';
+import { EmptyState, ErrorState, LoadingState } from '@/components/screen-states';
 import { RoleEditorDialog } from './role-editor-dialog';
 import { RoleDeleteDialog } from './role-delete-dialog';
 import { useRoles } from './use-roles';
@@ -20,7 +20,7 @@ import type { RoleRow } from '@/lib/api/types';
  * an admin editing one needs to know the blast radius before they change it.
  */
 export function RolesPage() {
-  const { data: roles, isLoading } = useRoles();
+  const { data: roles, isLoading, isError, refetch } = useRoles();
   const [editing, setEditing] = useState<RoleRow | undefined>();
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState<RoleRow | undefined>();
@@ -36,6 +36,9 @@ export function RolesPage() {
     setDeleteOpen(true);
   };
 
+  // Before the loading gate and before the empty state: a failed load must not
+  // read as "this organisation has no roles".
+  if (isError) return <ErrorState title="Couldn't load roles" onRetry={() => refetch()} />;
   if (isLoading) return <LoadingState label="Loading roles…" />;
 
   return (

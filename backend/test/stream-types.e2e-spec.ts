@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 
 import { StreamTypesService } from '../src/provision/stream-types.service';
 import { StreamType } from '../src/models/StreamType';
+import { StationAccount } from '../src/models/StationAccount';
 import { MetMeasure } from '../src/models/MetMeasure';
 
 /**
@@ -133,16 +134,62 @@ describe('StreamTypesService', () => {
     });
   });
 
-  describe('setEnabled', () => {
-    it('toggles a type', async () => {
-      const t = await StreamType.create({ key: `tt-toggle-${Date.now()}`, parserKey: 'met-csv', name: 'Toggle' });
-      expect((await service.setEnabled(String(t._id), false)).isEnabled).toBe(false);
-      expect((await service.setEnabled(String(t._id), true)).isEnabled).toBe(true);
+  /**
+   * The type-level toggle this replaces was never enforced anywhere — ingest
+   * resolves its parser from the code registry and never read `isEnabled` — so
+   * it looked like a kill switch and stopped nothing. The switch is now per
+   * STATION, and checked on the ingest path.
+   */
+  describe('setStationEnabled', () => {
+    let stationId: string;
+
+    beforeAll(async () => {
+      const station = await StationAccount.create({
+        account: `tt-station-${Date.now()}`,
+        folderPath: 'Toggle Tower',
+        organizationId: new Types.ObjectId(),
+        deviceId: new Types.ObjectId(),
+        streamType: 'met-csv',
+        isActive: true,
+      });
+      stationId = String(station._id);
     });
 
-    it('404s an unknown id', async () => {
-      await expect(service.setEnabled(String(new Types.ObjectId()), true)).rejects.toMatchObject({ code: 'NOT_FOUND' });
-      await expect(service.setEnabled('not-an-id', true)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    afterAll(async () => {
+      await StationAccount.deleteOne({ _id: stationId });
+    });
+
+    it('switches one station off for one type, and back on', async () => {
+      const off = await service.setStationEnabled(stationId, 'environmental-csv', false);
+      expect(off.enabled).toBe(false);
+      expect(off.disabledStreamTypes).toContain('environmental-csv');
+
+      const on = await service.setStationEnabled(stationId, 'environmental-csv', true);
+      expect(on.enabled).toBe(true);
+      expect(on.disabledStreamTypes).not.toContain('environmental-csv');
+    });
+
+    it('leaves the station’s other types untouched', async () => {
+      await service.setStationEnabled(stationId, 'environmental-csv', false);
+      const r = await service.setStationEnabled(stationId, 'met-csv', false);
+      // Switching one format off must not switch the others back on.
+      expect(r.disabledStreamTypes.sort()).toEqual(['environmental-csv', 'met-csv']);
+      await service.setStationEnabled(stationId, 'met-csv', true);
+      await service.setStationEnabled(stationId, 'environmental-csv', true);
+    });
+
+    it('is idempotent — disabling twice does not duplicate the entry', async () => {
+      await service.setStationEnabled(stationId, 'environmental-csv', false);
+      const twice = await service.setStationEnabled(stationId, 'environmental-csv', false);
+      expect(twice.disabledStreamTypes.filter((k) => k === 'environmental-csv')).toHaveLength(1);
+      await service.setStationEnabled(stationId, 'environmental-csv', true);
+    });
+
+    it('404s an unknown station', async () => {
+      await expect(
+        service.setStationEnabled(String(new Types.ObjectId()), 'met-csv', false),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(service.setStationEnabled('not-an-id', 'met-csv', false)).rejects.toMatchObject({ status: 404 });
     });
   });
 });

@@ -13,11 +13,18 @@ import { formatRelative } from '@/lib/time';
 import { useDevices, usePlatformDevices, useDeviceCustomers } from './use-devices';
 import { useRbac } from '@/lib/rbac/context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FirmwareStatusTable } from './firmware-status-table';
 
 /**
  * Stations list (plan §Month 8) — the fleet table, filtered by the global Scope Bar
- * (station type). Rows link to detail. Firmware status sits alongside.
+ * (station type). Rows link to detail.
+ *
+ * NO FIRMWARE HERE (removed 9 Sep 2026). The firmware-status panel and the
+ * Firmware column could only ever render dashes: `firmwareVersion` is set by
+ * hand through the device form and by nothing else. These stations deliver CSV
+ * over SFTP, and a CSV file cannot report what firmware wrote it. Every one of
+ * the ten live devices is a MET-LINK with no version and no target set. It was
+ * built for NEP-LINK probes, which pair over BLE and could report their own
+ * version; the deployment has none. Same call as the device settings page.
  *
  * TWO SOURCES, one table.
  *
@@ -47,7 +54,7 @@ export function DevicesList() {
   );
   const { data: customers } = useDeviceCustomers(platformView);
 
-  const { data, isLoading } = platformView ? platform : scoped;
+  const { data, isLoading, isError, refetch } = platformView ? platform : scoped;
 
   const columns = useMemo<ColumnDef<Device, unknown>[]>(
     () => [
@@ -85,7 +92,6 @@ export function DevicesList() {
             <StatusBadge tone="offline" label="Offline" />
           ),
       },
-      { header: 'Firmware', cell: ({ row }) => row.original.firmwareVersion ?? '–' },
       {
         header: 'Last seen',
         cell: ({ row }) => (row.original.lastSeenAt ? formatRelative(row.original.lastSeenAt) : '–'),
@@ -153,13 +159,12 @@ export function DevicesList() {
         total={data?.total}
         onPageChange={setPage}
         isLoading={isLoading}
+        error={isError}
+        onRetry={() => refetch()}
         emptyLabel="No stations match this scope."
         getRowId={(d) => d._id}
         onRowClick={(d) => router.push(`/devices/${d._id}`)}
       />
-
-      <FirmwareStatusTable type={scope.deviceType} />
-
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
 import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
 import { verifyAccessToken, JWTPayload } from '../utils/jwt';
+import { Device } from '../models/Device';
 import {
   DomainEvent,
   ClientEvent,
@@ -32,6 +33,9 @@ import {
  * Clients auto-join their org room (org-wide device:status events) and can
  * `subscribe:device` to receive per-device sensor pushes.
  */
+/** How long a device -> organisation mapping is trusted. Ownership never changes. */
+const EVENTS_OWNER_CACHE_TTL_MS = 5 * 60_000;
+
 @WebSocketGateway({ path: '/v1/ws', cors: { origin: '*' } })
 export class EventsGateway implements OnGatewayConnection {
   @WebSocketServer() server!: Server;
@@ -57,10 +61,62 @@ export class EventsGateway implements OnGatewayConnection {
     }
   }
 
+  /**
+   * Join a device's room, but ONLY if the caller's organisation owns it.
+   *
+   * Without this check any authenticated socket could join any device room by
+   * id and receive that device's live `met:latest`, `nep:sample` and wind-rose
+   * pushes — a cross-tenant leak, since a device id is not a secret (it appears
+   * in URLs and in exported files).
+   *
+   * The organisation match alone is the whole rule, super admins included: a
+   * platform administrator who has switched carries the CUSTOMER's id in
+   * `organizationId` (see JWTPayload), so they match exactly the customer they
+   * are acting as and nothing else. That is the same rule every REST filter
+   * applies, which is why there is no super-admin exemption here — an exemption
+   * would make the socket MORE permissive than the API it mirrors.
+   */
   @SubscribeMessage('subscribe:device')
-  onSubscribeDevice(@MessageBody() body: { deviceId: string }, @ConnectedSocket() client: Socket): { subscribed: string } {
-    client.join(roomForDevice(body.deviceId));
-    return { subscribed: body.deviceId };
+  async onSubscribeDevice(
+    @MessageBody() body: { deviceId: string },
+    @ConnectedSocket() client: Socket,
+  ): Promise<{ subscribed: string | null; error?: string }> {
+    const user = client.data.user as JWTPayload | undefined;
+    const deviceId = body?.deviceId;
+    if (!user?.organizationId || !deviceId) return { subscribed: null, error: 'FORBIDDEN' };
+
+    const ownerOrgId = await this.ownerOrgOf(deviceId);
+    if (ownerOrgId !== user.organizationId) return { subscribed: null, error: 'FORBIDDEN' };
+
+    client.join(roomForDevice(deviceId));
+    return { subscribed: deviceId };
+  }
+
+  /**
+   * Device id -> owning organisation id, memoised.
+   *
+   * A device never changes owner, so this is safe to cache; the TTL exists only
+   * to bound the map for a long-lived process. Without it a client could turn a
+   * loop of `subscribe:device` calls into a database query storm, since the
+   * handler is reachable by anyone who is merely authenticated.
+   */
+  private readonly ownerOrgCache = new Map<string, { orgId: string | null; expiresAt: number }>();
+
+  private async ownerOrgOf(deviceId: string): Promise<string | null> {
+    const now = Date.now();
+    const hit = this.ownerOrgCache.get(deviceId);
+    if (hit && hit.expiresAt > now) return hit.orgId;
+
+    // An id that is not a valid ObjectId would throw a CastError; a rejected
+    // promise here would surface as an unhandled rejection, not a refusal.
+    const device = await Device.findById(deviceId)
+      .select('organizationId')
+      .lean()
+      .catch(() => null);
+    const orgId = device ? String(device.organizationId) : null;
+
+    this.ownerOrgCache.set(deviceId, { orgId, expiresAt: now + EVENTS_OWNER_CACHE_TTL_MS });
+    return orgId;
   }
 
   @SubscribeMessage('unsubscribe:device')

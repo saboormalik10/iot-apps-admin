@@ -19,11 +19,38 @@ async function signIn(page: Page, email: string) {
 }
 
 test.describe('M22 — stream types', () => {
-  test('a customer admin cannot reach the page', async ({ page }) => {
+  test('a customer sees the page, their own stations, and NO switch', async ({ page }) => {
+    // Read-only for customers on purpose: switching a stream off stops data
+    // arriving, and a customer doing that by accident would lose readings until
+    // somebody noticed.
     await signIn(page, 'admin@observator.com');
-    await expect(page.getByRole('link', { name: /stream types/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /stream types/i })).toHaveCount(1);
     await page.goto('/stream-types');
-    await expect(page.getByRole('heading', { name: /^stream types$/i })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /^stream types$/i })).toBeVisible();
+
+    await page.getByRole('button', { name: /view stations/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('switch')).toHaveCount(0);
+    await expect(dialog.getByText(/only a platform administrator/i)).toBeVisible();
+  });
+
+  test('a super admin gets a switch per station, and can search them', async ({ page }) => {
+    await signIn(page, 'superadmin@observator.com');
+    await page.goto('/stream-types');
+
+    await page.getByRole('button', { name: /view stations \(\d+\)/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('switch').first()).toBeVisible();
+
+    // Search exists because finding one station among a platform's worth is the
+    // actual task; the count only appears once the list is long enough to need it.
+    const search = dialog.getByLabel('Search stations');
+    if (await search.count()) {
+      const before = await dialog.locator('li').count();
+      await search.fill('Sydney');
+      await expect.poll(async () => dialog.locator('li').count(), { timeout: 10_000 }).toBeLessThan(before);
+    }
   });
 
   test('shows which header cells a stream understands', async ({ page }) => {
@@ -31,7 +58,11 @@ test.describe('M22 — stream types', () => {
     await page.goto('/stream-types');
 
     await expect(page.getByRole('heading', { name: 'Wind / MET CSV' })).toBeVisible();
-    await page.getByRole('button', { name: /columns/i }).first().click();
+    // Scoped to the MET card rather than `.first()`: a second format is
+    // registered now and they sort alphabetically, so `.first()` opened the
+    // Environmental card and then looked for wind aliases inside it.
+    const metCard = page.locator('[data-stream-key="met-csv"]');
+    await metCard.getByRole('button', { name: /columns/i }).click();
 
     // The aliases are the point: an operator can check a header before going live.
     await expect(page.getByText('direction, direction_deg, winddir, winddir_deg, dir')).toBeVisible();
@@ -40,7 +71,11 @@ test.describe('M22 — stream types', () => {
   test('previews a sample and NAMES the column it ignored', async ({ page }) => {
     await signIn(page, 'superadmin@observator.com');
     await page.goto('/stream-types');
-    await page.getByRole('button', { name: /columns/i }).first().click();
+    // Scoped to the MET card rather than `.first()`: a second format is
+    // registered now and they sort alphabetically, so `.first()` opened the
+    // Environmental card and then looked for wind aliases inside it.
+    const metCard = page.locator('[data-stream-key="met-csv"]');
+    await metCard.getByRole('button', { name: /columns/i }).click();
 
     await page.getByLabel(/sample rows/i).fill(
       'timestamp,direction,speed,units,status,salinity\r\n2026-08-25T11:19:00+10:00,350,0.50,K,A,35\r\n',

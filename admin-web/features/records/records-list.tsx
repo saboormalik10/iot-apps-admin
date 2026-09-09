@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ColumnDef } from '@tanstack/react-table';
 import { FileText } from 'lucide-react';
 import type { MetRecordRow } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
+import { useScopedPage } from '@/lib/hooks/use-scoped-page';
 import { DataTable } from '@/components/data/data-table';
 import { useRecords } from './use-records';
 
@@ -38,8 +39,10 @@ const overlapMs = (r: MetRecordRow, window: { from?: number; to: number }): numb
 export function RecordsList() {
   const router = useRouter();
   const { scope, window } = useScope();
-  const [page, setPage] = useState(1);
-  const { data, isLoading } = useRecords({
+  // Resets to page 1 whenever the scope changes — otherwise changing the device
+  // or range while deep in the list queries a page that no longer exists.
+  const [page, setPage] = useScopedPage();
+  const { data, isLoading, isError, isPlaceholderData, refetch } = useRecords({
     deviceId: scope.deviceId,
     from: window.from,
     to: window.to,
@@ -109,6 +112,9 @@ export function RecordsList() {
       data={data?.rows ?? []}
       columns={columns}
       isLoading={isLoading}
+      isStale={isPlaceholderData}
+      error={isError}
+      onRetry={() => refetch()}
       page={data?.page}
       pageCount={data?.pageCount}
       total={data?.total}

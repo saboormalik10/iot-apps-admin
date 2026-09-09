@@ -142,6 +142,87 @@ describe('environmental ingest + prefix routing (e2e)', () => {
     expect(await measureCount()).toBe(before);
   });
 
+  /**
+   * The per-station switch, checked where it matters.
+   *
+   * It replaces a type-level toggle that was never enforced anywhere — ingest
+   * resolves its parser from the code registry and never read it — so the old
+   * switch looked like a kill switch and stopped nothing.
+   *
+   * Its own station account, because the resolved station is cached for 60s: a
+   * toggle applied to the shared one would not be visible to this test, and
+   * waiting out the cache would put a minute into every run.
+   */
+  describe('per-station enable', () => {
+    const OFF_ACCOUNT = `env-off-${Date.now()}`;
+    let offDeviceId: mongoose.Types.ObjectId;
+
+    const offMeasureCount = () =>
+      MetRecord.find({ deviceId: offDeviceId })
+        .select('_id')
+        .lean()
+        .then((rs) => MetMeasure.countDocuments({ recordId: { $in: rs.map((r) => r._id) } }));
+
+    beforeAll(async () => {
+      const device = await Device.create({
+        organizationId: orgId,
+        name: 'ENV-OFF throwaway station',
+        type: 'MET-LINK',
+        bleId: `ENV-OFF-${Date.now()}`,
+        isActive: true,
+      });
+      offDeviceId = device._id as mongoose.Types.ObjectId;
+
+      await StationAccount.create({
+        account: OFF_ACCOUNT,
+        folderPath: FOLDER,
+        organizationId: orgId,
+        deviceId: offDeviceId,
+        streamType: 'met-csv',
+        streamRoutes: [
+          { prefix: 'WindSonic_', streamType: 'met-csv' },
+          { prefix: 'Environmental_', streamType: 'environmental-csv' },
+        ],
+        // Switched off for environmental, from the start.
+        disabledStreamTypes: ['environmental-csv'],
+        isActive: true,
+      });
+    });
+
+    afterAll(async () => {
+      const rs = await MetRecord.find({ deviceId: offDeviceId }).select('_id').lean();
+      await MetMeasure.deleteMany({ recordId: { $in: rs.map((r) => r._id) } });
+      await MetRecord.deleteMany({ deviceId: offDeviceId });
+      await MetIngestFile.deleteMany({ deviceId: offDeviceId });
+      await StationAccount.deleteMany({ account: OFF_ACCOUNT });
+      await Device.deleteOne({ _id: offDeviceId });
+    });
+
+    const sendOff = (name: string, content: string) =>
+      ingest.ingestFiles(String(orgId), OFF_ACCOUNT, [{ name, content }], '1.0.0-test', FOLDER);
+
+    /** Unique bytes: files are deduplicated on content hash, not on filename. */
+    const uniqueEnv = () => ENV_CSV.replace('timestamp,', `# ${Date.now()}\r\ntimestamp,`);
+
+    it('REFUSES a file for a type this station has switched off, and writes nothing', async () => {
+      const before = await offMeasureCount();
+      const res = await sendOff('Environmental_20260908_1955.csv', uniqueEnv());
+
+      expect(res.results[0].status).toBe('rejected');
+      expect(res.results[0].reason).toBe('STREAM_TYPE_DISABLED');
+      // Refused, not merely reported: a switch that logs and still ingests is
+      // worse than no switch at all.
+      expect(await offMeasureCount()).toBe(before);
+    });
+
+    it('leaves the station’s OTHER formats alone', async () => {
+      const before = await offMeasureCount();
+      const res = await sendOff('WindSonic_20260908_1956.csv', windCsv('2026-09-08T19:56:00+10:00'));
+      expect(res.results[0].status).toBe('ingested');
+      expect((await offMeasureCount()) - before).toBe(5);
+    });
+  });
+
   it('still serves a station with no routes configured, using its folder default', async () => {
     // Every station registered before routing existed must be unaffected.
     await StationAccount.updateOne({ account: ACCOUNT, folderPath: FOLDER }, { $set: { streamRoutes: [] } });

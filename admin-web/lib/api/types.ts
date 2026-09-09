@@ -1282,13 +1282,29 @@ export interface StreamTypeRow {
   parserKey: string;
   name: string;
   description: string;
-  isEnabled: boolean;
   isBuiltIn: boolean;
   /** False when no parser answers to `parserKey` — the type is unusable. */
   parserAvailable: boolean;
   stationCount: number;
   columns: StreamColumn[];
   filenameHint: string | null;
+  /**
+   * The stations that use this type, and how each reaches it.
+   *
+   * Super-admin only: the whole `/platform/stream-types` controller sits behind
+   * `SuperAdminGuard`, which is also the only role that can open the page.
+   */
+  stations?: {
+    stationAccountId: string;
+    deviceName: string;
+    organizationName: string;
+    account: string;
+    folderPath: string;
+    /** True when this is the folder's fallback; false when reached by prefix. */
+    isDefault: boolean;
+    /** False when this station has been switched off for this format. */
+    enabled: boolean;
+  }[];
 }
 
 /** What a sample file WOULD produce. Nothing is written. */

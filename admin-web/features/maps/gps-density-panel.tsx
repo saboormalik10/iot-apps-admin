@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import type maplibregl from 'maplibre-gl';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
 import { useNepGpsDensity } from '@/features/analytics-nep/use-nep-analytics';
 import { ntuHex, NTU_LEGEND } from '@/lib/api/map-colors';
@@ -114,7 +114,11 @@ export function GpsDensityPanel() {
         </div>
       </div>
 
-      {!nep.deviceId ? (
+      {nep.isError ? (
+        <div className="h-[360px]">
+          <ErrorState title="Couldn't load your stations" onRetry={() => nep.refetch()} />
+        </div>
+      ) : !nep.deviceId ? (
         <div className="h-[360px]">
           <EmptyState title="No NEP-LINK device" body="GPS density needs a NEP-LINK device. Adjust the Scope Bar." />
         </div>

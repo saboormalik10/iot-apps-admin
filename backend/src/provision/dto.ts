@@ -101,8 +101,8 @@ export class PreviewStreamDto {
   filename?: string;
 }
 
-export class SetEnabledDto {
-  @ApiProperty({ example: true })
+export class SetStationStreamDto {
+  @ApiProperty({ example: true, description: 'Whether this station may ingest this stream type.' })
   @IsBoolean()
-  isEnabled!: boolean;
+  enabled!: boolean;
 }

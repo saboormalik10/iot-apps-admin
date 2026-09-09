@@ -51,6 +51,16 @@ export interface IStationAccount extends Document {
    * would ingest ~60 all-null rows a minute that look like readings.
    */
   streamRoutes: { prefix: string; streamType: string }[];
+  /**
+   * Stream types this station must NOT ingest, by registry key.
+   *
+   * Per station rather than per format: one customer pausing their environmental
+   * feed should not stop everyone else's. A file whose type is listed here is
+   * REFUSED and quarantined, never silently dropped — the operator asked for it
+   * to stop, and a file that vanished without trace would be indistinguishable
+   * from a station that had gone quiet.
+   */
+  disabledStreamTypes: string[];
   /** Absolute chroot-relative upload path, for the agent's benefit. */
   uploadPath: string;
   isActive: boolean;
@@ -80,6 +90,7 @@ const stationAccountSchema = new Schema<IStationAccount>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true },
     deviceId: { type: Schema.Types.ObjectId, ref: 'Device', required: true },
     streamType: { type: String, required: true, default: 'met-csv' },
+    disabledStreamTypes: { type: [String], default: [] },
     streamRoutes: {
       type: [
         {

@@ -12,7 +12,8 @@ import { StatTile } from '@/components/charts/stat-tile';
 import { DataTable } from '@/components/data/data-table';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
+import { isForbiddenError } from '@/lib/api/errors';
 import { MEASURE_FIELDS, measureFieldLabel } from './measure-fields';
 import { useUnits } from '@/lib/units/use-units';
 import { GpsTrackMap } from './gps-track-map';
@@ -53,7 +54,7 @@ const fmtDate = (ms: number) => new Date(ms).toLocaleString(undefined, { dateSty
  */
 export function RecordDetail({ id }: { id: string }) {
   const units = useUnits();
-  const { data: record, isLoading: recordLoading } = useRecord(id);
+  const { data: record, isLoading: recordLoading, isError, error, refetch } = useRecord(id);
   // Read only for its timezone, so the station day can name the zone it is in.
   const { data: org } = useOrg();
   const { data: viz } = useRecordMeasures(id, 1, VIZ_LIMIT);
@@ -93,11 +94,24 @@ export function RecordDetail({ id }: { id: string }) {
   );
 
   if (recordLoading) return <LoadingState label="Loading record…" />;
-  if (!record) {
+  if (isError || !record) {
+    // A record id can outlive the session that found it — a bookmark, or a
+    // platform administrator who switched customer with this page open. That is
+    // a 403, not a deletion, and saying "it may have been deleted" about another
+    // customer's record is simply untrue.
     return (
       <div className="space-y-3">
         {backLink}
-        <EmptyState title="Record not found" body="It may have been deleted." />
+        {isForbiddenError(error) ? (
+          <ErrorState
+            title="You don't have access to this record"
+            body="It belongs to a different customer. Switch back to that organisation to open it."
+          />
+        ) : isError ? (
+          <ErrorState title="Couldn't load this record" onRetry={() => refetch()} />
+        ) : (
+          <EmptyState title="Record not found" body="It may have been deleted." />
+        )}
       </div>
     );
   }

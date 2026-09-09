@@ -5,7 +5,7 @@ import { CalendarRange, Map as MapIcon } from 'lucide-react';
 import { useScope } from '@/lib/hooks/use-scope';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
 import { useSessions } from '@/features/sessions/use-sessions';
-import { EmptyState } from '@/components/screen-states';
+import { EmptyState, ErrorState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
 import { useNepAnalyticsRealtime } from './use-nep-analytics-realtime';
 import { TurbidityDistribution } from './charts/turbidity-distribution';
@@ -29,6 +29,12 @@ export function NepAnalyticsPage() {
   const { data: latest } = useSessions({ deviceId: nep.deviceId, from: window.from, to: window.to, limit: 1 });
   const latestSessionId = latest?.rows[0]?.id;
 
+  // The device list failing leaves `devices` empty, which is indistinguishable
+  // from owning no stations — so without this the page tells the customer to
+  // pair a device when the request simply failed.
+  if (nep.isError) {
+    return <ErrorState title="Couldn't load your stations" onRetry={() => nep.refetch()} />;
+  }
   if (!nep.deviceId || !nep.device) {
     return (
       <EmptyState

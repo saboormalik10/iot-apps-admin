@@ -24,16 +24,28 @@ export function useEffectiveDeviceType(): DeviceType | undefined {
   return undefined;
 }
 
+/**
+ * `isLoading` / `isError` are surfaced deliberately.
+ *
+ * The device list failing and the organisation genuinely owning no devices both
+ * leave `devices` as `[]`, so a caller that only checks `deviceId` shows its
+ * "no device — pair one from the mobile app" empty state for a plain 500. Every
+ * caller can now tell the two apart, which matters most right after a customer
+ * switch, where an empty page is a claim about that customer's fleet.
+ */
 export function useScopedDevice(type: DeviceType): {
   deviceId?: string;
   device?: DashboardDevice;
   isAuto: boolean;
   candidates: DashboardDevice[];
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
 } {
   const { scope } = useScope();
-  const { data: devices = [] } = useDashboardDevices();
+  const { data: devices = [], isLoading, isError, refetch } = useDashboardDevices();
 
-  return useMemo(() => {
+  const resolved = useMemo(() => {
     const ofType = devices.filter((d) => d.type === type);
     const explicit = scope.deviceId ? ofType.find((d) => d._id === scope.deviceId) : undefined;
     const mostRecent = [...ofType].sort(
@@ -42,4 +54,6 @@ export function useScopedDevice(type: DeviceType): {
     const device = explicit ?? mostRecent;
     return { deviceId: device?._id, device, isAuto: !explicit && Boolean(device), candidates: ofType };
   }, [devices, scope.deviceId, type]);
+
+  return { ...resolved, isLoading, isError, refetch };
 }

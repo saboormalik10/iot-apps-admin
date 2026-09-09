@@ -88,7 +88,11 @@ export function AlertsPage() {
         />
       )}
 
-      <AlertRuleDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {/* Mounted only while open. The dialog seeds its form from `useState`
+          initialisers, which never re-run — left mounted, it would reopen still
+          holding the rule that was just created. The edit dialog in
+          alert-rules-table.tsx is conditional for the same reason. */}
+      {createOpen ? <AlertRuleDialog open onOpenChange={setCreateOpen} /> : null}
     </div>
   );
 }

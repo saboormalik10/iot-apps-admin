@@ -6,6 +6,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Waves } from 'lucide-react';
 import type { NepSessionRow } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
+import { useScopedPage } from '@/lib/hooks/use-scoped-page';
 import { DataTable } from '@/components/data/data-table';
 import { ExportMenu } from '@/components/data/export-menu';
 import { sessionsZipHref } from '@/lib/api/endpoints';
@@ -29,11 +30,13 @@ const PROBE_OPTIONS = ['all', 'R1', 'R2', 'R3'] as const;
 export function SessionsList() {
   const router = useRouter();
   const { scope, window } = useScope();
-  const [page, setPage] = useState(1);
+  // Scope changes reset the page; the local search/probe filters below do it
+  // themselves in their own handlers.
+  const [page, setPage] = useScopedPage();
   const [search, setSearch] = useState('');
   const [probeRange, setProbeRange] = useState<(typeof PROBE_OPTIONS)[number]>('all');
 
-  const { data, isLoading } = useSessions({
+  const { data, isLoading, isError, isPlaceholderData, refetch } = useSessions({
     deviceId: scope.deviceId,
     from: window.from,
     to: window.to,
@@ -137,6 +140,9 @@ export function SessionsList() {
         data={data?.rows ?? []}
         columns={columns}
         isLoading={isLoading}
+        isStale={isPlaceholderData}
+        error={isError}
+        onRetry={() => refetch()}
         page={data?.page}
         pageCount={data?.pageCount}
         total={data?.total}

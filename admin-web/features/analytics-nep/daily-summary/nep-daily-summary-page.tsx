@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useScopedDevice } from '@/features/dashboard/use-scoped-device';
-import { LoadingState, EmptyState } from '@/components/screen-states';
+import { LoadingState, EmptyState, ErrorState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
 import { StatTile } from '@/components/charts/stat-tile';
 import { CalendarHeatmap, type CalendarCell } from '@/components/charts/calendar-heatmap';
@@ -28,7 +28,7 @@ const PROBE_SERIES: StackSeries[] = [
 export function NepDailySummaryPage() {
   const nep = useScopedDevice('NEP-LINK');
   useNepAnalyticsRealtime();
-  const { data, isLoading } = useNepDailySummary(nep.deviceId);
+  const { data, isLoading, isError, refetch } = useNepDailySummary(nep.deviceId);
 
   const backLink = (
     <Button asChild variant="ghost" size="sm" className="h-8 gap-1 text-xs">
@@ -39,6 +39,16 @@ export function NepDailySummaryPage() {
     </Button>
   );
 
+  // Ahead of the "no device" state: an empty device list is what a FAILED load
+  // looks like too, and "adjust the Scope Bar" is unhelpful advice for a 500.
+  if (nep.isError) {
+    return (
+      <div className="space-y-3">
+        {backLink}
+        <ErrorState title="Couldn't load your stations" onRetry={() => nep.refetch()} />
+      </div>
+    );
+  }
   if (!nep.deviceId || !nep.device) {
     return (
       <div className="space-y-3">
@@ -80,6 +90,8 @@ export function NepDailySummaryPage() {
 
       {isLoading ? (
         <LoadingState label="Loading daily summaries…" />
+      ) : isError ? (
+        <ErrorState title="Couldn't load daily summaries" onRetry={() => refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="No daily summaries yet"

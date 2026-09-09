@@ -544,6 +544,53 @@ export class AnalyticsService {
     // leaves `default` to catch only genuinely out-of-range values.
     const boundaries = [...BEAUFORT.map((b) => b.minMs), 1e9];
 
+    /**
+     * The Beaufort breakdown is a WIND concept, so it is only asked for on wind.
+     *
+     * It used to be requested unconditionally with `[{ $limit: 0 }]` standing in
+     * for "give me nothing" on other sensors — but MongoDB rejects a zero limit
+     * outright (`the limit must be positive`, error 15958), so the whole
+     * aggregation failed and Statistics worked for wind speed and nothing else.
+     * Omitting the branch is what "no bucket" actually means.
+     */
+    const facet: Record<string, PipelineStage.FacetPipelineStage[]> = {
+      stats: [
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            min: { $min: `$${field}` },
+            max: { $max: `$${field}` },
+            mean: { $avg: `$${field}` },
+            sd: { $stdDevSamp: `$${field}` },
+            sum: { $sum: `$${field}` },
+            sumSq: { $sum: { $pow: [`$${field}`, 2] } },
+            sumCube: { $sum: { $pow: [`$${field}`, 3] } },
+            // `$percentile` is a MongoDB 7.0 accumulator; Mongoose's typings
+            // predate it, so this one property is cast rather than the whole
+            // pipeline — a blanket cast would drop type checking on every
+            // stage around it.
+            pct: {
+              $percentile: { input: `$${field}`, p: PCTS.map((p) => p / 100), method: 'approximate' },
+            } as unknown as never,
+          },
+        },
+      ] as unknown as PipelineStage.FacetPipelineStage[],
+    };
+
+    if (sensor === 'wind_speed') {
+      facet.beaufort = [
+        {
+          $bucket: {
+            groupBy: `$${field}`,
+            boundaries,
+            default: 'out-of-range',
+            output: { count: { $sum: 1 } },
+          },
+        },
+      ] as unknown as PipelineStage.FacetPipelineStage[];
+    }
+
     const [agg] = await MetMeasure.aggregate<{
       stats: Array<{
         count: number;
@@ -566,45 +613,7 @@ export class AnalyticsService {
           [field]: { $ne: null },
         },
       },
-      {
-        $facet: {
-          stats: [
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                min: { $min: `$${field}` },
-                max: { $max: `$${field}` },
-                mean: { $avg: `$${field}` },
-                sd: { $stdDevSamp: `$${field}` },
-                sum: { $sum: `$${field}` },
-                sumSq: { $sum: { $pow: [`$${field}`, 2] } },
-                sumCube: { $sum: { $pow: [`$${field}`, 3] } },
-                // `$percentile` is a MongoDB 7.0 accumulator; Mongoose's typings
-                // predate it, so this one property is cast rather than the whole
-                // pipeline — a blanket cast would drop type checking on every
-                // stage around it.
-                pct: {
-                  $percentile: { input: `$${field}`, p: PCTS.map((p) => p / 100), method: 'approximate' },
-                } as unknown as never,
-              },
-            },
-          ],
-          beaufort:
-            sensor === 'wind_speed'
-              ? [
-                  {
-                    $bucket: {
-                      groupBy: `$${field}`,
-                      boundaries,
-                      default: 'out-of-range',
-                      output: { count: { $sum: 1 } },
-                    },
-                  },
-                ]
-              : [{ $limit: 0 }],
-        },
-      },
+      { $facet: facet },
     ]);
 
     const st = agg?.stats?.[0];
