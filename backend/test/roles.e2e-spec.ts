@@ -22,11 +22,19 @@ const ORG_A = new Types.ObjectId();
 const ORG_B = new Types.ObjectId();
 const USER_ID = new Types.ObjectId();
 
+/**
+ * `perms` is the actor's OWN grants, and a role write may not add a permission
+ * the author lacks (see role-escalation.e2e-spec.ts). These tests are about key
+ * derivation, tenancy and validation rather than escalation, so the default
+ * actor holds everything they hand out — which is also what production looks
+ * like: reaching this service at all requires `role:write` from a real token.
+ */
 const actor = (over: Partial<RoleActor> = {}): RoleActor => ({
   userId: String(USER_ID),
   email: 'tester@observator.com',
   organizationId: String(ORG_A),
   isSuperAdmin: false,
+  perms: ['role:write', 'role:read', 'role:delete', 'data:read', 'alert:read', 'user:write'],
   ...over,
 });
 

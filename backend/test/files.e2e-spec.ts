@@ -85,7 +85,17 @@ describe('Files / Cloudinary media (e2e)', () => {
     await mongoose.disconnect();
   });
 
-  it('POST /v1/records/:id/pictures → stores on Cloudinary and returns a cloudinary url', async () => {
+  /**
+   * SKIPPED — the upload routes these cover are commented out in
+   * `files.controller.ts` (M15). `GET /records/:id/pictures` and the DELETE are
+   * still live; only the POSTs went. Kept so they return with the endpoints.
+   *
+   * Note the third test passed while the other two failed, which is misleading
+   * rather than reassuring: it asserts a 4xx for an unsupported file type, and a
+   * 404 from a route that no longer exists is also a 4xx. It was never
+   * exercising the type check.
+   */
+  it.skip('POST /v1/records/:id/pictures → stores on Cloudinary and returns a cloudinary url', async () => {
     expect(recordId).toBeTruthy(); // seed must have run
     const res = await request(httpServer)
       .post(`/v1/records/${recordId}/pictures`)
@@ -97,7 +107,7 @@ describe('Files / Cloudinary media (e2e)', () => {
     createdPictureIds.push(res.body.data._id);
   });
 
-  it('POST /v1/sessions/:id/files → stores on Cloudinary and returns a cloudinary url', async () => {
+  it.skip('POST /v1/sessions/:id/files → stores on Cloudinary and returns a cloudinary url', async () => {
     expect(sessionId).toBeTruthy(); // seed must have run
     const res = await request(httpServer)
       .post(`/v1/sessions/${sessionId}/files`)
@@ -109,7 +119,7 @@ describe('Files / Cloudinary media (e2e)', () => {
     createdFileIds.push(res.body.data._id);
   });
 
-  it('rejects an unsupported file type → 4xx', async () => {
+  it.skip('rejects an unsupported file type → 4xx', async () => {
     const res = await request(httpServer)
       .post(`/v1/records/${recordId}/pictures`)
       .set('Authorization', `Bearer ${token}`)

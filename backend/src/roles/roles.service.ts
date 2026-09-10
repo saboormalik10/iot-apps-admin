@@ -5,6 +5,7 @@ import { Role, IRole } from '../models/Role';
 import { User } from '../models/User';
 import { AuditLog } from '../models/AuditLog';
 import { sanitizePermissions, SEEDED_ROLES } from '../common/permissions';
+import { assertCanGrant } from '../common/resolve-role';
 
 export interface RoleActor {
   userId: string;
@@ -13,6 +14,14 @@ export interface RoleActor {
   isSuperAdmin: boolean;
   /** True while a super admin is switched into another organisation (M19 W1). */
   isSwitched?: boolean;
+  /**
+   * The actor's OWN grants, from their token.
+   *
+   * Carried so a role write can refuse to mint authority the author does not
+   * hold. Without it `assertCanGrant` cannot tell an escalation from a normal
+   * edit, and the check silently passes everything.
+   */
+  perms?: string[];
 }
 
 /** A role plus how many users hold it — the shape the roles table renders. */
@@ -238,6 +247,9 @@ export class RolesService {
 
     const permissions = sanitizePermissions(input.permissions ?? []);
     if (permissions.length === 0) throw badReq('A role must grant at least one permission');
+    // Every permission on a NEW role is an addition, so all of them are checked.
+    // You may delegate your authority; you may not manufacture it.
+    assertCanGrant(permissions, { perms: actor.perms, sup: actor.isSuperAdmin });
 
     const organizationId =
       actor.isSuperAdmin && !actor.isSwitched ? null : new Types.ObjectId(actor.organizationId);
@@ -289,6 +301,18 @@ export class RolesService {
     if (input.permissions !== undefined) {
       const permissions = sanitizePermissions(input.permissions);
       if (permissions.length === 0) throw badReq('A role must grant at least one permission');
+      /**
+       * Only the ADDED permissions are checked, not the whole list.
+       *
+       * Checking everything would block an ordinary edit: a role created by a
+       * platform administrator can legitimately carry a grant the customer admin
+       * editing its NAME does not hold, and the editor submits the full list on
+       * every save. Removing a permission is always allowed, and keeping one that
+       * is already there gains the author nothing — only additions can escalate.
+       */
+      const existing = new Set(sanitizePermissions(role.permissions ?? []));
+      const added = permissions.filter((p) => !existing.has(p));
+      assertCanGrant(added, { perms: actor.perms, sup: actor.isSuperAdmin });
       $set.permissions = permissions;
     }
     if (input.baseRole !== undefined) {

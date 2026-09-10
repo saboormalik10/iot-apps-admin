@@ -29,11 +29,22 @@ export function RbacProvider({ user, children }: { user: SessionUser | null; chi
       can: (capability: Capability) => can(user?.role, capability),
       has: (permission: string) => {
         if (user?.isSuperAdmin) return true;
-        // A session predating M18 W2 carries no grants. Falling back to the
-        // capability matrix keeps those users working; treating "no perms" as
-        // "holds nothing" would blank the UI for everyone until they signed out.
-        if (!user?.permissions) return can(user?.role, 'manageOrg');
-        return user.permissions.includes(permission);
+        /**
+         * No grants means holds nothing — NOT "fall back to the role".
+         *
+         * The old fallback returned `can(role, 'manageOrg')` for ANY permission,
+         * so an administrator was treated as holding all of them. That is not
+         * true of the seeded Organisation Admin, which carries `role:read` and
+         * deliberately not `role:write` or `role:delete` — so the Roles page
+         * offered Create, Edit and Delete buttons that the backend then refused.
+         *
+         * It was written for the M18 W2 rollout, when live tokens genuinely
+         * carried no `perms`. Access tokens last 15 minutes, so no such token has
+         * existed for months; the backend now always sends an array, empty at
+         * worst. Showing a control the server will refuse is worse than hiding
+         * one, so the safe direction here is closed, not open.
+         */
+        return user?.permissions?.includes(permission) ?? false;
       },
       isSuperAdmin: user?.isSuperAdmin === true,
     }),

@@ -38,6 +38,8 @@ export class RolesController {
       // Present only while a super admin is acting as a customer (M19 W1). It is
       // what tells `create` that `organizationId` above is somebody else's.
       isSwitched: typeof user.homeOrganizationId === 'string',
+      // Their own grants, so a role write cannot add a permission they lack.
+      perms: user.perms,
     };
   }
 

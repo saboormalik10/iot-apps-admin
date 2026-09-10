@@ -102,8 +102,14 @@ export async function resolveRoleAssignment(
  *
  * A super admin is exempt, as everywhere else: `sup` is above the permission
  * system rather than a maximal position inside it.
+ *
+ * EXPORTED because assignment is not the only way to manufacture authority.
+ * Editing a role's permission list reaches the same place by a different road:
+ * hold `role:write`, add `user:write` to the role you already hold, refresh, and
+ * you have it. `roles.service` therefore applies this to the permissions a
+ * create or update ADDS, so the rule holds wherever grants are written.
  */
-function assertCanGrant(permissions: readonly string[], grantedBy?: { perms?: string[]; sup?: boolean }): void {
+export function assertCanGrant(permissions: readonly string[], grantedBy?: { perms?: string[]; sup?: boolean }): void {
   if (!grantedBy || grantedBy.sup === true) return;
   const held = new Set(grantedBy.perms ?? []);
   const excess = sanitizePermissions(permissions).filter((p) => !held.has(p));

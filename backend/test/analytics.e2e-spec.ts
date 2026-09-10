@@ -66,14 +66,28 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.body).toHaveProperty('median');
   });
 
-  // §10.5 — QNH / QFE / GPS-altitude are now comparable analytics sensors.
+  /**
+   * §10.5 — QNH / QFE / GPS-altitude are comparable analytics sensors.
+   *
+   * What this asserts is that the sensor NAME is wired through: a name the map
+   * does not know answers 400 "Unknown sensor", and that is the regression worth
+   * catching.
+   *
+   * It used to also demand a `median`, which made it fail against the real
+   * database for a reason that is not a defect: the wind station does not report
+   * these three, so the endpoint correctly answers `200 {count: 0}` with no
+   * percentiles to give. Percentiles are asserted only when rows exist, so the
+   * test stays meaningful on a device that does report them.
+   */
   it.each(['qnh', 'qfe', 'gps_altitude'])('MET statistics accepts the %s sensor (§10.5)', async (sensor) => {
     const res = await request(http)
       .get('/v1/analytics/met/statistics')
       .query({ deviceId: metDeviceId, sensor })
       .set(auth());
     expect(res.status).toBe(200); // not 400 "Unknown sensor" → the map wiring works
-    expect(res.body).toHaveProperty('median');
+    expect(res.body.sensor).toBe(sensor);
+    expect(res.body).toHaveProperty('count');
+    if (res.body.count > 0) expect(res.body).toHaveProperty('median');
   });
 
   it('MET multi-sensor overlays the three §10.5 sensors', async () => {
@@ -84,7 +98,13 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('NEP gps-density returns spatial cells', async () => {
+  /**
+   * SKIPPED — the routes these cover are commented out in
+   * `analytics.controller.ts` (NEP switched off in M15 W4). Kept rather than
+   * deleted so they come back with the endpoints; skipped rather than left
+   * failing, because a permanently red suite hides real regressions.
+   */
+  it.skip('NEP gps-density returns spatial cells', async () => {
     const res = await request(http)
       .get('/v1/analytics/nep/gps-density')
       .query({ deviceId: nepDeviceId, resolution: 'medium' })
@@ -93,7 +113,7 @@ describe('Analytics & Sync (e2e)', () => {
     expect(Array.isArray(res.body.cells)).toBe(true);
   });
 
-  it('NEP turbidity-temperature correlation returns pearsonR + scatter', async () => {
+  it.skip('NEP turbidity-temperature correlation returns pearsonR + scatter', async () => {
     const res = await request(http)
       .get('/v1/analytics/nep/turbidity-temperature-correlation')
       .query({ sessionId: nepSessionId })
@@ -123,7 +143,7 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('NEP daily-summary returns an array', async () => {
+  it.skip('NEP daily-summary returns an array', async () => {
     const res = await request(http)
       .get('/v1/analytics/nep/daily-summary')
       .query({ deviceId: nepDeviceId })
@@ -133,9 +153,32 @@ describe('Analytics & Sync (e2e)', () => {
   });
 
   it('MET export-bulk CSV has a header row', async () => {
+    // An explicit narrow window: the assertion is about the CSV SHAPE, and
+    // without a bound this pulls ninety days of per-second rows over HTTP —
+    // ~37s on its own, and enough to time out its siblings in a parallel run.
+    const to = Date.now();
     const res = await request(http)
       .get('/v1/analytics/met/export-bulk')
-      .query({ deviceId: metDeviceId, format: 'csv' })
+      .query({ deviceId: metDeviceId, format: 'csv', from: to - 60 * 60_000, to })
+      .set(auth());
+    expect(res.status).toBe(200);
+    expect(res.text.split('\n')[0]).toContain('Timestamp');
+  });
+
+  it('MET export-bulk accepts "All time" (no `from`) instead of refusing it', async () => {
+    /**
+     * `parseWindow` turns a missing `from` into 0 — "All time", which is what the
+     * Scope Bar's preset sends. Every such request then spanned ~56 years and was
+     * refused by the 90-day cap, so All time could never export: two comments in
+     * `analytics.service.ts` contradicted each other and the endpoint always
+     * answered 400.
+     *
+     * `to` is pinned to a quiet historical instant so the clamped 90-day window
+     * holds little data — this proves the status, not the payload, and stays fast.
+     */
+    const res = await request(http)
+      .get('/v1/analytics/met/export-bulk')
+      .query({ deviceId: metDeviceId, format: 'csv', to: Date.UTC(2021, 0, 1) })
       .set(auth());
     expect(res.status).toBe(200);
     expect(res.text.split('\n')[0]).toContain('Timestamp');
@@ -154,28 +197,11 @@ describe('Analytics & Sync (e2e)', () => {
     expect(res.body.data).toHaveProperty('lastSyncLagSeconds');
   });
 
-  it('sync upload is idempotent (no duplicate session)', async () => {
-    const id = randomUUID();
-    const payload = {
-      type: 'nep_session',
-      sessionId: id,
-      deviceId: nepDeviceId,
-      deviceName: 'NEP-LINK-001',
-      startTimestamp: Date.now(),
-      timezoneName: 'Australia/Brisbane',
-      timezoneOffset: 10,
-      samples: [{ timestamp: Date.now(), turbidityValue: 42, temperatureValue: 19 }],
-    };
-    const first = await request(http).post('/v1/sync/upload').set(auth()).send(payload);
-    const second = await request(http).post('/v1/sync/upload').set(auth()).send(payload);
-    expect(first.status).toBe(201);
-    expect(second.status).toBe(201);
-    const list = await request(http).get('/v1/sessions').query({ deviceId: nepDeviceId }).set(auth());
-    const matches = (list.body.data as Array<{ id: string }>).filter((s) => s.id === id);
-    expect(matches.length).toBe(1);
-  });
+  // REMOVED 10 Sep 2026 — 'sync upload is idempotent'. It posted to /v1/sync/upload
+  // and read /v1/sessions; both modules were deleted as dead code, so unlike the
+  // NEP analytics routes above there is nothing left for this to come back to.
 
-  it('cross-org isolation: unknown session id → 404', async () => {
+  it.skip('cross-org isolation: unknown session id → 404', async () => {
     const res = await request(http)
       .get('/v1/analytics/nep/water-quality-summary')
       .query({ sessionId: randomUUID() })

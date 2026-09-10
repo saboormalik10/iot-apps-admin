@@ -109,10 +109,25 @@ describe('useRbac().has', () => {
     expect(held(user({ permissions: [], isSuperAdmin: true }), 'role:write')).toBe('true');
   });
 
-  it('falls back to the capability matrix for a pre-M18 session', () => {
-    // No `permissions` at all — an admin must keep working rather than lose the UI.
-    expect(held(user({ role: 'admin' }), 'role:write')).toBe('true');
+  it('treats an ABSENT grant list as holding nothing, same as an empty one', () => {
+    /**
+     * This used to fall back to the capability matrix, so an administrator was
+     * treated as holding every permission. That is not true of the seeded
+     * Organisation Admin — it carries `role:read` and deliberately NOT
+     * `role:write` or `role:delete` — so the Roles page showed Create, Edit and
+     * Delete buttons the backend then refused.
+     *
+     * The fallback existed for the M18 W2 rollout, when live tokens really did
+     * carry no `perms`. Access tokens last 15 minutes, so none has existed for
+     * months, and the backend now always sends an array. A control the server
+     * will refuse is worse than a missing one, so this fails closed.
+     */
+    expect(held(user({ role: 'admin' }), 'role:write')).toBe('false');
     expect(held(user({ role: 'viewer' }), 'role:write')).toBe('false');
+  });
+
+  it('a super admin is still unaffected by an absent grant list', () => {
+    expect(held(user({ role: 'admin', isSuperAdmin: true }), 'role:write')).toBe('true');
   });
 
   it('distinguishes an empty grant list from an absent one', () => {

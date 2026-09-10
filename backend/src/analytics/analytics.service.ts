@@ -1461,8 +1461,26 @@ export class AnalyticsService {
 
   async exportMetBulk(orgId: string, deviceId: string, from?: string, to?: string, format: 'csv' | 'json' = 'csv') {
     if (!deviceId) throw new BadRequestException('deviceId is required');
-    const { fromMs, toMs } = this.parseWindow(from, to);
-    if (toMs - fromMs > 90 * 86_400_000) throw new BadRequestException('Maximum 90 days per export');
+    const parsed = this.parseWindow(from, to);
+    const toMs = parsed.toMs;
+    /**
+     * An OMITTED `from` is clamped to the cap; an explicit one that exceeds it is
+     * still refused.
+     *
+     * `parseWindow` turns a missing `from` into 0 — "All time", which the Scope
+     * Bar sends as no `from` at all. Every such request then spanned ~56 years
+     * and was rejected by the 90-day cap below, so the All-time preset could
+     * never export anything. Two comments in this file contradicted each other
+     * and the endpoint always answered 400.
+     *
+     * Clamping is the right side to fail on: the cap exists to bound the
+     * response, and a caller who named no start wants "as much as you'll give
+     * me", not an error. A caller who asked for a specific oversized window is
+     * still told, because they asked for something we will not do.
+     */
+    const MAX_SPAN_MS = 90 * 86_400_000;
+    const fromMs = from ? parsed.fromMs : Math.max(parsed.fromMs, toMs - MAX_SPAN_MS);
+    if (toMs - fromMs > MAX_SPAN_MS) throw new BadRequestException('Maximum 90 days per export');
     const rows = await this.metMeasures(new Types.ObjectId(orgId), deviceId, fromMs, toMs, [
       'tempC', 'humidityPct', 'pressureHpa', 'windSpeedMs', 'windSpeedKmh', 'windDirTrueDeg', 'dewPointC',
       'precipMm', 'solarWm2', 'voltageV', 'gpsLat', 'gpsLng',
