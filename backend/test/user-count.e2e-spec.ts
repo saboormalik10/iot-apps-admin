@@ -8,6 +8,8 @@ import { User } from '../src/models/User';
 import { Organization } from '../src/models/Organization';
 import { PlatformService } from '../src/platform/platform.service';
 import { OrganizationsService } from '../src/organizations/organizations.service';
+import { RolesService } from '../src/roles/roles.service';
+import { Role } from '../src/models/Role';
 
 /**
  * Removing a user TOMBSTONES the row — `deletedAt` is set and the address is
@@ -26,6 +28,7 @@ describe('user counts exclude deleted users (e2e)', () => {
   let app: INestApplication;
   let platform: PlatformService;
   let orgs: OrganizationsService;
+  let rolesSvc: RolesService;
   let orgId: mongoose.Types.ObjectId;
   let superAdminId: string;
   const madeUsers: mongoose.Types.ObjectId[] = [];
@@ -42,6 +45,7 @@ describe('user counts exclude deleted users (e2e)', () => {
     await app.init();
     platform = app.get(PlatformService);
     orgs = app.get(OrganizationsService);
+    rolesSvc = app.get(RolesService);
 
     const sup = await User.findOne({ isSuperAdmin: true }).lean();
     superAdminId = String(sup!._id);
@@ -102,5 +106,49 @@ describe('user counts exclude deleted users (e2e)', () => {
     const page = await orgs.listUsers(String(orgId));
     const rows = (page as { rows?: unknown[] }).rows ?? (page as unknown[]);
     expect(Array.isArray(rows) ? rows.length : 0).toBe(await countForOrg());
+  });
+
+  /**
+   * The Roles page shows "N people" per role, and that number is the whole basis
+   * on which someone decides a role is safe to delete or reassign.
+   *
+   * A tombstoned user KEEPS its `roleId`, so the count included people who are
+   * gone: the shared Viewer role read "20 people" when one live person held it.
+   */
+  it('counts only live holders of a role', async () => {
+    const role = await Role.create({
+      organizationId: orgId,
+      key: `usercount-role-${STAMP}`,
+      name: `USERCOUNT role ${STAMP}`,
+      description: 'throwaway',
+      permissions: ['data:read'],
+      baseRole: 'viewer',
+      isSystem: false,
+    });
+
+    const live = await addUser(10, { roleId: role._id });
+    const gone = await addUser(11, { roleId: role._id });
+    gone.set({ deletedAt: new Date(), isActive: false, email: `deleted+${String(gone._id)}@example.invalid` });
+    await gone.save();
+
+    const actor = {
+      userId: superAdminId,
+      email: 'super@observator.com',
+      organizationId: String(orgId),
+      isSuperAdmin: true,
+      perms: [],
+    };
+
+    // The list count — 2 before the fix, because the tombstone still points here.
+    const listed = (await rolesSvc.list(actor)).find((r) => String(r._id) === String(role._id));
+    expect(listed?.userCount).toBe(1);
+
+    // And the delete dialog's own count + sample, which must not name a
+    // `deleted+…` address as someone who will be reassigned.
+    const usage = await rolesSvc.usage(String(role._id), actor);
+    expect(usage.userCount).toBe(1);
+    expect(usage.users.map((u) => u.email)).toEqual([live.email]);
+
+    await Role.deleteOne({ _id: role._id });
   });
 });

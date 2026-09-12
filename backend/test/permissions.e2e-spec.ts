@@ -78,11 +78,23 @@ describe('seeded roles', () => {
     expect(writes).toEqual([]);
   });
 
-  it('does not let an org admin delete roles or provision stations', () => {
-    // Both are platform-level: a customer must not be able to remove a system
-    // role, nor create OS-level station logins on the ingest box.
+  it('lets an org admin manage THEIR OWN roles, but never provision stations', () => {
     const admin = SEEDED_ROLES.find((r) => r.key === 'admin')!;
-    expect(admin.permissions).not.toContain('role:delete');
+
+    /**
+     * Role management became a customer capability (M26): they create, edit and
+     * delete roles of their own. The grant is not what keeps that safe —
+     * `assertCanModify` refuses anything with `organizationId: null` (the
+     * built-ins and any shared role), and `assertCanGrant` refuses a permission
+     * the author does not already hold. So this widens what an admin can
+     * ORGANISE, never what they can reach.
+     */
+    expect(admin.permissions).toContain('role:write');
+    expect(admin.permissions).toContain('role:delete');
+
+    // `station:provision` is different in kind: it mints OS-level logins on the
+    // ingest box, so it stays platform-only — and is additionally behind
+    // SuperAdminGuard, not the permission alone.
     expect(admin.permissions).not.toContain('station:provision');
   });
 

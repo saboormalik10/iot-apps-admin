@@ -66,7 +66,17 @@ export function RolesPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h2 className="font-medium leading-tight">{role.name}</h2>
-                    {role.isSystem ? <StatusBadge tone="info" label="Shared" /> : null}
+                    {/* "Shared" means what it says: the role is owned by the
+                        platform (`organizationId: null`) and every customer sees
+                        it. This used to key off `isSystem`, so a shared CUSTOM
+                        role rendered no badge at all and read as though it
+                        belonged to this organisation alone. "Built-in" is the
+                        stronger fact where it applies, so it wins the slot. */}
+                    {role.isSystem ? (
+                      <StatusBadge tone="info" label="Built-in" />
+                    ) : role.organizationId === null ? (
+                      <StatusBadge tone="info" label="Shared" />
+                    ) : null}
                   </div>
                   <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{role.description || '—'}</p>
                 </div>

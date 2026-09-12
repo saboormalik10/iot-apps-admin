@@ -112,12 +112,19 @@ describe('role writes cannot manufacture permissions (e2e)', () => {
   });
 
   it('still allows REMOVING a permission, and keeping one already present', async () => {
-    // Seeded with a grant the editor does not hold, as a platform administrator
-    // would leave it. Renaming must not become impossible.
+    /**
+     * Built by a platform administrator FOR this customer, carrying a grant the
+     * customer's own admin does not hold. Renaming it must not become impossible.
+     *
+     * `isSwitched` is load-bearing: a super admin who is NOT switched creates a
+     * SHARED role (`organizationId: null`), and a customer may not edit those at
+     * all — so without it this would fail on ownership rather than exercise the
+     * additions-only rule it is here to test.
+     */
     const role = await track(
       service.create(
         { name: `ESCALATION-${STAMP} inherited`, permissions: ['data:read', 'user:write'] },
-        { ...actor([]), isSuperAdmin: true },
+        { ...actor([]), isSuperAdmin: true, isSwitched: true },
       ) as Promise<{ _id: unknown }>,
     );
 

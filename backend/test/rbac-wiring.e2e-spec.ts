@@ -288,8 +288,10 @@ describe('RBAC wiring (e2e)', () => {
         key: `m25-powerful-${Date.now()}`,
         name: 'M25 Powerful',
         baseRole: 'admin',
-        // `role:write` is held by NO seeded role — only a super admin has it.
-        permissions: ['data:read', 'role:write'],
+        // Must be a permission the ORGANISATION ADMIN does not hold. `role:write`
+        // used to qualify and no longer does (M26 gave customers their own
+        // roles); `station:provision` is the one that stays platform-only.
+        permissions: ['data:read', 'station:provision'],
         isSystem: false,
       });
       createdRoles.push(powerful._id as mongoose.Types.ObjectId);

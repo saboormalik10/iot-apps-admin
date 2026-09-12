@@ -147,7 +147,13 @@ export const SEEDED_ROLES: readonly { key: string; name: string; description: st
         'device:read', 'device:write', 'device:delete',
         'org:read', 'org:write',
         'user:read', 'user:write',
-        'role:read',
+        // Customers manage THEIR OWN roles (M26): create, edit and delete.
+        // Everything with `organizationId: null` — the built-ins and any shared
+        // role a platform administrator built — stays read-only to them, which
+        // `assertCanModify` enforces. `assertCanGrant` separately stops a role
+        // being used to mint a permission its author does not already hold, so
+        // this widens what an admin can ORGANISE, never what they can reach.
+        'role:read', 'role:write', 'role:delete',
         'audit:read',
         'alert:read', 'alert:write',
         'share:revokeAny',

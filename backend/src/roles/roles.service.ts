@@ -52,24 +52,74 @@ const forbidden = (msg: string) => Object.assign(new Error(msg), { statusCode: 4
 @Injectable()
 export class RolesService {
   /**
-   * Roles visible to a caller: the shared system roles plus any their own
-   * organisation owns. A custom role belonging to another customer is invisible,
-   * which is what keeps the role list from leaking one tenant's structure to
-   * another.
+   * Roles visible to a caller.
+   *
+   * A platform administrator sees everything. A customer sees three things:
+   *
+   *   1. the BUILT-IN roles (`isSystem`) — the vocabulary everyone shares;
+   *   2. roles their OWN organisation created;
+   *   3. a shared CUSTOM role only once one of their own people actually holds
+   *      it — assigned by a platform administrator.
+   *
+   * (3) is the rule that changed. Every shared role used to be visible to every
+   * customer, so a role built for one customer ("Site Supervisor", held by
+   * nobody) appeared in everyone's list — clutter at best, and at worst it
+   * described access arrangements that were none of their business. Showing it
+   * once somebody holds it is the case where they genuinely need it: otherwise
+   * one of their users would have permissions they could not account for.
+   *
+   * A custom role belonging to another customer remains invisible either way,
+   * which is what keeps the list from leaking one tenant's structure to another.
    */
   async list(actor: RoleActor): Promise<RoleWithUsage[]> {
-    // Annotated explicitly: the inferred union of the two filter shapes is large
+    // Annotated explicitly: the inferred union of the filter shapes is large
     // enough that TypeScript refuses to serialise it (TS7056).
-    const scope: Record<string, unknown> = actor.isSuperAdmin
-      ? { deletedAt: null }
-      : { deletedAt: null, $or: [{ organizationId: null }, { organizationId: new Types.ObjectId(actor.organizationId) }] };
+    let scope: Record<string, unknown>;
+
+    if (actor.isSuperAdmin) {
+      scope = { deletedAt: null };
+    } else {
+      const orgId = new Types.ObjectId(actor.organizationId);
+      // Shared custom roles this organisation's LIVE people hold. A tombstoned
+      // user must not keep a role on screen for a customer.
+      const heldShared = await User.distinct('roleId', {
+        organizationId: orgId,
+        deletedAt: null,
+        roleId: { $ne: null },
+      });
+      scope = {
+        deletedAt: null,
+        $or: [
+          { organizationId: null, isSystem: true },
+          { organizationId: orgId },
+          { organizationId: null, _id: { $in: heldShared } },
+        ],
+      };
+    }
 
     const roles = await Role.find(scope).sort({ organizationId: 1, name: 1 }).lean();
 
     // The count is what makes deletion safe to reason about (M18 W4) and is
     // cheap: one grouped query rather than one per role.
+    /**
+     * `deletedAt: null` matters: removing a user tombstones the row rather than
+     * dropping it, and the tombstone keeps its `roleId`. Without it, Viewer read
+     * "20 people" for a role one live person holds — and that number is the whole
+     * basis on which someone decides a role is safe to delete.
+     *
+     * The ORGANISATION scope matters for a different reason. The built-in roles
+     * are shared, so an unscoped count told each customer how many people every
+     * OTHER customer has. A customer is shown their own holders; only a platform
+     * administrator sees the total.
+     */
+    const countMatch: Record<string, unknown> = {
+      roleId: { $in: roles.map((r) => r._id) },
+      deletedAt: null,
+    };
+    if (!actor.isSuperAdmin) countMatch.organizationId = new Types.ObjectId(actor.organizationId);
+
     const counts = await User.aggregate<{ _id: Types.ObjectId; n: number }>([
-      { $match: { roleId: { $in: roles.map((r) => r._id) } } },
+      { $match: countMatch },
       { $group: { _id: '$roleId', n: { $sum: 1 } } },
     ]);
     const byId = new Map(counts.map((c) => [String(c._id), c.n]));
@@ -79,7 +129,18 @@ export class RolesService {
 
   async usage(id: string, actor: RoleActor) {
     const role = await this.mustFind(id, actor);
-    const filter = { roleId: role._id };
+    /**
+     * Live holders only — a tombstoned user keeps its roleId, and this count is
+     * exactly what the delete dialog uses to say "N people will be reassigned".
+     *
+     * SCOPED TO THE CALLER'S ORGANISATION, which it was not. This returns each
+     * holder's name and email address, and the built-in roles are SHARED — so
+     * any customer, Viewer included (they hold `role:read`), could ask who holds
+     * "Organisation Admin" and be handed the names and addresses of people at
+     * every other customer.
+     */
+    const filter: Record<string, unknown> = { roleId: role._id, deletedAt: null };
+    if (!actor.isSuperAdmin) filter.organizationId = new Types.ObjectId(actor.organizationId);
     const [userCount, sample] = await Promise.all([
       User.countDocuments(filter),
       User.find(filter).select('email firstName lastName').limit(20).lean(),
@@ -111,9 +172,7 @@ export class RolesService {
   async remove(id: string, actor: RoleActor, replacementRoleId?: string) {
     const role = await this.mustFind(id, actor);
 
-    if (role.isSystem && !actor.isSuperAdmin) {
-      throw forbidden('System roles can only be deleted by a platform administrator');
-    }
+    this.assertCanModify(role, actor);
 
     const holders = await User.find({ roleId: role._id }).select('_id organizationId').lean();
 
@@ -283,12 +342,7 @@ export class RolesService {
   async update(id: string, input: Partial<RoleInput>, actor: RoleActor) {
     const role = await this.mustFind(id, actor);
 
-    if (role.isSystem && !actor.isSuperAdmin) {
-      throw forbidden('System roles can only be edited by a platform administrator');
-    }
-    if (role.organizationId && !actor.isSuperAdmin && String(role.organizationId) !== actor.organizationId) {
-      throw forbidden('That role belongs to another organisation');
-    }
+    this.assertCanModify(role, actor);
 
     const $set: Record<string, unknown> = { updatedBy: new Types.ObjectId(actor.userId) };
     if (input.name !== undefined) {
@@ -335,6 +389,32 @@ export class RolesService {
   }
 
   /** Loads a role the caller is allowed to see, or throws 404. */
+  /**
+   * May this caller CHANGE this role?
+   *
+   * A customer owns only what their own organisation created. Everything with
+   * `organizationId: null` belongs to the platform — the built-in roles and any
+   * shared custom one a platform administrator built — and is read-only to them.
+   *
+   * This replaces an `isSystem` check that was too narrow. `isSystem` is true of
+   * the three built-ins only, so a shared CUSTOM role ("Site Supervisor") was
+   * shared with every customer and editable and deletable by any of them. That
+   * did not bite while no customer held `role:write`; granting it makes the gap
+   * live, so it is closed first.
+   */
+  private assertCanModify(role: IRole, actor: RoleActor): void {
+    if (actor.isSuperAdmin) return;
+    if (!role.organizationId) {
+      throw forbidden(
+        role.isSystem
+          ? 'Built-in roles can only be changed by a platform administrator'
+          : 'Shared roles can only be changed by a platform administrator',
+      );
+    }
+    // Another customer's role reads as absent, never as forbidden — see mustFind.
+    if (String(role.organizationId) !== actor.organizationId) throw notFound();
+  }
+
   private async mustFind(id: string, actor: RoleActor): Promise<IRole> {
     if (!Types.ObjectId.isValid(id)) throw notFound();
     const role = await Role.findOne({ _id: new Types.ObjectId(id), deletedAt: null });
