@@ -767,7 +767,9 @@ export class OrganizationsService {
         { $group: { _id: '$organizationId', n: { $sum: 1 } } },
       ]),
       User.aggregate<{ _id: Types.ObjectId; n: number }>([
-        { $match: { organizationId: { $in: ids } } },
+        // Deleted users are tombstoned, not removed — see platform.service.ts.
+        // Without this the switcher's "N users" counted people who are gone.
+        { $match: { organizationId: { $in: ids }, deletedAt: null } },
         { $group: { _id: '$organizationId', n: { $sum: 1 } } },
       ]),
     ]);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, KeyRound, Copy, Check } from 'lucide-react';
 
@@ -236,8 +236,39 @@ export function StationsDialog({
 
   const provision = useMutation({
     mutationFn: provisionStation,
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.stations(organizationId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.stations(organizationId) });
+      // The customers table behind this dialog counts DEVICES, and a device row
+      // is written the moment provisioning is queued — so the new station must
+      // appear there now, not after a manual reload.
+      qc.invalidateQueries({ queryKey: queryKeys.platformOverview });
+    },
   });
+
+  /**
+   * The SECOND moment the table changes: activation.
+   *
+   * Provisioning is asynchronous. The device exists immediately, but the
+   * "Upload folders" column lists only ACTIVE station accounts, and a station is
+   * activated seconds later when the agent confirms the Unix account exists. The
+   * poll above already catches that for this dialog; without this the table
+   * behind it would sit with a station whose folder never appeared.
+   *
+   * Keyed on a transition rather than on every poll, so a dialog left open does
+   * not refetch the overview every five seconds for no reason.
+   */
+  const prevActive = useRef<number | null>(null);
+  useEffect(() => {
+    if (!open) {
+      prevActive.current = null;
+      return;
+    }
+    const active = (stations ?? []).filter((s) => s.isActive).length;
+    if (prevActive.current !== null && prevActive.current !== active) {
+      qc.invalidateQueries({ queryKey: queryKeys.platformOverview });
+    }
+    prevActive.current = active;
+  }, [stations, open, qc]);
 
   useEffect(() => {
     if (open) {

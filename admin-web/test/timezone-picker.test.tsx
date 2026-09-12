@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import { renderWithProviders } from './utils';
-import { TimeZonePicker, allTimeZones, offsetLabel, detectedTimeZone } from '@/components/data/timezone-picker';
+import { TimeZonePicker, allTimeZones, offsetLabel, detectedTimeZone, zoneMatches } from '@/components/data/timezone-picker';
 
 /**
  * A customer's timezone decides where their DAYS are cut, and that boundary is
@@ -46,13 +46,73 @@ describe('TimeZonePicker', () => {
     expect(screen.getByText('Select a timezone')).toBeInTheDocument();
   });
 
-  it('is a real control, not a text box — nothing can be typed into it', () => {
+  it('is a real control, not a text box — the ZONE cannot be typed in', () => {
     const onChange = vi.fn();
     const { container } = renderWithProviders(<TimeZonePicker value="UTC" onChange={onChange} />);
-    // The whole point of the change: no free-text input to mistype.
+    // The point of the original change: no free-text field to mistype a zone
+    // into. The search box added later does not reopen that hole — it filters
+    // the list and never becomes the value, and it exists only while open.
     expect(container.querySelector('input[type="text"]')).toBeNull();
     const trigger = screen.getByRole('combobox');
     fireEvent.change(trigger, { target: { value: 'Australia/Sydny' } });
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The matching is tested directly rather than by driving the listbox.
+ *
+ * Radix portals its content and runs its own type-ahead, so a jsdom test that
+ * opens the menu and types proves almost nothing about whether "syd" finds
+ * Sydney. This is where the behaviour actually lives.
+ */
+describe('TimeZonePicker search', () => {
+  const label = (tz: string) => `${tz} · ${offsetLabel(tz)}`;
+  const find = (q: string) => allTimeZones().filter((tz) => zoneMatches(tz, label(tz), q));
+
+  it('matches on the city', () => {
+    expect(find('sydney')).toContain('Australia/Sydney');
+  });
+
+  it('matches on the region', () => {
+    const hits = find('australia');
+    expect(hits).toContain('Australia/Perth');
+    expect(hits).toContain('Australia/Melbourne');
+    expect(hits).not.toContain('Europe/London');
+  });
+
+  it('ignores the underscore nobody types', () => {
+    // `America/New_York` — searching "new york" must find it.
+    expect(find('new york')).toContain('America/New_York');
+  });
+
+  it('ignores the slash, so "asia karachi" works', () => {
+    expect(find('asia karachi')).toContain('Asia/Karachi');
+  });
+
+  it('is case-insensitive', () => {
+    expect(find('SYDNEY')).toContain('Australia/Sydney');
+  });
+
+  it('ANDs the terms, so a second word narrows rather than widens', () => {
+    const one = find('australia');
+    const two = find('australia perth');
+    expect(two.length).toBeLessThan(one.length);
+    expect(two).toContain('Australia/Perth');
+    expect(two).not.toContain('Australia/Sydney');
+  });
+
+  it('searches the OFFSET too — a known offset is a fair way to look', () => {
+    // September: Karachi is +5. The offset lives in the label, not the name.
+    expect(zoneMatches('Asia/Karachi', 'Asia/Karachi · GMT+5', '+5')).toBe(true);
+  });
+
+  it('an empty or whitespace query keeps everything', () => {
+    expect(find('').length).toBe(allTimeZones().length);
+    expect(find('   ').length).toBe(allTimeZones().length);
+  });
+
+  it('returns nothing for a query that matches nothing', () => {
+    expect(find('zzzznotazone')).toHaveLength(0);
   });
 });

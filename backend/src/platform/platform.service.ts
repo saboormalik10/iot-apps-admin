@@ -168,7 +168,12 @@ export class PlatformService {
         },
       ]),
       User.aggregate<{ _id: Types.ObjectId; n: number }>([
-        { $match: { organizationId: { $in: orgIds } } },
+        // `deletedAt: null` matters: removing a user TOMBSTONES the row (the
+        // address is rewritten to `deleted+<id>@…` so it can be re-used) rather
+        // than dropping it. Counting those made the platform page disagree with
+        // the Users page, which has always filtered them — one organisation read
+        // "22 users" against a list of 4.
+        { $match: { organizationId: { $in: orgIds }, deletedAt: null } },
         { $group: { _id: '$organizationId', n: { $sum: 1 } } },
       ]),
       AlertRule.aggregate<{ _id: Types.ObjectId; n: number }>([

@@ -4,8 +4,10 @@
 wiring, every mounted API endpoint, the realtime gateway, the ingest and
 provisioning agents, and UI state edge cases.
 
-**Outcome: 5 findings. All fixed.** The underlying model is sound — the issues
-were gaps in an otherwise well-built design, not a broken foundation.
+**Outcome: 6 findings. 4 fixed, 2 documented and open.** The underlying model is
+sound — the issues were gaps in an otherwise well-built design, not a broken
+foundation. The two left open are a hardening item (#5) and an operational
+practice rather than a code defect (#6).
 
 ---
 
@@ -18,6 +20,7 @@ were gaps in an otherwise well-built design, not a broken foundation.
 | 3 | Frontend granted admins every permission when the token carried none | **Low** | Fixed |
 | 4 | `/roles` and `/platform` had no server-side guard | **Low** | Fixed |
 | 5 | The websocket never re-authenticates after connecting | **Low** | Open — documented |
+| 6 | The test suite runs against **production**, and the live agent executes its provisioning jobs | **Medium (operational)** | Open — documented |
 
 ---
 
@@ -152,6 +155,46 @@ server-side. Deliberately out of scope here.
 
 ---
 
+## 6. The test suite runs against production — MEDIUM (operational)
+
+**Not a code vulnerability. A real one all the same.**
+
+`MONGO_URI` points the backend test suite at the **live Atlas cluster**, and the
+provisioning queue is global: `claimNext` takes the oldest queued job *across all
+customers*. The live provisioning agent polls that same queue.
+
+So when `provision.e2e-spec.ts` queues a job, **the production agent can claim and
+execute it** — creating real Unix and SFTP accounts on the production box.
+
+This is not hypothetical. The spec's own cleanup carries the scar:
+
+> *"`claimNext` takes the oldest QUEUED job across all customers, each run left a
+> job that the live agent then executed — 25 stray `wx-*` Unix accounts on the
+> production box, and 'succeeded' ingest deployments for tenants that do not
+> exist."*
+
+A further **42 leftover test accounts** (`wx-scoped-*`, `wx-second-*`,
+`wx-retry-*`) are still on the Lightsail box from earlier runs.
+
+It also produces a confusing symptom: `provision.e2e-spec.ts` fails
+intermittently in a full run — the agent won the race for its job — while passing
+97/97 in isolation. That looks like a flaky test and is actually production
+interference.
+
+**Recommended, in order:**
+
+1. Point the test suite at a **separate database**. This is the real fix;
+   everything else is mitigation.
+2. Until then, stop the provisioning agent before running the suite, or scope
+   `claimNext` so an agent only claims jobs for organisations it serves.
+3. Clean up the 42 stray accounts on the Lightsail box.
+
+> Related precedent, same root cause: an alert test once emitted synthetic events
+> at a real customer device and fired their real rule, creating 4 real
+> notifications. Tests and production share a database.
+
+---
+
 ## Verified safe — checked, no action needed
 
 Recorded so this ground is not re-audited from scratch.
@@ -231,9 +274,11 @@ Every fix here has a test that was **verified to fail without it** — a test th
 cannot fail proves nothing. Each was confirmed by reverting the fix, watching the
 test go red, and restoring it.
 
-- **Backend:** the full suite passes. Failures went from 23 to 0 — the dead ones
-  removed or skipped, one real bug fixed (`export-bulk`), and three over-strict
-  assertions corrected.
+- **Backend:** 693 passing, 13 skipped, **1 failing** — and that one is finding
+  #6, not a defect: `provision.e2e-spec.ts` lost the race for its own job to the
+  live agent. It passes 97/97 in isolation. Failures went from 23 to that one:
+  the dead tests removed or skipped, one real bug fixed (`export-bulk`), and
+  three over-strict assertions corrected.
 - **Frontend:** 369 tests pass; typecheck and lint clean.
 - **Run the backend suite serially** (`--runInBand`). In parallel it starves the
   CPU and reports spurious failures — the giveaway is that the failing suites

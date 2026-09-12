@@ -3,6 +3,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
+import { render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { NextIntlClientProvider } from 'next-intl';
+import messages from '@/messages/en.json';
 import { renderWithProviders } from './utils';
 import { StationsDialog } from '@/features/tenancy/stations-dialog';
 import type { PlatformStation } from '@/lib/api/types';
@@ -44,6 +48,27 @@ const setup = () =>
   renderWithProviders(
     <StationsDialog organizationId="o1" customerName="Acme Marine" open onOpenChange={() => {}} />,
   );
+
+/**
+ * Renders the dialog inside a client we control, so we can observe which query
+ * keys a provisioning run invalidates. The customers table behind the dialog
+ * reads `['platform','overview']`; if that key is never invalidated, the new
+ * station only appears after a manual page reload — which is exactly what was
+ * reported.
+ */
+function setupWithClient() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const spy = vi.spyOn(qc, 'invalidateQueries');
+  render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <QueryClientProvider client={qc}>
+        <StationsDialog organizationId="o1" customerName="Acme Marine" open onOpenChange={() => {}} />
+      </QueryClientProvider>
+    </NextIntlClientProvider>,
+  );
+  const invalidated = () => spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey?: unknown })?.queryKey));
+  return { qc, invalidated };
+}
 
 describe('StationsDialog', () => {
   beforeEach(() => {
@@ -164,5 +189,49 @@ describe('StationsDialog', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already taken/i);
     expect(success).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The customers table behind this dialog must not need a page reload.
+   *
+   * It reads `['platform','overview']`, and provisioning changes two things it
+   * shows at two different moments: the DEVICE row is written as soon as the job
+   * is queued (the Stations count), and the "Upload folders" column lists only
+   * ACTIVE station accounts, which the agent activates seconds later. Only the
+   * station list was ever invalidated, so both changes stayed invisible until
+   * the page was reloaded by hand.
+   */
+  it('invalidates the customers overview when a station is queued', async () => {
+    const u = userEvent.setup();
+    const { invalidated } = setupWithClient();
+
+    await u.type(screen.getByPlaceholderText(/tower|name/i), 'Tower B');
+    await u.click(screen.getByRole('button', { name: /add/i }));
+
+    await waitFor(() => expect(provisionStation).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(invalidated().some((k) => k?.includes('platform') && k?.includes('overview'))).toBe(true);
+    });
+    // and still refreshes its own list
+    expect(invalidated().some((k) => k?.includes('stations'))).toBe(true);
+  });
+
+  it('invalidates the overview again when a pending station becomes ACTIVE', async () => {
+    // The folder column only fills in on activation, which happens after the
+    // queuing call has already returned.
+    listStations.mockResolvedValue([station({ isActive: false, status: 'queued' })]);
+    const { qc, invalidated } = setupWithClient();
+    await waitFor(() => expect(listStations).toHaveBeenCalled());
+
+    const before = invalidated().filter((k) => k?.includes('overview')).length;
+
+    // The agent finishes: the next poll returns it active.
+    listStations.mockResolvedValue([station({ isActive: true, status: 'active' })]);
+    await qc.invalidateQueries({ queryKey: ['platform', 'stations', 'o1'] });
+
+    await waitFor(() => {
+      const after = invalidated().filter((k) => k?.includes('overview')).length;
+      expect(after).toBeGreaterThan(before);
+    });
   });
 });
