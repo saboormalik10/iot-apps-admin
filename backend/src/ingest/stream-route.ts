@@ -4,6 +4,30 @@ export interface StreamRoute {
 }
 
 /**
+ * What a NEW station is given, so both formats work the day it is created.
+ *
+ * Every station in this deployment writes wind and environmental files into one
+ * folder. Stations used to be created with no routes at all, which meant the
+ * folder's `met-csv` fallback claimed every file: wind ingested, and
+ * `Environmental_` files were read by the WIND parser, which finds no columns it
+ * knows. Each new customer therefore needed two manual fixes nobody would think
+ * to make until their temperature charts stayed empty.
+ *
+ * Setting these also RESTORES the EnvDiagnostic guard for new stations. With no
+ * routes the fallback swallows everything, including that per-second audit log;
+ * with routes, an unmatched prefix is skipped, which is the whole point of the
+ * mechanism.
+ *
+ * `wind_` is here because the station's own prefix changed once, inside fifteen
+ * hours, and files under the old name still arrive.
+ */
+export const DEFAULT_STREAM_ROUTES: readonly StreamRoute[] = Object.freeze([
+  { prefix: 'WindSonic_', streamType: 'met-csv' },
+  { prefix: 'wind_', streamType: 'met-csv' },
+  { prefix: 'Environmental_', streamType: 'environmental-csv' },
+]);
+
+/**
  * Which stream type reads this file — decided per FILE, not per folder.
  *
  * The client's station writes three formats into one folder:

@@ -27,7 +27,11 @@ GROUP="sftpusers"
 # environment variables: sudo's env_reset strips anything passed in, so a
 # setting would silently do nothing.
 API_URL="https://iot-apps-backend.vercel.app"
-FILE_PREFIXES="WindSonic_"
+# Both formats a station writes. `EnvDiagnostic_` is deliberately absent: it is
+# a per-second Accepted/No-data audit of the environmental sentence, not
+# readings, and it carries a timestamp column — so the parser's only hard guard
+# would not reject it. Never claiming it is the first of the two defences.
+FILE_PREFIXES="WindSonic_,Environmental_"
 ROOT="/home"
 
 die() { printf '%s\n' "$1" >&2; exit 1; }

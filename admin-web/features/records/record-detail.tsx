@@ -21,6 +21,7 @@ import { ExportMenu } from '@/components/data/export-menu';
 import { ShareButton } from '@/features/share/share-button';
 import { useOrg } from '@/features/org/use-org';
 import { useRecord, useRecordMeasures } from './use-records';
+import { mergeMeasureRows } from './merge-measure-rows';
 
 const VIZ_LIMIT = 2000; // cap the series/map/stats fetch; the table paginates separately
 const TABLE_LIMIT = 100;
@@ -63,6 +64,14 @@ export function RecordDetail({ id }: { id: string }) {
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
 
   const vizRows = useMemo(() => viz?.rows.filter((r) => r.rowType === 'data') ?? [], [viz]);
+
+  /**
+   * Wind and environmental readings arrive as separate FILES and are therefore
+   * stored as separate rows — so one line in sixty carried a temperature and no
+   * wind, which reads as a dropout. Folded together for DISPLAY only; nothing is
+   * written, and no reading is discarded (see mergeMeasureRows).
+   */
+  const tableRows = useMemo(() => mergeMeasureRows(tablePageData?.rows ?? []), [tablePageData]);
 
   const toggle = (key: string) =>
     setFields((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : cur.length >= 5 ? cur : [...cur, key]));
@@ -238,9 +247,16 @@ export function RecordDetail({ id }: { id: string }) {
       {/* Measures table + raw-NMEA inspector */}
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
-          <h3 className="text-sm font-medium">Measures</h3>
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm font-medium">Measures</h3>
+            {/* Said once, because the alternative is someone counting rows and
+                concluding the page is dropping them. */}
+            <p className="text-xs text-muted-foreground">
+              Temperature is recorded once a minute; wind, every second.
+            </p>
+          </div>
           <DataTable
-            data={tablePageData?.rows ?? []}
+            data={tableRows}
             columns={columns}
             isLoading={tableLoading}
             page={tablePageData?.page}

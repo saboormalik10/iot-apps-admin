@@ -5,6 +5,7 @@ import { Organization } from '../models/Organization';
 import { randomBytes } from 'crypto';
 import { Device } from '../models/Device';
 import { StationAccount } from '../models/StationAccount';
+import { DEFAULT_STREAM_ROUTES } from '../ingest/stream-route';
 import { ProvisioningJob } from '../models/ProvisioningJob';
 import { AuditLog } from '../models/AuditLog';
 import { ProvisionService } from './provision.service';
@@ -96,6 +97,10 @@ export class StationsService implements OnModuleInit {
       organizationId: org._id,
       deviceId: device._id,
       streamType: 'met-csv',
+      // Both formats from day one — see DEFAULT_STREAM_ROUTES. Without these the
+      // folder's fallback claims every file, so a new customer's Environmental
+      // data went to the wind parser and their temperature charts stayed empty.
+      streamRoutes: [...DEFAULT_STREAM_ROUTES],
       // INACTIVE until the agent confirms the Unix account exists. Ingest
       // rejects an inactive mapping, so nothing can route here in the meantime.
       isActive: false,

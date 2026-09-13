@@ -106,5 +106,18 @@ const safety_1 = require("./safety");
         // A read-only job is still a root-level command with an argument.
         strict_1.default.equal((0, safety_1.vetJob)(job('reportStationUsage', { account: 'wx; cat /etc/shadow' })).ok, false);
     });
+    (0, node_test_1.test)('accepts enableStationAccount, the inverse of disable', () => {
+        // `disableStationAccount` LOCKS the password and EXPIRES the account. A
+        // password rotation clears the lock but nothing cleared the expiry, so a
+        // restored station stayed unusable — this job is what clears it.
+        const r = (0, safety_1.vetJob)(job('enableStationAccount', { account: 'wx-acme-01' }));
+        strict_1.default.equal(r.ok, true);
+    });
+    (0, node_test_1.test)('still refuses an injected account on enableStationAccount', () => {
+        // It is a root-level usermod with an argument, exactly like disable.
+        strict_1.default.equal((0, safety_1.vetJob)(job('enableStationAccount', { account: 'root; rm -rf /' })).ok, false);
+        strict_1.default.equal((0, safety_1.vetJob)(job('enableStationAccount', { account: '' })).ok, false);
+        strict_1.default.equal((0, safety_1.vetJob)(job('enableStationAccount', {})).ok, false);
+    });
 });
 //# sourceMappingURL=safety.test.js.map
