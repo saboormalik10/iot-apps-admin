@@ -24,6 +24,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  hideConfirm = false,
   onConfirm,
   children,
 }: {
@@ -34,6 +35,15 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /**
+   * Drop the confirm button, leaving only Cancel.
+   *
+   * For the case where the action is not available yet and the dialog is
+   * explaining why. A confirm button that is certain to fail invites the click
+   * and then blames the user for it; a DISABLED one still says "somebody could
+   * press this". Neither is true, so neither is shown.
+   */
+  hideConfirm?: boolean;
   onConfirm: () => void | Promise<void>;
   children?: ReactNode;
 }) {
@@ -60,11 +70,13 @@ export function ConfirmDialog({
         {children}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            {cancelLabel}
+            {hideConfirm ? 'Close' : cancelLabel}
           </Button>
-          <Button variant={destructive ? 'destructive' : 'default'} onClick={run} disabled={busy}>
-            {busy ? '…' : confirmLabel}
-          </Button>
+          {hideConfirm ? null : (
+            <Button variant={destructive ? 'destructive' : 'default'} onClick={run} disabled={busy}>
+              {busy ? '…' : confirmLabel}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -62,7 +62,11 @@ export function CommandPalette() {
         (i) =>
           (!i.flag || isFeatureEnabled(i.flag)) &&
           (!i.capability || can(i.capability)) &&
-          (!i.superAdminOnly || isSuperAdmin),
+          (!i.superAdminOnly || isSuperAdmin) &&
+          // Mirrors the sidebar: an administrator gets the cross-customer view
+          // from Admin controls, so offering the customer-scoped screen here too
+          // would be two results for one destination.
+          !(i.hideForSuperAdmin && isSuperAdmin),
       ).map(
         (i) => ({
           id: `nav:${i.key}`,
@@ -72,7 +76,7 @@ export function CommandPalette() {
           icon: 'nav',
         }),
       ),
-    [can, tRoot],
+    [can, isSuperAdmin, tRoot],
   );
 
   const { hits, isFetching } = useCommandSearch(query, open);

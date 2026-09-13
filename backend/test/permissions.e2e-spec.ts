@@ -1,7 +1,16 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-import { PERMISSIONS, PERMISSION_GROUPS, SEEDED_ROLES, isPermission, sanitizePermissions } from '../src/common/permissions';
+import {
+  PERMISSIONS,
+  PERMISSION_GROUPS,
+  HIDDEN_PERMISSIONS,
+  PLATFORM_ONLY_PERMISSIONS,
+  SEEDED_ROLES,
+  isPermission,
+  sanitizePermissions,
+  visiblePermissionGroups,
+} from '../src/common/permissions';
 import { Role } from '../src/models/Role';
 import { User } from '../src/models/User';
 
@@ -40,10 +49,34 @@ describe('permission catalogue', () => {
     expect(sanitizePermissions(['user:write', 'data:read'])).toEqual(['data:read', 'user:write']);
   });
 
-  it('groups every permission for the editor, with none listed twice', () => {
+  it('never both hides globally and restricts to the platform', () => {
+    // The two lists answer different questions; overlapping them would make the
+    // reason a permission is missing ambiguous.
+    expect(HIDDEN_PERMISSIONS.filter((p) => PLATFORM_ONLY_PERMISSIONS.includes(p))).toEqual([]);
+  });
+
+  it('accounts for every permission — grouped for the editor, or explicitly hidden', () => {
+    /**
+     * The point is that nothing falls through the gap. A permission the editor
+     * does not show is fine when it is a DECLARED omission; one that is merely
+     * missing is a permission nobody can ever grant, with nothing to say so.
+     */
     const grouped = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key));
     expect(new Set(grouped).size).toBe(grouped.length);
-    expect([...grouped].sort()).toEqual([...PERMISSIONS].sort());
+    expect([...grouped, ...HIDDEN_PERMISSIONS].sort()).toEqual([...PERMISSIONS].sort());
+  });
+
+  it('never both hides and offers the same permission', () => {
+    const grouped = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.key));
+    expect(HIDDEN_PERMISSIONS.filter((p) => grouped.includes(p))).toEqual([]);
+  });
+
+  it('keeps a hidden permission in the catalogue, so it is still enforced', () => {
+    // Hidden is a UI decision. Dropping it from PERMISSIONS would make
+    // `sanitizePermissions` strip it from stored roles and the guard stop
+    // recognising it on a route that still requires it.
+    for (const p of HIDDEN_PERMISSIONS) expect(isPermission(p)).toBe(true);
+    expect(SEEDED_ROLES.find((r) => r.key === 'admin')!.permissions).toContain('import:write');
   });
 
   it('gives every permission a plain-English label', () => {
@@ -76,6 +109,22 @@ describe('seeded roles', () => {
     // `data:export` is the one exception, and is deliberate — exporting is reading.
     const writes = viewer.permissions.filter((p) => /:(write|delete|create|provision|revokeAny)$/.test(p));
     expect(writes).toEqual([]);
+  });
+
+  it('does not let an OPERATOR edit or delete records', () => {
+    /**
+     * `content:write` reads as "add comments and upload files" and grants
+     * neither — comments went with the NEP module and picture upload is
+     * commented out. What it still gates is PATCH and DELETE on a record, which
+     * is not a day-to-day operator task, and nobody handing out "Operator"
+     * intended to hand over record deletion.
+     *
+     * Admin keeps it so a bad record can still be corrected.
+     */
+    const operator = SEEDED_ROLES.find((r) => r.key === 'operator')!;
+    const admin = SEEDED_ROLES.find((r) => r.key === 'admin')!;
+    expect(operator.permissions).not.toContain('content:write');
+    expect(admin.permissions).toContain('content:write');
   });
 
   it('lets an org admin manage THEIR OWN roles, but never provision stations', () => {
@@ -147,3 +196,50 @@ describe('seeded roles in the database', () => {
     await Role.deleteMany({ key });
   });
 });
+
+/**
+ * Who sees which permissions in the role editor.
+ *
+ * `station:provision` mints an OS-level SFTP login on the ingest box. Its
+ * endpoint is behind `SuperAdminGuard` as well as the permission, so a customer
+ * holding it is refused anyway — the box did nothing except imply it would.
+ */
+describe('permission catalogue by audience', () => {
+  const keys = (isSuperAdmin: boolean) =>
+    visiblePermissionGroups({ isSuperAdmin }).flatMap((g) => g.permissions.map((p) => p.key));
+
+  it('hides station provisioning from a customer', () => {
+    expect(keys(false)).not.toContain('station:provision');
+  });
+
+  it('still shows it to a platform administrator', () => {
+    expect(keys(true)).toContain('station:provision');
+  });
+
+  it('hides the globally hidden ones from EVERYONE, platform administrators included', () => {
+    for (const p of HIDDEN_PERMISSIONS) {
+      expect(keys(false)).not.toContain(p);
+      expect(keys(true)).not.toContain(p);
+    }
+  });
+
+  it('shows a customer everything else', () => {
+    const expected = PERMISSIONS.filter(
+      (p) => !HIDDEN_PERMISSIONS.includes(p) && !PLATFORM_ONLY_PERMISSIONS.includes(p),
+    );
+    expect([...keys(false)].sort()).toEqual([...expected].sort());
+  });
+
+  it('drops a group left empty rather than rendering a bare heading', () => {
+    for (const g of visiblePermissionGroups({ isSuperAdmin: false })) {
+      expect(g.permissions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('does not mutate the source catalogue', () => {
+    const before = JSON.stringify(PERMISSION_GROUPS);
+    visiblePermissionGroups({ isSuperAdmin: false });
+    expect(JSON.stringify(PERMISSION_GROUPS)).toBe(before);
+  });
+});
+

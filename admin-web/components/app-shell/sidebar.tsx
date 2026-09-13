@@ -18,6 +18,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     if (item.capability && !can(item.capability)) return false;
     // A customer must not even see that a cross-customer view exists.
     if (item.superAdminOnly && !isSuperAdmin) return false;
+    // …and an administrator should not see two entries for one screen.
+    if (item.hideForSuperAdmin && isSuperAdmin) return false;
     return true;
   });
 

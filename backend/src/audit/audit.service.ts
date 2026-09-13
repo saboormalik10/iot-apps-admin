@@ -3,7 +3,15 @@ import { Types, FilterQuery } from 'mongoose';
 import { AuditLog, IAuditLog, AuditAction, AuditResourceType } from '../models/AuditLog';
 
 export interface ListAuditInput {
-  action?: AuditAction;
+  /**
+   * One action, or several as a comma-separated list.
+   *
+   * The list exists for one question the page could not ask: "what CHANGED?".
+   * Sign-ins are 78% of the log (2,307 of 2,956 here), so every write a person
+   * is looking for sits behind pages of them, and a single-value filter can only
+   * narrow to one action at a time.
+   */
+  action?: AuditAction | string;
   resourceType?: AuditResourceType;
   userId?: string;
   from?: string;
@@ -21,7 +29,16 @@ export class AuditService {
     const filter: FilterQuery<IAuditLog> = {
       organizationId: new Types.ObjectId(organizationId),
     };
-    if (input.action) filter.action = input.action;
+    if (input.action) {
+      // Split, trim and drop empties so a trailing comma cannot turn into a
+      // filter on the empty string, which matches nothing and looks like a bug.
+      const actions = String(input.action)
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean);
+      if (actions.length === 1) filter.action = actions[0] as AuditAction;
+      else if (actions.length > 1) filter.action = { $in: actions as AuditAction[] };
+    }
     if (input.resourceType) filter.resourceType = input.resourceType;
     if (input.userId && Types.ObjectId.isValid(input.userId)) {
       filter.userId = new Types.ObjectId(input.userId);

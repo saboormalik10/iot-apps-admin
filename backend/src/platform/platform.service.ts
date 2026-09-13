@@ -9,6 +9,7 @@ import { MetRecord } from '../models/MetRecord';
 import { AlertRule } from '../models/AlertRule';
 import { StationAccount } from '../models/StationAccount';
 import { AuditLog } from '../models/AuditLog';
+import { RefreshToken } from '../models/RefreshToken';
 import { resolveRoleId } from '../common/resolve-role';
 import { isSafeFolderPath, normaliseFolderPath } from '../ingest/folder-path';
 
@@ -324,4 +325,136 @@ export class PlatformService {
       throw err;
     }
   }
+
+  /**
+   * Remove a customer — but only once their stations are gone.
+   *
+   * ACTIVE STATIONS BLOCK THIS, deliberately. A station is a live SFTP login on
+   * the ingest box and a folder of the customer's files. Deleting the customer
+   * row would orphan both: the logger would keep uploading into an account whose
+   * tenant no longer exists, and ingest would accept files it could attribute to
+   * nobody. Deleting the stations first is what disables those logins, and the
+   * station-delete path already handles the shared-account case.
+   *
+   * So this refuses with a count rather than cascading. Cascading would be the
+   * friendlier-looking choice and the wrong one: it would make "delete customer"
+   * a single click that silently tears down SFTP accounts, and the operator
+   * would not see which stations went.
+   *
+   * The organisation is SOFT-deleted (`deletedAt`), matching how users are
+   * removed. Their readings, audit history and station records stay readable to
+   * a platform administrator, which is what makes "what happened to that
+   * customer?" answerable later.
+   */
+  async deleteCustomer(organizationId: string, actor: { userId: string; email: string }) {
+    if (!Types.ObjectId.isValid(organizationId)) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+    const orgId = new Types.ObjectId(organizationId);
+    const org = await Organization.findOne({ _id: orgId, deletedAt: null });
+    if (!org) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+
+    // Counted from the STATION ACCOUNTS, not the devices: the account is the
+    // thing that can still receive files, and it is what has to be gone.
+    const active = await StationAccount.countDocuments({ organizationId: orgId, isActive: true });
+    if (active > 0) {
+      throw Object.assign(
+        new Error(
+          `${org.name} still has ${active} active station${active === 1 ? '' : 's'}. ` +
+            `Delete ${active === 1 ? 'it' : 'them'} first — that is what disables the SFTP login.`,
+        ),
+        { statusCode: 409, code: 'STATIONS_ACTIVE', details: { activeStations: active } },
+      );
+    }
+
+    org.deletedAt = new Date();
+    await org.save();
+
+    // Sign everyone out and keep them out. Without this a customer's admin holds
+    // a valid refresh token for an organisation that no longer exists.
+    const users = await User.find({ organizationId: orgId, deletedAt: null }).select('_id').lean();
+    const userIds = users.map((u) => u._id);
+    if (userIds.length > 0) {
+      await User.updateMany({ _id: { $in: userIds } }, { $set: { isActive: false } });
+      await RefreshToken.updateMany({ userId: { $in: userIds }, revokedAt: null }, { $set: { revokedAt: new Date() } });
+    }
+
+    AuditLog.create({
+      organizationId: orgId,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'delete',
+      resourceType: 'organization',
+      resourceId: String(orgId),
+      resourceName: org.name,
+      changes: { deactivatedUsers: userIds.length },
+    }).catch(() => void 0);
+
+    return { organizationId: String(orgId), name: org.name, deactivatedUsers: userIds.length };
+  }
+
+
+  /**
+   * Move the platform administrator's HOME organisation.
+   *
+   * "Root" is not a concept in this schema and never was. An organisation is the
+   * administrator's home for exactly one reason: their own user row points at
+   * it. So this repoints that row — no flag, no new field.
+   *
+   * WHAT IT DOES AND DOES NOT CHANGE. Home decides where they land on sign-in
+   * and where "Return to my organisation" goes. It confers no access: that is
+   * `isSuperAdmin`, which is separate and untouched here. A customer does not
+   * become privileged by being somebody's home.
+   *
+   * Only the CALLER's home is moved, never another user's — one administrator
+   * silently relocating another is not a thing this needs to do.
+   *
+   * The session is left to the caller to re-establish, by switching to `null`
+   * once this returns. Doing it here would mean minting tokens in two places.
+   */
+  async setHomeOrganization(organizationId: string, actor: { userId: string; email: string }) {
+    if (!Types.ObjectId.isValid(organizationId)) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+    const org = await Organization.findOne({ _id: new Types.ObjectId(organizationId), deletedAt: null })
+      .select('_id name')
+      .lean();
+    if (!org) {
+      throw Object.assign(new Error('Customer not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+
+    const user = await User.findById(actor.userId);
+    // Re-read from the database rather than trusting the token: this rewrites
+    // the row that decides where an administrator lives.
+    if (!user || user.isActive === false || user.isSuperAdmin !== true) {
+      throw Object.assign(new Error('Platform administrator access required'), {
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    }
+
+    const previous = String(user.organizationId);
+    if (previous === String(org._id)) {
+      return { organizationId: String(org._id), name: org.name, changed: false };
+    }
+
+    user.organizationId = org._id as Types.ObjectId;
+    await user.save();
+
+    AuditLog.create({
+      organizationId: org._id as Types.ObjectId,
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      action: 'update',
+      resourceType: 'organization',
+      resourceId: String(org._id),
+      resourceName: org.name,
+      changes: { homeOrganizationId: { from: previous, to: String(org._id) } },
+    }).catch(() => void 0);
+
+    return { organizationId: String(org._id), name: org.name, changed: true };
+  }
+
 }

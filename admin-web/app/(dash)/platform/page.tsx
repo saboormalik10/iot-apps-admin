@@ -1,17 +1,15 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
-import { PlatformPage } from '@/features/tenancy/platform-page';
 
 /**
- * Platform administrators only — a customer must not even learn that other
- * customers exist.
+ * `/platform` moved into Admin controls.
  *
- * The page component renders "Not available" for everyone else and every
- * endpoint behind it 403s, so this closes a gap in consistency rather than a
- * leak: /org and /users redirect on a direct URL, and this did not.
+ * Redirected rather than deleted: the URL is in bookmarks, in the command
+ * palette's history, and in anything already written down. A 404 would look like
+ * the feature had been removed rather than moved.
  */
-export default async function Page() {
+export default async function PlatformPage() {
   const session = await getSession();
   if (session.user?.isSuperAdmin !== true) redirect('/');
-  return <PlatformPage />;
+  redirect('/admin?tab=customers');
 }

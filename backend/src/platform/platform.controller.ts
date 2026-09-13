@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -140,6 +140,35 @@ export class PlatformController {
     },
   })
   @ApiErrors('badRequest', 'unauthorized', 'forbidden')
+  @ApiOperation({
+    summary: "Make a customer the platform administrator's home organisation",
+    description:
+      'Repoints the CALLER\'s own user row. Home decides where they land on sign-in and where "Return to my ' +
+      'organisation" goes; it grants no access of its own. Switch to `null` afterwards to re-issue the session.',
+  })
+  @ApiErrors('unauthorized', 'forbidden', 'notFound')
+  @Patch('customers/:id/home')
+  async setHome(@Param('id') id: string, @CurrentUser() user: JWTPayload) {
+    return {
+      data: await this.platformService.setHomeOrganization(id, { userId: user.userId, email: user.email ?? '' }),
+    };
+  }
+
+  @ApiOperation({
+    summary: 'Delete a customer',
+    description:
+      'Refuses with 409 STATIONS_ACTIVE while the customer still has an active station — a station is a live ' +
+      'SFTP login, and deleting the customer would orphan it. Delete the stations first. The organisation is ' +
+      'soft-deleted and its people are deactivated and signed out.',
+  })
+  @ApiErrors('unauthorized', 'forbidden', 'notFound', 'conflict')
+  @Delete('customers/:id')
+  async deleteCustomer(@Param('id') id: string, @CurrentUser() user: JWTPayload) {
+    return {
+      data: await this.platformService.deleteCustomer(id, { userId: user.userId, email: user.email ?? '' }),
+    };
+  }
+
   @Post('customers')
   @HttpCode(201)
   async createCustomer(@Body() body: CreateCustomerDto, @CurrentUser() user: JWTPayload) {

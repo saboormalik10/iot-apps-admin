@@ -101,7 +101,8 @@
     "platform": "All customers",
     "audit": "Audit log",
     "settings": "Settings",
-    "streamTypes": "Stream types"
+    "streamTypes": "Stream types",
+    "admin": "Admin controls"
   },
   "shell": {
     "toggleSidebar": "Toggle sidebar",

@@ -40,7 +40,8 @@ export class AuditController {
   @RequirePermissions('audit:read')
   async list(
     @CurrentUser() user?: JWTPayload,
-    @Query('action') action?: AuditAction,
+    // A single action, or several comma-separated (e.g. `create,update,delete`).
+    @Query('action') action?: string,
     @Query('resourceType') resourceType?: AuditResourceType,
     @Query('userId') userId?: string,
     @Query('from') from?: string,

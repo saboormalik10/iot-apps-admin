@@ -18,7 +18,9 @@ export const PERMISSIONS = [
   // Data surfaces — dashboards, analytics, maps, records
   'data:read',
   'data:export',
-  'content:write', // record/session comments, file uploads
+  // Named for commenting and uploads, both of which are gone. What it still
+  // gates is editing and deleting RECORDS — see HIDDEN_PERMISSIONS.
+  'content:write',
 
   // Devices
   'device:read',
@@ -73,6 +75,86 @@ export function sanitizePermissions(values: readonly string[]): Permission[] {
 }
 
 /**
+ * Permissions the role editor does NOT offer.
+ *
+ * Hidden, not removed. The grant still exists, is still enforced, and is still
+ * held by anyone who has it — so nothing silently loses access and the endpoint
+ * keeps working. It simply is not a box somebody can tick.
+ *
+ * `import:write` gates the historical-CSV import, and the Import screen is
+ * switched off in the frontend (`importExport: false`). Offering a permission
+ * for a screen that cannot be reached invites someone to grant it and then
+ * wonder why nothing appeared. When the screen comes back, take the entry out
+ * of here and put it back in the Advanced group.
+ *
+ * `content:write` was labelled "Add comments and upload files" and no longer
+ * does either: session comments went with the NEP module and picture upload is
+ * commented out. What it actually still gates is EDITING AND DELETING RECORDS,
+ * so the box invited someone to grant record deletion while reading as though it
+ * granted commenting. The two device-facing endpoints under it are dead as well
+ * — every record in the system arrived over SFTP, which uses its own credential
+ * guard. Hidden rather than deleted so existing holders keep working and the
+ * endpoints keep their check.
+ *
+ * Deleting it from `PERMISSIONS` instead would be wrong twice over:
+ * `sanitizePermissions` would strip it out of every stored role on next write,
+ * and `PermissionsGuard` would stop recognising it on a route that still
+ * requires it.
+ */
+export const HIDDEN_PERMISSIONS: readonly Permission[] = Object.freeze([
+  'import:write',
+  'content:write',
+]);
+
+/**
+ * Offered to a platform administrator, never to a customer.
+ *
+ * Stations are a platform concern in this deployment: they are provisioned from
+ * the platform screen, against SFTP accounts only a platform administrator can
+ * create. A customer does not stand up their own station, so the permissions
+ * that describe doing so are not theirs to hand out.
+ *
+ *   `station:provision` — creates an OS-level SFTP login on the ingest box. Its
+ *     endpoint is behind `SuperAdminGuard` as well as the permission, so a
+ *     customer holding it is refused anyway; the box only implied otherwise.
+ *   `device:write` — adding and editing stations. The Add-station control, the
+ *     firmware target and the device-settings screen have all been removed from
+ *     the customer side, so what remains of it is renaming.
+ *
+ * Kept visible to a platform administrator so the catalogue they see is the
+ * whole truth, and because the grant is what documents the boundary.
+ *
+ * NOTE this hides the CHECKBOX, not the ability. Organisation Admin still holds
+ * `device:write` from its seeded grant, so an admin can still rename their own
+ * station — they simply cannot delegate that to a role they build. Remove it
+ * from SEEDED_ROLES too if the ability itself should go.
+ *
+ * A different rule from HIDDEN_PERMISSIONS: hidden from EVERYONE versus hidden
+ * from CUSTOMERS. `visiblePermissionGroups` applies both.
+ */
+export const PLATFORM_ONLY_PERMISSIONS: readonly Permission[] = Object.freeze([
+  'station:provision',
+  'device:write',
+]);
+
+/**
+ * The catalogue as a given audience should see it.
+ *
+ * Empty groups are dropped rather than rendered as an empty heading — "Stations"
+ * with nothing under it reads like a loading failure.
+ */
+export function visiblePermissionGroups(opts: { isSuperAdmin: boolean }) {
+  const hide = new Set<string>([
+    ...HIDDEN_PERMISSIONS,
+    ...(opts.isSuperAdmin ? [] : PLATFORM_ONLY_PERMISSIONS),
+  ]);
+  return PERMISSION_GROUPS.map((g) => ({
+    ...g,
+    permissions: g.permissions.filter((p) => !hide.has(p.key)),
+  })).filter((g) => g.permissions.length > 0);
+}
+
+/**
  * Grouped for the role editor, so the UI never hard-codes its own list.
  * Labels are plain English: the person assigning a role is not a developer.
  */
@@ -83,7 +165,6 @@ export const PERMISSION_GROUPS: readonly { group: string; permissions: readonly 
       permissions: [
         { key: 'data:read', label: 'View dashboards and analytics' },
         { key: 'data:export', label: 'Export data and create share links' },
-        { key: 'content:write', label: 'Add comments and upload files' },
       ],
     },
     {
@@ -118,7 +199,7 @@ export const PERMISSION_GROUPS: readonly { group: string; permissions: readonly 
     {
       group: 'Advanced',
       permissions: [
-        { key: 'import:write', label: 'Import data files' },
+        // `import:write` is deliberately absent — see HIDDEN_PERMISSIONS.
         { key: 'share:revokeAny', label: "Revoke anyone's share links" },
       ],
     },
@@ -163,9 +244,14 @@ export const SEEDED_ROLES: readonly { key: string; name: string; description: st
     {
       key: 'operator',
       name: 'Operator',
-      description: 'Day-to-day use: view everything, manage alerts, add comments and export.',
+      description: 'Day-to-day use: view everything, manage alerts and export.',
       permissions: [
-        'data:read', 'data:export', 'content:write',
+        // `content:write` removed (M26). Its label said "add comments and upload
+        // files" and both of those are gone — what it actually still grants is
+        // EDITING AND DELETING RECORDS, which is not a day-to-day operator task
+        // and was never what anyone thought they were handing over. Admin keeps
+        // it so a bad record can still be corrected.
+        'data:read', 'data:export',
         'device:read',
         'org:read', 'user:read',
         'alert:read', 'alert:write',

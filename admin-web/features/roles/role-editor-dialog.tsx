@@ -66,6 +66,23 @@ export function RoleEditorDialog({
 
   const total = useMemo(() => groups.reduce((n, g) => n + g.permissions.length, 0), [groups]);
 
+  /**
+   * The catalogue is filtered per audience — a customer is not offered
+   * `station:provision` or `device:write`, and nobody is offered `import:write`.
+   * A role can still HOLD one of those, so the selection and the checkboxes on
+   * screen are not the same set.
+   *
+   * Counting the whole selection against the visible total produced "18 of 16
+   * selected". The count below is of what is actually shown; anything held but
+   * not shown is reported separately rather than silently dropped from view.
+   */
+  const visibleKeys = useMemo(
+    () => new Set(groups.flatMap((g) => g.permissions.map((p) => p.key))),
+    [groups],
+  );
+  const shownSelected = selected.filter((k) => visibleKeys.has(k)).length;
+  const heldButHidden = selected.filter((k) => !visibleKeys.has(k)).length;
+
   const toggle = (key: string) =>
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
@@ -154,9 +171,21 @@ export function RoleEditorDialog({
             <div className="flex items-baseline justify-between">
               <Label>Permissions</Label>
               <span className="text-xs text-muted-foreground">
-                {selected.length} of {total} selected
+                {shownSelected} of {total} selected
               </span>
             </div>
+
+            {heldButHidden > 0 ? (
+              /* Deliberately not "managed by the platform administrator": some of
+                 these are hidden from EVERYONE, the platform administrator
+                 included, so that wording would be wrong on their own screen. */
+              <p className="text-xs text-muted-foreground">
+                {heldButHidden === 1
+                  ? 'This role holds 1 further permission that is not shown here'
+                  : `This role holds ${heldButHidden} further permissions that are not shown here`}
+                . Saving leaves {heldButHidden === 1 ? 'it' : 'them'} untouched.
+              </p>
+            ) : null}
 
             {groups.map((g) => {
               const keys = g.permissions.map((p) => p.key);

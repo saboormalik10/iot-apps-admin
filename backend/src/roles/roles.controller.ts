@@ -8,7 +8,7 @@ import { PermissionsGuard, RequirePermissions } from '../common/guards/permissio
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ApiErrors } from '../common/decorators/api-errors.decorator';
 import { JWTPayload } from '../utils/jwt';
-import { PERMISSION_GROUPS } from '../common/permissions';
+import { visiblePermissionGroups } from '../common/permissions';
 
 const ROLE_EXAMPLE = {
   _id: '6a8cb65020dea9248703bf74',
@@ -53,8 +53,11 @@ export class RolesController {
   @ApiErrors('unauthorized', 'forbidden')
   @Get('permissions')
   @RequirePermissions('role:read')
-  listPermissions() {
-    return { data: PERMISSION_GROUPS };
+  listPermissions(@CurrentUser() user: JWTPayload) {
+    // Filtered per audience: `station:provision` mints OS-level SFTP logins and
+    // is refused to customers by SuperAdminGuard regardless of the grant, so
+    // offering them the box would only mislead.
+    return { data: visiblePermissionGroups({ isSuperAdmin: user.sup === true }) };
   }
 
   @ApiOperation({

@@ -709,6 +709,27 @@ export const getPlatformOverview = (signal?: AbortSignal) =>
 export const createCustomer = (input: CreateCustomerInput) =>
   http.post<CreatedCustomer>('/platform/customers', input);
 
+/**
+ * Delete a customer. Refuses with 409 `STATIONS_ACTIVE` while any of their
+ * stations is still live — a station is an SFTP login, and removing the customer
+ * around it would leave the logger uploading into an account with no tenant.
+ */
+/**
+ * Make a customer the platform administrator's HOME organisation — where they
+ * land on sign-in, and where "Return to my organisation" goes. Grants no access.
+ * Follow with a switch to `null` so the session reflects the new home.
+ */
+export const setHomeCustomer = (organizationId: string) =>
+  http.patch<{ organizationId: string; name: string; changed: boolean }>(
+    `/platform/customers/${organizationId}/home`,
+    {},
+  );
+
+export const deleteCustomer = (organizationId: string) =>
+  http.delete<{ organizationId: string; name: string; deactivatedUsers: number }>(
+    `/platform/customers/${organizationId}`,
+  );
+
 export const getDisplayUnits = (signal?: AbortSignal) =>
   http.get<DisplayUnits>('/organizations/me/display-units', signal);
 export const updateDisplayUnits = (input: DisplayUnitsInput) =>

@@ -231,4 +231,48 @@ describe('RoleEditorDialog', () => {
       expect(screen.getByLabelText(/name/i)).not.toBeDisabled();
     });
   });
+
+  /**
+   * The catalogue the server returns is filtered per audience, so a role can hold
+   * a permission the viewer is not offered — a customer is not shown
+   * `station:provision` or `device:write`, and nobody is shown `import:write`.
+   */
+  describe('permissions held but not offered', () => {
+    it('counts only what is on screen, not the whole selection', async () => {
+      // Two groups here carry three keys in total; the role holds a fourth the
+      // catalogue does not list. "4 of 3 selected" was what this produced.
+      setup({ role: role({ permissions: ['data:read', 'data:export', 'station:provision'] }) });
+      expect(await screen.findByText('View data')).toBeInTheDocument();
+      expect(screen.getByText(/2 of 3 selected/)).toBeInTheDocument();
+      expect(screen.queryByText(/of 3 selected/)?.textContent).not.toMatch(/^3 of 3/);
+    });
+
+    it('says so, rather than dropping it silently', async () => {
+      setup({ role: role({ permissions: ['data:read', 'station:provision'] }) });
+      await screen.findByText('View data');
+      expect(screen.getByText(/holds 1 further permission that is not shown here/i)).toBeInTheDocument();
+      expect(screen.getByText(/leaves it untouched/i)).toBeInTheDocument();
+    });
+
+    it('says nothing when the role holds only what is shown', async () => {
+      setup({ role: role({ permissions: ['data:read'] }) });
+      await screen.findByText('View data');
+      expect(screen.queryByText(/not shown here/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/1 of 3 selected/)).toBeInTheDocument();
+    });
+
+    it('SAVES the hidden permission rather than revoking it', async () => {
+      const u = userEvent.setup();
+      setup({ role: role({ permissions: ['data:read', 'station:provision'] }) });
+      await screen.findByText('View data');
+      await u.click(screen.getByRole('button', { name: /save changes/i }));
+
+      await waitFor(() => expect(updateRole).toHaveBeenCalled());
+      const sent = updateRole.mock.calls[0][1] as { permissions: string[] };
+      // The checkbox for it never rendered, so it can never be toggled off —
+      // but it must still come back on the way out.
+      expect(sent.permissions).toContain('station:provision');
+      expect(sent.permissions).toContain('data:read');
+    });
+  });
 });
