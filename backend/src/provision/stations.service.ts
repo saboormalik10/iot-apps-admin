@@ -367,6 +367,26 @@ export class StationsService implements OnModuleInit {
   async restoreStation(stationAccountId: string, actor: { userId: string; email: string }) {
     const mapping = await this.mustFindStation(stationAccountId);
 
+    /**
+     * TWO jobs, and the order matters.
+     *
+     * `disableStationAccount` does `usermod --lock --expiredate 1`: it locks the
+     * password AND expires the account. Rotating the password replaces the hash,
+     * which clears the lock — but nothing clears the expiry, so restoring used to
+     * hand back a fresh password for an account that still refused every login.
+     * The portal said "restored" and the station stayed dark.
+     *
+     * Enable first, then rotate: the queue is FIFO per agent, so the account is
+     * usable by the time the new password is set on it. The rotation is still
+     * what the caller waits on, because that is the job carrying the secret.
+     */
+    await this.provision.queue({
+      organizationId: String(mapping.organizationId),
+      type: 'enableStationAccount',
+      args: { account: mapping.account, stationAccountId: String(mapping._id) },
+      createdBy: actor.userId,
+    });
+
     const job = await this.provision.queue({
       organizationId: String(mapping.organizationId),
       type: 'rotateStationPassword',

@@ -58,11 +58,16 @@ const role = (over: Partial<RoleRow> = {}): RoleRow =>
     ...over,
   }) as RoleRow;
 
-function setup(props: { role?: RoleRow; open?: boolean } = {}) {
+function setup(props: { role?: RoleRow; open?: boolean; readOnly?: boolean } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <RoleEditorDialog role={props.role} open={props.open ?? true} onOpenChange={() => {}} />
+      <RoleEditorDialog
+        role={props.role}
+        open={props.open ?? true}
+        onOpenChange={() => {}}
+        readOnly={props.readOnly}
+      />
     </QueryClientProvider>,
   );
 }
@@ -187,5 +192,43 @@ describe('RoleEditorDialog', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
     expect(success).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Read-only mode exists because customers now hold `role:write`.
+   *
+   * Holding the permission no longer answers "would a save be accepted" — the
+   * built-in and shared roles belong to the platform and the server refuses to
+   * change them. The detail still has to be visible, though: an admin deciding
+   * who to make a Viewer needs to see exactly what Viewer grants.
+   */
+  describe('read-only', () => {
+    it('shows the permissions but offers no way to save', async () => {
+      setup({ role: role({ isSystem: true, name: 'Viewer' }), readOnly: true });
+      expect(await screen.findByText('View data')).toBeInTheDocument();
+
+      // No Save at all — a DISABLED save still suggests somebody could use it.
+      expect(screen.queryByRole('button', { name: /save changes|create role/i })).not.toBeInTheDocument();
+      // Radix renders its own X, also named "Close" — match the footer button.
+      expect(screen.getAllByRole('button', { name: /close/i }).length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByRole('button', { name: /^cancel$/i })).not.toBeInTheDocument();
+    });
+
+    it('disables every input so nothing can be edited', async () => {
+      setup({ role: role({ isSystem: true }), readOnly: true });
+      await screen.findByText('View data');
+
+      expect(screen.getByLabelText(/name/i)).toBeDisabled();
+      for (const box of screen.getAllByRole('checkbox')) expect(box).toBeDisabled();
+      // The bulk shortcut is a write action too.
+      expect(screen.queryByRole('button', { name: /select all|clear/i })).not.toBeInTheDocument();
+    });
+
+    it('still offers Save when NOT read-only', async () => {
+      setup({ role: role() });
+      await screen.findByText('View data');
+      expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/name/i)).not.toBeDisabled();
+    });
   });
 });

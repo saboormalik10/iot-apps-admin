@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Pencil, Shield, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Shield, Trash2, Eye } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Can } from '@/lib/rbac/guard';
+import { useRbac } from '@/lib/rbac/context';
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-states';
 import { RoleEditorDialog } from './role-editor-dialog';
 import { RoleDeleteDialog } from './role-delete-dialog';
@@ -21,13 +22,29 @@ import type { RoleRow } from '@/lib/api/types';
  */
 export function RolesPage() {
   const { data: roles, isLoading, isError, refetch } = useRoles();
+  const { user, isSuperAdmin } = useRbac();
   const [editing, setEditing] = useState<RoleRow | undefined>();
   const [open, setOpen] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
+
+  /**
+   * Can the signed-in user actually CHANGE this role?
+   *
+   * Not "do they hold `role:write`" — customers hold it now, so that question no
+   * longer answers this one. Anything with `organizationId: null` belongs to the
+   * platform (the built-ins, and any shared role a platform administrator built)
+   * and the server refuses to change it. Mirrors `assertCanModify` on the
+   * backend; the server remains the boundary, this only stops us offering a
+   * button that would 403.
+   */
+  const canModify = (role: RoleRow) =>
+    isSuperAdmin ? true : role.organizationId != null && role.organizationId === user?.organizationId;
   const [deleting, setDeleting] = useState<RoleRow | undefined>();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const openFor = (role?: RoleRow) => {
+  const openFor = (role?: RoleRow, readOnly = false) => {
     setEditing(role);
+    setViewOnly(readOnly);
     setOpen(true);
   };
 
@@ -83,25 +100,41 @@ export function RolesPage() {
                 {/* Read-only for anyone without `role:write` — the server would
                     refuse the save, so offering the button would only mislead. */}
                 <div className="flex shrink-0 items-center">
-                  <Can permission="role:write">
-                    <Button variant="ghost" size="sm" className="gap-1" onClick={() => openFor(role)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                      <span className="sr-only sm:not-sr-only">Edit</span>
-                    </Button>
-                  </Can>
-                  {/* `role:delete` is platform-level — an organisation admin can
-                      edit roles but must not remove one every customer shares. */}
-                  <Can permission="role:delete">
+                  {canModify(role) ? (
+                    <>
+                      <Can permission="role:write">
+                        <Button variant="ghost" size="sm" className="gap-1" onClick={() => openFor(role)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                          <span className="sr-only sm:not-sr-only">Edit</span>
+                        </Button>
+                      </Can>
+                      <Can permission="role:delete">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-status-error"
+                          onClick={() => confirmDelete(role)}
+                          aria-label={`Delete ${role.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </Can>
+                    </>
+                  ) : (
+                    /* Built-in and shared roles are the platform's. Offering Edit
+                       here would 403 on save; offering nothing would hide what
+                       the role actually grants, which an admin needs to know. */
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-muted-foreground hover:text-status-error"
-                      onClick={() => confirmDelete(role)}
-                      aria-label={`Delete ${role.name}`}
+                      className="gap-1"
+                      onClick={() => openFor(role, true)}
+                      aria-label={`View ${role.name}`}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Eye className="h-3.5 w-3.5" />
+                      <span className="sr-only sm:not-sr-only">View</span>
                     </Button>
-                  </Can>
+                  )}
                 </div>
               </div>
 
@@ -119,7 +152,7 @@ export function RolesPage() {
         </div>
       )}
 
-      <RoleEditorDialog role={editing} open={open} onOpenChange={setOpen} />
+      <RoleEditorDialog role={editing} open={open} onOpenChange={setOpen} readOnly={viewOnly} />
       <RoleDeleteDialog role={deleting} open={deleteOpen} onOpenChange={setDeleteOpen} />
     </div>
   );

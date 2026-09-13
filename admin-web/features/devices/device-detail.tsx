@@ -110,9 +110,30 @@ export function DeviceDetail({ id }: { id: string }) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete device?"
-        description="This soft-deletes the device and hides it from the fleet. Its historical data is retained."
-        confirmLabel="Delete"
+        title={`Delete ${device.name}?`}
+        /* The old wording — "historical data is retained" — is no longer true,
+           and the SFTP side was never mentioned at all. Someone deleting a
+           station is entitled to know its logger stops being accepted and its
+           readings go. */
+        description={
+          /* Block spans, not a list: DialogDescription renders a <p>, and a <ul>
+             inside one is invalid markup that React warns about. */
+          <>
+            <span className="block font-medium text-foreground">This cannot be undone.</span>
+            <span className="mt-2 block">
+              The SFTP login for this station will be <strong>disabled</strong>, so its logger can no longer
+              upload. Anything it sends from now on will <strong>not</strong> be collected.
+            </span>
+            <span className="mt-2 block">
+              All of its readings, records and daily summaries are <strong>permanently deleted</strong>.
+            </span>
+            <span className="mt-2 block">
+              Files already on the SFTP server are <strong>kept</strong> — nothing stored there is removed.
+            </span>
+            <span className="mt-3 block">Are you sure you want to delete this station?</span>
+          </>
+        }
+        confirmLabel="Delete station"
         destructive
         onConfirm={confirmDelete}
       />

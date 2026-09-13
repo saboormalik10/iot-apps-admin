@@ -122,4 +122,19 @@ describe('vetJob', () => {
     // A read-only job is still a root-level command with an argument.
     assert.equal(vetJob(job('reportStationUsage', { account: 'wx; cat /etc/shadow' })).ok, false);
   });
+
+  test('accepts enableStationAccount, the inverse of disable', () => {
+    // `disableStationAccount` LOCKS the password and EXPIRES the account. A
+    // password rotation clears the lock but nothing cleared the expiry, so a
+    // restored station stayed unusable — this job is what clears it.
+    const r = vetJob(job('enableStationAccount', { account: 'wx-acme-01' }));
+    assert.equal(r.ok, true);
+  });
+
+  test('still refuses an injected account on enableStationAccount', () => {
+    // It is a root-level usermod with an argument, exactly like disable.
+    assert.equal(vetJob(job('enableStationAccount', { account: 'root; rm -rf /' })).ok, false);
+    assert.equal(vetJob(job('enableStationAccount', { account: '' })).ok, false);
+    assert.equal(vetJob(job('enableStationAccount', {})).ok, false);
+  });
 });

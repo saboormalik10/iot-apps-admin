@@ -9,6 +9,10 @@ import { DeviceSettings } from '../models/DeviceSettings';
 import { FirmwareHistory } from '../models/FirmwareHistory';
 import { FirmwareTarget } from '../models/FirmwareTarget';
 import { compareVersions, isOutdated } from '../utils/semver.util';
+import { StationAccount } from '../models/StationAccount';
+import { MetDailySummary } from '../models/MetDailySummary';
+import { MetIngestFile } from '../models/MetIngestFile';
+import { ProvisionService } from '../provision/provision.service';
 
 type DeviceType = 'MET-LINK' | 'NEP-LINK';
 
@@ -43,6 +47,8 @@ export interface ListDevicesResult {
 
 @Injectable()
 export class DevicesService {
+  constructor(private readonly provision: ProvisionService) {}
+
   async listDevices(opts: ListDevicesOptions): Promise<ListDevicesResult> {
     const { organizationId, type, bleId, page = 1, limit = 20 } = opts;
     const orgId = new Types.ObjectId(organizationId);
@@ -175,12 +181,74 @@ export class DevicesService {
     return device;
   }
 
+  /**
+   * Remove a station: its SFTP login, its readings, and the station itself.
+   *
+   * Used to set `deletedAt` and nothing else, which left the station gone from
+   * the portal while its SFTP account stayed live — the logger kept uploading,
+   * and ingest kept accepting, because routing is by STATION ACCOUNT and never
+   * looked at the device. Deleting a station now actually stops it.
+   *
+   * Three things happen, in this order:
+   *
+   *  1. the station's account mappings are deactivated, so ingest refuses new
+   *     files for them immediately — before anything slower can go wrong;
+   *  2. the SFTP login is disabled ON THE BOX, but only when this was the last
+   *     station using it (see below);
+   *  3. the readings are deleted.
+   *
+   * FILES ARE NEVER DELETED. `disableStationAccount` locks the login; the
+   * folder and everything archived in it stay on disk. That is deliberate — the
+   * archive is the only copy of the raw readings once the 15-day TTL expires
+   * them, and the agent has no delete job precisely so it cannot be asked for one.
+   *
+   * ONE ACCOUNT CAN SERVE SEVERAL STATIONS. `wx-final-customer` serves two
+   * different devices today, so disabling the account on the strength of one
+   * deletion would silently cut the other off. The job is queued only when no
+   * ACTIVE mapping is left on that account.
+   */
   async deleteDevice(
     organizationId: string,
     deviceId: string,
     actor: { userId: string; email: string },
   ): Promise<void> {
     const device = await this.getDevice(organizationId, deviceId);
+    const orgId = device.organizationId;
+    const devId = device._id as Types.ObjectId;
+
+    // ── 1. stop ingest for this station's folders ────────────────────────────
+    const mappings = await StationAccount.find({ deviceId: devId }).lean();
+    if (mappings.length > 0) {
+      await StationAccount.updateMany({ deviceId: devId }, { $set: { isActive: false } });
+    }
+
+    // ── 2. disable the SFTP login, if nothing else is using it ───────────────
+    for (const account of [...new Set(mappings.map((m) => m.account))]) {
+      const stillUsed = await StationAccount.countDocuments({ account, isActive: true });
+      if (stillUsed > 0) continue;
+      await this.provision
+        .queue({
+          organizationId: String(orgId),
+          type: 'disableStationAccount',
+          args: { account },
+          createdBy: actor.userId,
+        })
+        // A queue failure must not abort the deletion: the mappings are already
+        // inactive, so nothing more can be ingested either way.
+        .catch(() => undefined);
+    }
+
+    // ── 3. delete the readings ───────────────────────────────────────────────
+    // `MetMeasure` carries no deviceId — it hangs off the day record — so the
+    // records are resolved first and the measures deleted by those ids.
+    const recordIds = (await MetRecord.find({ deviceId: devId }).select('_id').lean()).map((r) => r._id);
+    if (recordIds.length > 0) await MetMeasure.deleteMany({ recordId: { $in: recordIds } });
+    await Promise.all([
+      MetRecord.deleteMany({ deviceId: devId }),
+      MetDailySummary.deleteMany({ deviceId: devId }),
+      MetIngestFile.deleteMany({ deviceId: devId }),
+    ]);
+
     device.deletedAt = new Date();
     await device.save();
 

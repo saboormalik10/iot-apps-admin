@@ -10,7 +10,15 @@ import { Label } from '@/components/ui/label';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingState, EmptyState } from '@/components/screen-states';
-import { collectStationSecret, listStations, provisionStation, rotateStationPassword } from '@/lib/api/endpoints';
+import {
+  collectStationSecret,
+  deleteDevice,
+  listStations,
+  provisionStation,
+  rotateStationPassword,
+} from '@/lib/api/endpoints';
+import { ConfirmDialog } from '@/components/data/confirm-dialog';
+import { Trash2 } from 'lucide-react';
 import { queryKeys } from '@/lib/query/keys';
 import { useApiToast } from '@/lib/hooks/use-api-toast';
 import type { PlatformStation } from '@/lib/api/types';
@@ -143,9 +151,13 @@ function CredentialPanel({
 function StationRow({
   station,
   onRotated,
+  onDelete,
+  deleting,
 }: {
   station: PlatformStation;
   onRotated: (jobId: string, account: string, host: string, port: number, folder: string) => void;
+  onDelete: (station: PlatformStation) => void;
+  deleting: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   return (
@@ -186,6 +198,16 @@ function StationRow({
         ) : (
           <StatusBadge tone="warn" label="Waiting for the agent" />
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground hover:text-status-error"
+          disabled={deleting}
+          onClick={() => onDelete(station)}
+          aria-label={`Delete ${station.folderPath}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </li>
   );
@@ -232,6 +254,25 @@ export function StationsDialog({
     // is seconds away — so this refreshes rather than needing a manual reload.
     refetchInterval: (query) =>
       (query.state.data ?? []).some((s) => !s.isActive && s.status !== 'failed') ? 5_000 : false,
+  });
+
+  const [pendingDelete, setPendingDelete] = useState<PlatformStation | null>(null);
+
+  /**
+   * Deleting a station deletes the DEVICE, which is what owns the readings and
+   * what the backend uses to disable the SFTP login. The station-account mapping
+   * is deactivated as part of that, so there is no separate call.
+   */
+  const remove = useMutation({
+    mutationFn: (s: PlatformStation) => deleteDevice(s.deviceId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.stations(organizationId) });
+      qc.invalidateQueries({ queryKey: queryKeys.platformOverview });
+      qc.invalidateQueries({ queryKey: ['devices'] });
+      toast.success('Station deleted');
+      setPendingDelete(null);
+    },
+    onError: () => toast.error("Couldn't delete this station"),
   });
 
   const provision = useMutation({
@@ -337,10 +378,40 @@ export function StationsDialog({
                 onRotated={(jobId, account, host, port, folder) =>
                   setSecretJob({ jobId, account, host, port, folder })
                 }
+                onDelete={setPendingDelete}
+                deleting={remove.isPending}
               />
             ))}
           </ul>
         )}
+
+        {/* Same warning as the station's own page — the consequences do not
+            change because a platform administrator is the one doing it. */}
+        <ConfirmDialog
+          open={Boolean(pendingDelete)}
+          onOpenChange={(o) => !o && setPendingDelete(null)}
+          title={pendingDelete ? `Delete ${pendingDelete.folderPath}?` : 'Delete station?'}
+          description={
+            <>
+              <span className="block font-medium text-foreground">This cannot be undone.</span>
+              <span className="mt-2 block">
+                The SFTP login for this station will be <strong>disabled</strong>, so its logger can no longer
+                upload. Anything it sends from now on will <strong>not</strong> be collected.
+              </span>
+              <span className="mt-2 block">
+                All of its readings, records and daily summaries are <strong>permanently deleted</strong>.
+              </span>
+              <span className="mt-2 block">
+                Files already on the SFTP server are <strong>kept</strong> — nothing stored there is removed.
+              </span>
+            </>
+          }
+          confirmLabel="Delete station"
+          destructive
+          onConfirm={() => {
+            if (pendingDelete) remove.mutate(pendingDelete);
+          }}
+        />
 
         <div className="grid gap-2 border-t pt-4">
           <Label htmlFor="tower-name">New station</Label>

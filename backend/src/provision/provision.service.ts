@@ -216,6 +216,7 @@ export class ProvisionService {
       case 'disableIngestAgent':
       case 'rotateStationPassword':
       case 'disableStationAccount':
+      case 'enableStationAccount':
       case 'reportStationUsage': {
         const account = str('account');
         assertValidAccountName(account);

@@ -19,6 +19,9 @@ export type ProvisioningJobType =
   | 'createStationAccount'
   | 'rotateStationPassword'
   | 'disableStationAccount'
+  // The inverse of disable — see the agent's provision.sh. Disable both LOCKS
+  // the password and EXPIRES the account, and only this clears the expiry.
+  | 'enableStationAccount'
   | 'createStationFolder'
   | 'reportStationUsage'
   | 'enableIngestAgent'
@@ -70,6 +73,7 @@ const provisioningJobSchema = new Schema<IProvisioningJob>(
       required: true,
       enum: [
         'createStationAccount',
+        'enableStationAccount',
         'rotateStationPassword',
         'disableStationAccount',
         'createStationFolder',

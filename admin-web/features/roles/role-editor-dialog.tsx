@@ -23,10 +23,21 @@ export function RoleEditorDialog({
   role,
   open,
   onOpenChange,
+  readOnly = false,
 }: {
   role?: RoleRow;
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  /**
+   * Show the role without offering to change it.
+   *
+   * Customers hold `role:write` now, so the Edit button alone no longer says
+   * whether a save would be accepted: the built-in and shared roles belong to
+   * the platform and the server refuses to change them. Rather than hide those
+   * roles' detail — an admin needs to see exactly what Viewer grants — the same
+   * dialog opens with its inputs disabled and no Save.
+   */
+  readOnly?: boolean;
 }) {
   const isEdit = Boolean(role);
   const toast = useApiToast();
@@ -82,18 +93,30 @@ export function RoleEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit ${role?.name}` : 'New role'}</DialogTitle>
+          <DialogTitle>
+            {readOnly ? role?.name : isEdit ? `Edit ${role?.name}` : 'New role'}
+          </DialogTitle>
           <DialogDescription>
-            {role?.isSystem
-              ? 'This is a shared role — every organisation uses it, so a change here affects them all. Its internal key cannot change.'
-              : 'Choose what people with this role are allowed to do.'}
+            {readOnly
+              ? role?.isSystem
+                ? 'A built-in role, managed by the platform administrator. Shown here so you can see exactly what it allows.'
+                : 'A shared role, managed by the platform administrator. Shown here so you can see exactly what it allows.'
+              : role?.isSystem
+                ? 'This is a shared role — every organisation uses it, so a change here affects them all. Its internal key cannot change.'
+                : 'Choose what people with this role are allowed to do.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="role-name">Name</Label>
-            <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Site Supervisor" />
+            <Input
+              id="role-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Site Supervisor"
+              disabled={readOnly}
+            />
           </div>
 
           <div className="grid gap-2">
@@ -103,10 +126,11 @@ export function RoleEditorDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this role is for"
+              disabled={readOnly}
             />
           </div>
 
-          {role?.isSystem ? null : (
+          {role?.isSystem || readOnly ? null : (
             <div className="grid gap-2">
               <Label htmlFor="role-base">Legacy role</Label>
               <Select value={baseRole} onValueChange={(v) => setBaseRole(v as Role)}>
@@ -141,13 +165,15 @@ export function RoleEditorDialog({
                 <fieldset key={g.group} className="rounded-md border p-3">
                   <legend className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {g.group}
-                    <button
-                      type="button"
-                      className="text-[11px] font-normal normal-case text-primary underline-offset-2 hover:underline"
-                      onClick={() => toggleGroup(keys, !allOn)}
-                    >
-                      {allOn ? 'clear' : 'select all'}
-                    </button>
+                    {readOnly ? null : (
+                      <button
+                        type="button"
+                        className="text-[11px] font-normal normal-case text-primary underline-offset-2 hover:underline"
+                        onClick={() => toggleGroup(keys, !allOn)}
+                      >
+                        {allOn ? 'clear' : 'select all'}
+                      </button>
+                    )}
                   </legend>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     {g.permissions.map((p) => (
@@ -156,6 +182,7 @@ export function RoleEditorDialog({
                           checked={selected.includes(p.key)}
                           onCheckedChange={() => toggle(p.key)}
                           aria-label={p.label}
+                          disabled={readOnly}
                         />
                         <span>
                           {p.label}
@@ -180,11 +207,15 @@ export function RoleEditorDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-            Cancel
+            {readOnly ? 'Close' : 'Cancel'}
           </Button>
-          <Button onClick={submit} disabled={pending}>
-            {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Create role'}
-          </Button>
+          {/* No Save at all in read-only — a disabled one still suggests the
+              change is possible for somebody in this dialog, and it is not. */}
+          {readOnly ? null : (
+            <Button onClick={submit} disabled={pending}>
+              {pending ? 'Saving…' : isEdit ? 'Save changes' : 'Create role'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -184,6 +184,16 @@ ENVEOF
     printf '{"ok":true,"account":"%s","locked":true}\n' "$account"
     ;;
 
+  enableStationAccount)
+    id -u "$account" >/dev/null 2>&1 || die "no such account"
+    # The exact inverse of disable, and BOTH halves are needed. `--unlock` alone
+    # leaves `--expiredate 1` in place and every login is still refused; clearing
+    # the expiry alone leaves the password hash locked. An empty --expiredate is
+    # how usermod spells "never expires".
+    usermod --unlock --expiredate '' "$account"
+    printf '{"ok":true,"account":"%s","locked":false}\n' "$account"
+    ;;
+
   reportStationUsage)
     id -u "$account" >/dev/null 2>&1 || die "no such account"
     # READ ONLY. Deliberately not a quota: uploads are retained permanently by

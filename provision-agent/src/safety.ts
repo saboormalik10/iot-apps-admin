@@ -39,6 +39,11 @@ export const KNOWN_JOB_TYPES = [
   'createStationAccount',
   'rotateStationPassword',
   'disableStationAccount',
+  // The inverse of disable. `disableStationAccount` both LOCKS the password and
+  // EXPIRES the account; a password rotation replaces the hash and so clears the
+  // lock, but nothing clears the expiry — so without this a restored station
+  // stayed unusable while the portal reported it restored.
+  'enableStationAccount',
   'createStationFolder',
   'reportStationUsage',
   // Installs or removes a customer's own ingest agent. One agent per customer,
