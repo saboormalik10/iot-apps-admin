@@ -41,6 +41,19 @@ export interface IMetMeasure extends Document {
   phoneLng: number | null;
   /** Where the row came from. Scopes the 30-day TTL to SFTP data only (M14). */
   source: 'sftp' | 'mobile' | null;
+  /**
+   * QC codes for the fields this row FAILED (WMO-No. 8 Part IV) — see ingest/qc.ts.
+   *
+   * Absent on a good reading, which is almost every reading, so it costs nothing
+   * at the 15 MB/day this collection already writes. Present means at least one
+   * field was nulled; `dataSentence` still holds the original CSV line verbatim,
+   * so the rejected value is recoverable and the decision is auditable.
+   *
+   * Nothing needs to filter on it. The failed field was nulled, and `$avg`,
+   * `$min` and `$max` skip null and missing alike — so every existing aggregate
+   * already excludes bad data without a query change.
+   */
+  qc?: string[];
   createdAt: Date;
 }
 
@@ -70,6 +83,10 @@ const metMeasureSchema = new Schema<IMetMeasure>(
      * it, so the key has to exist or rows would never expire.
      */
     source: { type: String, enum: ['sftp', 'mobile', null], default: null },
+    // No default, for the same reason the sensor fields have none: writing an
+    // empty array on every clean row would add a key to 86,400 documents a day
+    // to say nothing.
+    qc: { type: [String] },
     windSpeedMs: { type: Number },
     windSpeedKmh: { type: Number },
     windSpeedKnots: { type: Number },

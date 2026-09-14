@@ -118,3 +118,37 @@ describe('mergeMeasureRows', () => {
     expect(mergeMeasureRows([])).toEqual([]);
   });
 });
+
+describe('mergeMeasureRows — QC flags', () => {
+  it('carries both rows’ QC codes onto the merged line', () => {
+    // Folding the environmental reading into the wind row must not drop the
+    // explanation for why its temperature cell is blank.
+    const out = mergeMeasureRows([
+      row({ timestampMs: 1000, windSpeedMs: 2, windDirTrueDeg: 50, qc: ['status:V'] }),
+      row({ timestampMs: 1000, tempC: 18.8, qc: ['range:humidityPct'] }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].qc).toEqual(['status:V', 'range:humidityPct']);
+  });
+
+  it('still folds a minute whose environmental values were ALL rejected', () => {
+    /**
+     * QC nulls the field it rejects, so a fully-rejected environmental row has
+     * no values at all. Judged on values alone it is neither wind nor
+     * environmental, and it settles on its own blank line — an unexplained gap
+     * in the table. The QC codes are the evidence of what it was.
+     */
+    const out = mergeMeasureRows([
+      row({ timestampMs: 1000, windSpeedMs: 2, windDirTrueDeg: 50 }),
+      row({ timestampMs: 1400, qc: ['range:tempC', 'range:humidityPct'] }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].windSpeedMs).toBe(2);
+    expect(out[0].qc).toEqual(['range:tempC', 'range:humidityPct']);
+  });
+
+  it('leaves a clean pair without a qc key', () => {
+    const out = mergeMeasureRows([wind(1000, 2.0), env(1000)]);
+    expect(out[0].qc).toBeUndefined();
+  });
+});

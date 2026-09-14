@@ -39,6 +39,8 @@ export interface IMetIngestFile extends Document {
   /** Local day keys this file touched, so the rollup knows what to recompute. */
   dayKeys: string[];
   truncated: boolean;
+  /** Rows in this file with at least one field rejected by QC (ingest/qc.ts). */
+  qcFlagged: number;
   reason: string | null;
   agentVersion: string | null;
   receivedAt: Date;
@@ -59,6 +61,7 @@ const metIngestFileSchema = new Schema<IMetIngestFile>(
     lastTsMs: { type: Number, default: null },
     dayKeys: { type: [String], default: [] },
     truncated: { type: Boolean, default: false },
+    qcFlagged: { type: Number, default: 0 },
     reason: { type: String, default: null },
     agentVersion: { type: String, default: null },
     receivedAt: { type: Date, required: true, default: Date.now },

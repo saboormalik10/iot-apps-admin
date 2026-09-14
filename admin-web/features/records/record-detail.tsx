@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ArrowLeft, Paperclip } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Paperclip } from 'lucide-react';
 import type { MetMeasureRow } from '@/lib/api/types';
 import { recordCsvHref } from '@/lib/api/endpoints';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
@@ -22,6 +22,7 @@ import { ShareButton } from '@/features/share/share-button';
 import { useOrg } from '@/features/org/use-org';
 import { useRecord, useRecordMeasures } from './use-records';
 import { mergeMeasureRows } from './merge-measure-rows';
+import { describeQc } from './describe-qc';
 
 const VIZ_LIMIT = 2000; // cap the series/map/stats fetch; the table paginates separately
 const TABLE_LIMIT = 100;
@@ -87,6 +88,29 @@ export function RecordDetail({ id }: { id: string }) {
       { header: `Wind ${units.unitFor('m/s')}`, cell: ({ row }) => units.format(row.original.windSpeedMs, 'm/s') },
       { header: 'Dir °', cell: ({ row }) => fmt(row.original.windDirTrueDeg, 0) },
       { header: `Dew ${units.unitFor('°C')}`, cell: ({ row }) => units.format(row.original.dewPointC, '°C') },
+      {
+        header: 'QC',
+        /**
+         * Why a cell above is blank.
+         *
+         * A reading that failed QC is stored with that field nulled, so without
+         * this column the table shows a gap and gives no reason for it — which
+         * looks identical to a sensor that simply was not reporting. The icon
+         * carries a text label for screen readers and the full explanation in
+         * its tooltip; it is never colour alone.
+         */
+        cell: ({ row }) => {
+          const reason = describeQc(row.original.qc);
+          if (!reason) return null;
+          return (
+            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500" title={reason}>
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="sr-only">{reason}</span>
+              <span aria-hidden className="text-xs">Flagged</span>
+            </span>
+          );
+        },
+      },
     ],
     // `units` matters now: without it the headers and cells would keep the units
     // that were in force when the table first mounted.

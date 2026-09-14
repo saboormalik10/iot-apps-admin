@@ -575,6 +575,14 @@ export interface MetMeasureRow {
   gpsHorDilution: number | null;
   gpsGeoidalSepM: number | null;
   gpsQuality: number | null;
+  /**
+   * QC codes for the fields this reading FAILED (WMO-No. 8 Part IV).
+   *
+   * Absent on a good reading. Present means those fields were nulled at ingest
+   * and are excluded from every average, gust and rollup — the raw CSV line is
+   * still in `dataSentence`, so nothing was thrown away.
+   */
+  qc?: string[];
 }
 
 /** GET /analytics/met/daily-summary (§10.7). */

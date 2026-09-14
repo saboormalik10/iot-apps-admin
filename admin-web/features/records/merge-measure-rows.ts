@@ -34,7 +34,20 @@ import type { MetMeasureRow } from '@/lib/api/types';
 /** The fields that only ever arrive on an environmental row. */
 const ENV_FIELDS = ['tempC', 'humidityPct', 'pressureHpa', 'dewPointC'] as const;
 
-const hasEnvironmental = (r: MetMeasureRow) => ENV_FIELDS.some((f) => r[f] != null);
+/**
+ * A row counts as environmental if it CARRIES an environmental value — or if QC
+ * rejected one.
+ *
+ * Without the second half, a minute whose temperature failed QC has every
+ * environmental field null, so it reads as neither wind nor environmental and
+ * settles on its own blank line in the table. Treating the rejection as
+ * evidence of what the row was keeps it folded into its wind row, where the QC
+ * badge explains the gap instead of leaving an unexplained empty line.
+ */
+const ENV_QC_CODE = /:(tempC|humidityPct|pressureHpa|dewPointC)/;
+
+const hasEnvironmental = (r: MetMeasureRow) =>
+  ENV_FIELDS.some((f) => r[f] != null) || (r.qc?.some((c) => ENV_QC_CODE.test(c)) ?? false);
 const hasWind = (r: MetMeasureRow) => r.windSpeedMs != null || r.windDirTrueDeg != null || r.windDirRelDeg != null;
 
 /** The clock minute a reading belongs to. */
@@ -81,6 +94,9 @@ export function mergeMeasureRows(rows: readonly MetMeasureRow[]): MetMeasureRow[
       humidityPct: r.humidityPct,
       pressureHpa: r.pressureHpa,
       dewPointC: r.dewPointC,
+      // Both rows' codes travel with the merged line, or folding an environmental
+      // reading into a wind row would hide the reason its values are missing.
+      qc: target.qc || r.qc ? [...(target.qc ?? []), ...(r.qc ?? [])] : undefined,
     });
   }
 

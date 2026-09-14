@@ -88,6 +88,8 @@ export interface IngestFileResult {
   reason?: string;
   dayKeys?: string[];
   truncated?: boolean;
+  /** Rows with at least one field rejected by QC. Reported, never silent. */
+  qcFlagged?: number;
   warnings?: number;
   sensorsSeen?: string[];
   /** Unit code the sensor reported for wind speed in this file, e.g. `K`. */

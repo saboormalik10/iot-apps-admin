@@ -95,11 +95,30 @@ describe('environmental CSV parser', () => {
 
   it('drops a truncated final row unless the file is known complete', () => {
     const whole = 'timestamp,temperature_C\r\n2026-09-08T19:00:00+10:00,10.00\r\n';
-    const cut = whole + '2026-09-08T19:00:01+10:00,99.0'; // no terminator
+    const cut = whole + '2026-09-08T19:00:01+10:00,12.00'; // no terminator
     // The station's uploader cuts mid-write, so the partial row must not count.
     expect(parseEnvironmentalCsv(cut).rows[0].tempC).toBe(10);
     // An admin upload has no such risk.
-    expect(parseEnvironmentalCsv(cut, { assumeComplete: true }).rows[0].tempC).toBe(54.5);
+    expect(parseEnvironmentalCsv(cut, { assumeComplete: true }).rows[0].tempC).toBe(11);
+  });
+
+  it('drops an impossible sample BEFORE it reaches the minute average', () => {
+    /**
+     * The minute is averaged in the parser, so QC on the emitted row is already
+     * too late: one impossible sample among the rest moves the mean far enough
+     * to corrupt the reading without necessarily pushing it out of range itself.
+     *
+     * 99 °C is the case — the highest air temperature ever recorded on Earth is
+     * 56.7 °C, so no thermometer in a screen reports this.
+     */
+    const out = parseEnvironmentalCsv(
+      'timestamp,temperature_C\r\n' +
+        '2026-09-08T19:00:00+10:00,10.00\r\n' +
+        '2026-09-08T19:00:01+10:00,99.00\r\n' +
+        '2026-09-08T19:00:02+10:00,10.00\r\n',
+    );
+    expect(out.rows[0].tempC).toBe(10);
+    expect(out.warnings.some((w) => w.code === 'QC_RANGE' && w.detail.includes('99'))).toBe(true);
   });
 
   it('rejects a timestamp outside the sanity band', () => {

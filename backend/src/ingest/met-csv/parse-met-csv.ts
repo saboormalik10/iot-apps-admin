@@ -55,6 +55,15 @@ export interface ParsedMetRow {
   gpsLng: number | null;
   /** NMEA validity flag: 'A' = valid, 'V' = void. Anything else is passed through. */
   status: string | null;
+  /**
+   * QC codes, set by `applyQc` AFTER parsing — never by the parser itself.
+   *
+   * Absent on a good reading, which is the overwhelming majority, so it costs
+   * nothing to store. Present means at least one field on this row failed a
+   * check and was nulled; the raw line in `dataSentence` still holds the
+   * original value.
+   */
+  qc?: string[];
 }
 
 export interface ParseWarning {
@@ -65,7 +74,9 @@ export interface ParseWarning {
     | 'BAD_TIMESTAMP'
     | 'TIMESTAMP_OUT_OF_RANGE'
     | 'UNKNOWN_UNIT_CODE'
-    | 'NON_NUMERIC';
+    | 'NON_NUMERIC'
+    /** A sample outside the gross-error range, dropped before averaging. */
+    | 'QC_RANGE';
   detail: string;
 }
 

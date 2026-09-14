@@ -9,6 +9,7 @@ import { Device } from '../models/Device';
 import { Organization } from '../models/Organization';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
+import { applyQc, type QcState } from './qc';
 import { MetIngestFile } from '../models/MetIngestFile';
 import { ParsedMetRow } from './met-csv/parse-met-csv';
 import { getStreamParser } from './registry';
@@ -57,6 +58,10 @@ interface ResolvedStation {
   /** Stream types this station is currently not permitted to ingest. */
   disabledStreamTypes: string[];
 }
+
+/** How long a station's QC tail stays useful, and how many stations to hold. */
+const QC_STATE_TTL_MS = 6 * 60 * 60_000;
+const QC_STATE_MAX_ENTRIES = 500;
 
 @Injectable()
 export class IngestService {
@@ -227,6 +232,36 @@ export class IngestService {
     return ((relDeg + offsetDeg) % 360 + 360) % 360;
   }
 
+  /**
+   * The QC tail per station+stream, so the continuity checks survive a file
+   * boundary.
+   *
+   * In memory, and deliberately not in the database: it is a cache, not a
+   * record. Losing it on a restart costs one missed step comparison on the next
+   * file and nothing else, which is not worth a write on the ingest hot path —
+   * the alternative is an extra indexed read per file, every minute, per station.
+   *
+   * The TTL bounds the map in a long-lived process and drops stations that have
+   * gone quiet. An entry older than the gap the checks tolerate is worthless
+   * anyway, because `applyQc` refuses to compare across a gap that wide.
+   */
+  private readonly qcStates = new Map<string, { state: QcState; expiresAt: number }>();
+
+  private qcStateFor(key: string): QcState {
+    const hit = this.qcStates.get(key);
+    return hit && hit.expiresAt > Date.now() ? hit.state : {};
+  }
+
+  private rememberQcState(key: string, state: QcState): void {
+    const now = Date.now();
+    this.qcStates.set(key, { state, expiresAt: now + QC_STATE_TTL_MS });
+    // Evict lazily on write; a sweep timer would be a second thing to shut down
+    // cleanly in tests for no benefit at this size.
+    if (this.qcStates.size > QC_STATE_MAX_ENTRIES) {
+      for (const [k, v] of this.qcStates) if (v.expiresAt <= now) this.qcStates.delete(k);
+    }
+  }
+
   private toMeasureDocs(
     rows: ParsedMetRow[],
     recordId: Types.ObjectId,
@@ -274,6 +309,9 @@ export class IngestService {
       voltageV: r.voltageV,
       gpsLat: r.gpsLat,
       gpsLng: r.gpsLng,
+      // `?? null` so a clean row's key is dropped by omitNulls below rather than
+      // stored as an empty array on every one of the day's 86,400 documents.
+      qc: r.qc ?? null,
     }));
   }
 
@@ -339,6 +377,16 @@ export class IngestService {
       duplicateOf: already ? { filename: already.filename, receivedAt: already.receivedAt, rows: already.rows } : null,
       rowsWouldInsert: already ? 0 : parsed.rows.length,
       rowsParsed: parsed.rows.length,
+      /**
+       * What QC would reject, so the preview can say it before anything is
+       * written. Run from an EMPTY state and not remembered: a dry run must not
+       * move the live station's continuity tail, or previewing a file twice
+       * would change what the real ingest later decides.
+       */
+      qc: (() => {
+        const { flaggedRows, counts } = applyQc(parsed.rows);
+        return { flaggedRows, counts };
+      })(),
       sensorsSeen: parsed.sensorsSeen,
       unitCode: parsed.unitCode,
       firstTsMs: parsed.stats.firstTsMs,
@@ -646,11 +694,30 @@ export class IngestService {
       return { name: file.name, status: 'rejected', reason: parsed.rejectReason ?? 'NO_VALID_ROWS' };
     }
 
+    // ── Quality control (WMO-No. 8 Part IV) ────────────────────────────────
+    // Applied here rather than inside a parser so that EVERY stream type gets
+    // the same checks — including ones added to the registry later, which would
+    // otherwise each have to remember to run them.
+    //
+    // The state carries the tail of the previous file for this station and
+    // stream, which is what lets the step and persistence checks see across a
+    // file boundary. The environmental stream writes ONE row per file, so
+    // without it neither check could ever fire on temperature, humidity or
+    // pressure.
+    const qcKey = `${station.deviceId}:${streamType}`;
+    const qc = applyQc(parsed.rows, this.qcStateFor(qcKey));
+    this.rememberQcState(qcKey, qc.state);
+    if (qc.flaggedRows > 0) {
+      this.logger.warn(
+        `QC flagged ${qc.flaggedRows}/${parsed.rows.length} rows in ${file.name}: ${JSON.stringify(qc.counts)}`,
+      );
+    }
+
     // ── Group by LOCAL day ─────────────────────────────────────────────────
     // A file normally covers one minute, but a catch-up batch or a file spanning
     // local midnight can touch two days. Grouping here keeps one record per day.
     const byDay = new Map<string, ParsedMetRow[]>();
-    for (const row of parsed.rows) {
+    for (const row of qc.rows) {
       const key = localDayKey(row.timestampMs, station.timezone);
       const bucket = byDay.get(key);
       if (bucket) bucket.push(row);
@@ -708,6 +775,7 @@ export class IngestService {
           lastTsMs: parsed.stats.lastTsMs,
           dayKeys: [...byDay.keys()],
           truncated: parsed.stats.truncatedTail,
+          qcFlagged: qc.flaggedRows,
           completedAt: new Date(),
         },
       },
@@ -720,6 +788,7 @@ export class IngestService {
       skipped: parsed.stats.skipped,
       dayKeys: [...byDay.keys()],
       truncated: parsed.stats.truncatedTail,
+      qcFlagged: qc.flaggedRows,
       warnings: parsed.warnings.length,
       sensorsSeen: parsed.sensorsSeen,
       speedUnitCode: parsed.unitCode,

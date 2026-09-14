@@ -3,6 +3,7 @@ import { splitCsvLine, type ParsedMetFile, type ParsedMetRow, type ParseWarning 
 import { type ParseOptions } from '../registry/stream-parser';
 import { specForEnvHeader, type EnvField } from './columns';
 import { dewPointC } from './dew-point';
+import { withinGrossRange } from '../qc';
 
 /**
  * Parser for the station's environmental stream — temperature, humidity,
@@ -143,9 +144,25 @@ export function parseEnvironmentalCsv(text: string, opts: ParseOptions = {}): Pa
     }
     lastTsMs = tsMs;
 
-    const t = num(picked.get('tempC'));
-    const h = num(picked.get('humidityPct'));
-    const p = num(picked.get('pressureHpa'));
+    /**
+     * Gross-range QC runs on the SAMPLE, before it reaches the mean.
+     *
+     * `applyQc` checks the emitted row, but by then the minute has already been
+     * averaged — and one impossible sample among the ~48 in a file moves the
+     * mean far enough to corrupt the reading without necessarily pushing it out
+     * of range itself. So the impossible sample is dropped here and the minute
+     * is averaged from what is left.
+     */
+    const keep = (field: 'tempC' | 'humidityPct' | 'pressureHpa', v: number | null): number | null => {
+      if (v === null) return null;
+      if (withinGrossRange(field, v)) return v;
+      warn(lineNo, 'QC_RANGE', `${field}=${v} outside the gross-error range`);
+      return null;
+    };
+
+    const t = keep('tempC', num(picked.get('tempC')));
+    const h = keep('humidityPct', num(picked.get('humidityPct')));
+    const p = keep('pressureHpa', num(picked.get('pressureHpa')));
     if (t !== null) temps.push(t);
     if (h !== null) humidities.push(h);
     if (p !== null) pressures.push(p);
