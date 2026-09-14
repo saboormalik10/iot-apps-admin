@@ -1,18 +1,17 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Cpu, Waves } from 'lucide-react'; // Plus ← "Add station" disabled
-import type { Device, PlatformDevice } from '@/lib/api/types';
+import type { Device } from '@/lib/api/types';
 import { useScope } from '@/lib/hooks/use-scope';
 import { DataTable } from '@/components/data/data-table';
 import { StatusBadge } from '@/components/charts/status-badge';
 import { Meter } from '@/components/charts/meter';
 import { formatRelative } from '@/lib/time';
-import { useDevices, usePlatformDevices, useDeviceCustomers } from './use-devices';
+import { useDevices, usePlatformStationCount } from './use-devices';
 import { useRbac } from '@/lib/rbac/context';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 /**
  * Stations list (plan §Month 8) — the fleet table, filtered by the global Scope Bar
@@ -26,35 +25,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
  * built for NEP-LINK probes, which pair over BLE and could report their own
  * version; the deployment has none. Same call as the device settings page.
  *
- * TWO SOURCES, one table.
+ * ONE SOURCE, one table: `GET /devices`, always scoped to the organisation the
+ * navbar dropdown currently selects — for a platform administrator too.
  *
- * `GET /devices` is hard-scoped to a single organisation and stays that way: a
- * tenant-scoped list widened on a role check is how cross-tenant leaks happen.
- * A platform administrator therefore reads a SEPARATE endpoint behind
- * `SuperAdminGuard`, which carries the owning customer on every row and can be
- * filtered by customer.
+ * It used to have a second mode. An unswitched super admin got a cross-customer
+ * list with its OWN "Customer" filter, which meant two controls chose the
+ * organisation and they disagreed: the navbar said one customer, the in-page
+ * filter said "All customers", and the table obeyed the filter. Clicking any row
+ * belonging to a different customer then opened `/devices/<id>`, which — like
+ * every device route — is scoped to the ACTING organisation, so it answered
+ * "Device not found" for a station the page had just listed.
  *
- * A super admin who has SWITCHED into a customer uses the ordinary scoped list —
- * they are acting as that customer, and showing them every tenant's stations
- * under a customer's banner would contradict the "acting as" model entirely.
+ * Fixing the detail route alone would not have been enough: that page's health,
+ * readings and realtime subscription are each independently scoped, so it would
+ * have loaded a header over empty panels. Making the list obey the one control
+ * that actually changes tenancy removes the contradiction instead of papering
+ * over it — a row you can see is now always a row you can open.
+ *
+ * The platform-wide total is still shown, so the fleet size is not lost; only
+ * the listing narrowed.
  */
 export function DevicesList() {
   const router = useRouter();
   const { scope } = useScope();
-  const { isSuperAdmin, user } = useRbac();
+  const { isSuperAdmin } = useRbac();
   const [page, setPage] = useState(1);
-  const [customerId, setCustomerId] = useState<string>('all');
 
-  const platformView = isSuperAdmin && !user?.homeOrganizationId;
+  // Page number is meaningless across a different filter: staying on page 3 of a
+  // result set that now has one page shows an empty table, which reads as "this
+  // customer has no stations" rather than "you are past the end".
+  useEffect(() => {
+    setPage(1);
+  }, [scope.deviceType]);
 
-  const scoped = useDevices({ type: scope.deviceType, page, limit: 20 });
-  const platform = usePlatformDevices(
-    { type: scope.deviceType, page, organizationId: customerId === 'all' ? undefined : customerId },
-    platformView,
-  );
-  const { data: customers } = useDeviceCustomers(platformView);
+  const { data, isLoading, isError, refetch } = useDevices({ type: scope.deviceType, page, limit: 20 });
 
-  const { data, isLoading, isError, refetch } = platformView ? platform : scoped;
+  // Platform-wide total, for a super admin only. A count, not a listing — it says
+  // how big the fleet is without putting another customer's rows on this screen.
+  const fleetTotal = usePlatformStationCount(isSuperAdmin);
 
   const columns = useMemo<ColumnDef<Device, unknown>[]>(
     () => [
@@ -70,18 +78,6 @@ export function DevicesList() {
           );
         },
       },
-      ...(platformView
-        ? [
-            {
-              header: 'Customer',
-              cell: ({ row }: { row: { original: Device } }) => (
-                <span className="text-muted-foreground">
-                  {(row.original as PlatformDevice).organizationName}
-                </span>
-              ),
-            },
-          ]
-        : []),
       { header: 'Type', cell: ({ row }) => row.original.type },
       {
         header: 'Status',
@@ -101,7 +97,7 @@ export function DevicesList() {
         cell: ({ row }) => <div className="w-28"><Meter value={row.original.lastBatteryPct} label="Battery" /></div>,
       },
     ],
-    [platformView],
+    [],
   );
 
   return (
@@ -109,33 +105,14 @@ export function DevicesList() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Stations</h1>
 
-        {platformView ? (
-          <div className="flex items-center gap-2">
-            <label htmlFor="customer-filter" className="text-sm text-muted-foreground">
-              Customer
-            </label>
-            <Select
-              value={customerId}
-              onValueChange={(v) => {
-                setCustomerId(v);
-                // Page 1: staying on page 3 of a filter that now has one page shows
-                // an empty table and reads as "this customer has no stations".
-                setPage(1);
-              }}
-            >
-              <SelectTrigger id="customer-filter" className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All customers</SelectItem>
-                {(customers ?? []).map((c) => (
-                  <SelectItem key={c._id} value={c._id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* The navbar customer dropdown is the ONLY control that chooses the
+            organisation. A second one here is what made the table disagree with
+            the rest of the portal. */}
+        {isSuperAdmin && fleetTotal !== null ? (
+          <p className="text-sm text-muted-foreground">
+            Showing this customer&rsquo;s stations ·{' '}
+            <span className="font-medium text-foreground">{fleetTotal}</span> across all customers
+          </p>
         ) : null}
 
         {/* "Add station" removed — the Button/Can/AddDeviceDialog imports went with

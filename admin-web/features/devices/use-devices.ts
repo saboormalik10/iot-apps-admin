@@ -70,12 +70,15 @@ export function useDeleteDevice() {
  * The stations list, widened across customers for a platform administrator.
  *
  * `enabled` is the caller's decision rather than this hook's: only a super admin
- * who is NOT switched into a customer should see every tenant's stations. Once
- * switched they are acting AS that customer, and the ordinary tenant-scoped list
- * is the correct answer.
+ * may read it at all — the endpoint sits behind `SuperAdminGuard`.
+ *
+ * NOT used to populate the Stations table any more. That table follows the
+ * navbar customer dropdown like every other screen, because a listing that
+ * spanned customers produced rows whose detail page then refused to open. See
+ * the note in `devices-list.tsx`.
  */
 export function usePlatformDevices(
-  params: { organizationId?: string; type?: string; page?: number },
+  params: { organizationId?: string; type?: string; page?: number; limit?: number },
   enabled: boolean,
 ) {
   return useQuery({
@@ -83,6 +86,19 @@ export function usePlatformDevices(
     queryFn: ({ signal }) => listPlatformDevices(params, signal),
     enabled,
   });
+}
+
+/**
+ * How many stations exist across every customer.
+ *
+ * Asks for a single row and reads `total` off the pagination meta — the count is
+ * the whole point, so fetching a page of rows to discard them would be waste.
+ * Returns null until it is known, so a caller can render nothing rather than a
+ * flickering zero.
+ */
+export function usePlatformStationCount(enabled: boolean): number | null {
+  const { data } = usePlatformDevices({ page: 1, limit: 1 }, enabled);
+  return data?.total ?? null;
 }
 
 /** Customers that own at least one station — the filter's options. */
