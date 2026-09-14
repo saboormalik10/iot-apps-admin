@@ -41,6 +41,7 @@ import type {
   MetRecordRow,
   MetStatistics,
   MetWindGust,
+  MetMeanWind,
   MetWindRoseAgg,
   MetWindrose,
   NepCorrelation,
@@ -342,6 +343,8 @@ export const getMetStatistics = (w: AnalyticsWindow, sensor: string, signal?: Ab
 
 // getRaw (NOT get) for the three below: their payloads carry a top-level `data`
 // array that the `{ data }`-envelope unwrapper in http.get would wrongly strip.
+export const getMetMeanWind = (w: AnalyticsWindow, signal?: AbortSignal) =>
+  http.getRaw<MetMeanWind>(`/analytics/met/mean-wind?${analyticsQs(w)}`, signal);
 export const getMetWindGust = (w: AnalyticsWindow, interval?: string, signal?: AbortSignal) =>
   http.getRaw<MetWindGust>(`/analytics/met/wind-gust-history?${analyticsQs(w, { interval })}`, signal);
 

@@ -8,6 +8,7 @@ import {
   getMetMultiSensor,
   getMetStatistics,
   getMetWindGust,
+  getMetMeanWind,
   getMetComfort,
   getMetFogRisk,
   getMetPressureTendency,
@@ -61,6 +62,16 @@ export function useMetWindGust(deviceId: string | undefined, interval: string) {
   return useQuery({
     queryKey: queryKeys.analytics.windGust(deviceId ?? '', interval, from, to),
     queryFn: ({ signal }) => getMetWindGust(win!, interval, signal),
+    enabled: Boolean(deviceId),
+  });
+}
+
+/** The WMO 10-minute mean wind — the standard reported quantity. */
+export function useMetMeanWind(deviceId: string | undefined) {
+  const { win, from, to } = useWindow(deviceId);
+  return useQuery({
+    queryKey: queryKeys.analytics.meanWind(deviceId ?? '', from, to),
+    queryFn: ({ signal }) => getMetMeanWind(win!, signal),
     enabled: Boolean(deviceId),
   });
 }

@@ -11,6 +11,7 @@ import { AnalyticsWindRose } from './charts/analytics-wind-rose';
 import { MultiSensorChart } from './charts/multi-sensor-chart';
 import { StatisticsPanel } from './charts/statistics-panel';
 import { WindGustChart } from './charts/wind-gust-chart';
+import { MeanWindChart } from './charts/mean-wind-chart';
 import { ComfortIndicesChart } from './charts/comfort-indices-chart';
 import { FogRiskChart } from './charts/fog-risk-chart';
 import { PressureTendencyWidget } from './charts/pressure-tendency-widget';
@@ -86,7 +87,11 @@ export function AnalyticsPage() {
 
       <MultiSensorChart deviceId={deviceId} />
 
+      {/* The pair a met station publishes: the sustained wind and the peak
+          within it. Side by side because they are only meaningful together —
+          a gust means little without the mean it rose from. */}
       <div className="grid gap-4 xl:grid-cols-2">
+        <MeanWindChart deviceId={deviceId} />
         <WindGustChart deviceId={deviceId} />
         {sensors.has('temperature') && sensors.has('humidity') ? <ComfortIndicesChart deviceId={deviceId} /> : null}
       </div>

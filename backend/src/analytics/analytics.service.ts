@@ -7,6 +7,7 @@ import { MetDailySummary } from '../models/MetDailySummary';
 import { NepSession } from '../models/NepSession';
 import { NepSample } from '../models/NepSample';
 import { fromCache, toCache, downsample } from '../utils/cache.util';
+import { WMO_GUST_WINDOW_MS, WMO_MEAN_WINDOW_MS } from './wmo';
 import {
   BEAUFORT,
   INTERVAL_MS,
@@ -749,12 +750,35 @@ export class AnalyticsService {
           windSpeedMs: { $ne: null },
         },
       },
+      /**
+       * WMO-No. 8 defines a gust as the peak 3-SECOND MEAN, not the peak
+       * instantaneous reading. The old version took `$max` of `windSpeedMs`,
+       * which is a different quantity: one noisy sample is enough to set it, so
+       * it reads high and cannot be compared against any station reporting to
+       * the standard.
+       *
+       * The window is by TIME (`range`), not by document count. The logger is
+       * nominally 1 Hz and not exactly — a real minute arrives at :00, :02,
+       * :03, :04 — so a document-count window would silently become 4 seconds
+       * whenever a second was skipped.
+       */
+      {
+        $setWindowFields: {
+          sortBy: { timestampMs: 1 },
+          output: {
+            gust3s: {
+              $avg: '$windSpeedMs',
+              window: { range: [-(WMO_GUST_WINDOW_MS - 1), 0] },
+            },
+          },
+        },
+      },
       {
         $group: {
           _id: { $multiply: [{ $floor: { $divide: ['$timestampMs', intervalMs] } }, intervalMs] },
           best: {
             $max: {
-              speed: '$windSpeedMs',
+              speed: '$gust3s',
               negTs: { $multiply: ['$timestampMs', -1] },
               dir: '$windDirTrueDeg',
             },
@@ -773,6 +797,115 @@ export class AnalyticsService {
     }));
 
     return toCache(key, { deviceId, interval, data });
+  }
+
+  // ── GET /analytics/met/mean-wind ──────────────────────────────────────────
+  /**
+   * The WMO standard reported wind: a 10-minute mean.
+   *
+   * We store every reading and average on demand, which is flexible but is not
+   * the quantity WMO-No. 8 defines as "the wind". A station reporting to the
+   * standard publishes a 10-minute mean, and anyone comparing our figures with
+   * theirs needs the same quantity.
+   *
+   * SPEED AND DIRECTION ARE AVERAGED DIFFERENTLY, and that is the whole point.
+   * Speed is a magnitude and averages arithmetically. Direction is an angle and
+   * does not: 350° and 10° are both nearly north, and their arithmetic mean is
+   * 180° — due south. So direction is vector-averaged — mean of the unit
+   * vectors, then `atan2` back to a bearing — done in the database with
+   * `$sin`/`$cos`/`$atan2` so a long window never has to be pulled into Node.
+   *
+   * `samples` is returned because a "10-minute mean" built from four readings
+   * is not one, and only the caller can decide whether that matters.
+   */
+  async metMeanWind(
+    orgId: string,
+    deviceId: string,
+    from?: string,
+    to?: string,
+    opts: CommonOpts = {},
+  ) {
+    if (!deviceId) throw new BadRequestException('deviceId is required');
+    const { fromMs, toMs } = this.parseWindow(from, to);
+    const key = `an:met:meanwind:${orgId}:${deviceId}:${fromMs}:${toMs}`;
+    const cached = fromCache(key);
+    if (cached) return cached;
+
+    const recordIds = await this.metRecordIds(new Types.ObjectId(orgId), deviceId, fromMs, toMs);
+    if (!recordIds.length) return toCache(key, { deviceId, windowMs: WMO_MEAN_WINDOW_MS, data: [] });
+
+    const rows = await MetMeasure.aggregate<{
+      _id: number;
+      speedMs: number | null;
+      sumSin: number;
+      sumCos: number;
+      dirCount: number;
+      samples: number;
+    }>([
+      {
+        $match: {
+          recordId: { $in: recordIds },
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+          windSpeedMs: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $multiply: [
+              { $floor: { $divide: ['$timestampMs', WMO_MEAN_WINDOW_MS] } },
+              WMO_MEAN_WINDOW_MS,
+            ],
+          },
+          speedMs: { $avg: '$windSpeedMs' },
+          samples: { $sum: 1 },
+          // Vector components, summed here and resolved below.
+          sumSin: {
+            $sum: {
+              $cond: [
+                { $eq: ['$windDirTrueDeg', null] },
+                0,
+                { $sin: { $degreesToRadians: '$windDirTrueDeg' } },
+              ],
+            },
+          },
+          sumCos: {
+            $sum: {
+              $cond: [
+                { $eq: ['$windDirTrueDeg', null] },
+                0,
+                { $cos: { $degreesToRadians: '$windDirTrueDeg' } },
+              ],
+            },
+          },
+          dirCount: { $sum: { $cond: [{ $eq: ['$windDirTrueDeg', null] }, 0, 1] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const data = rows.map((r) => {
+      let dirDeg: number | null = null;
+      if (r.dirCount > 0) {
+        const meanSin = r.sumSin / r.dirCount;
+        const meanCos = r.sumCos / r.dirCount;
+        // A near-zero resultant means the directions cancelled: the mean is
+        // undefined, not north. Reporting 0° would invent a northerly.
+        if (Math.hypot(meanSin, meanCos) >= 1e-9) {
+          const deg = (Math.atan2(meanSin, meanCos) * 180) / Math.PI;
+          dirDeg = round(((deg % 360) + 360) % 360);
+        }
+      }
+      return {
+        ts: r._id,
+        speedMs: r.speedMs === null ? null : round(r.speedMs),
+        dirDeg,
+        samples: r.samples,
+      };
+    });
+
+    return toCache(key, { deviceId, windowMs: WMO_MEAN_WINDOW_MS, data });
   }
 
   // ── GET /analytics/met/comfort-indices ────────────────────────────────────

@@ -127,6 +127,29 @@ export class AnalyticsController {
     return this.analytics.metWindGust(user.organizationId, deviceId, from, to, interval ?? '1h');
   }
 
+  @ApiOperation({
+    summary: 'WMO 10-minute mean wind',
+    description:
+      'The standard reported wind under WMO-No. 8. Speed is averaged arithmetically; direction is averaged as ' +
+      'VECTORS — the arithmetic mean of 350° and 10° is 180°, due south, which is the opposite of the truth. ' +
+      '`samples` is returned because a 10-minute mean built from a handful of readings is not one.',
+  })
+  @ApiQuery({ name: 'deviceId', required: true })
+  @ApiQuery({ name: 'from', required: false, description: 'Window start (Unix ms)' })
+  @ApiQuery({ name: 'to', required: false, description: 'Window end (Unix ms)' })
+  @Get('met/mean-wind')
+  metMeanWind(
+    @Query('deviceId') deviceId: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @CurrentUser() user: JWTPayload,
+  ) {
+    // Returned UNWRAPPED, like every other analytics route here. Wrapping it in
+    // `{ data }` gave the client `{ data: { data: [...] } }`, and the chart's
+    // `data.data` was then an object rather than the array it expected.
+    return this.analytics.metMeanWind(user.organizationId, deviceId, from, to);
+  }
+
   @ApiOperation({ summary: 'MET comfort indices — heat index + wind chill time series' })
   @ApiQuery({ name: 'deviceId', required: true, description: 'Device ObjectId (from POST /v1/devices)' })
   @ApiQuery({ name: 'interval', required: false, description: '5min | 1h' })

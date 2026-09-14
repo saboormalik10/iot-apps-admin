@@ -445,6 +445,26 @@ export interface MetWindGust {
   data: MetGustPoint[];
 }
 
+/**
+ * GET /analytics/met/mean-wind — the WMO standard reported wind.
+ *
+ * `samples` matters: a "10-minute mean" built from four readings is not one,
+ * and only the caller can decide whether that is good enough to show.
+ */
+export interface MetMeanWindPoint {
+  ts: number;
+  speedMs: number | null;
+  /** Vector-averaged, so a north-crossing window reads north and not south. */
+  dirDeg: number | null;
+  samples: number;
+}
+export interface MetMeanWind {
+  deviceId: string;
+  /** Always 600000 — the WMO averaging period. */
+  windowMs: number;
+  data: MetMeanWindPoint[];
+}
+
 /** GET /analytics/met/comfort-indices. */
 export interface MetComfortPoint {
   ts: number;

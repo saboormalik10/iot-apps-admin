@@ -54,6 +54,9 @@ export const queryKeys = {
       ['analytics', 'met', 'statistics', deviceId, sensor, from, to] as const,
     windGust: (deviceId: string, interval: string, from: number, to: number) =>
       ['analytics', 'met', 'wind-gust', deviceId, interval, from, to] as const,
+    // No interval: the WMO averaging period is fixed at 10 minutes.
+    meanWind: (deviceId: string, from: number, to: number) =>
+      ['analytics', 'met', 'mean-wind', deviceId, from, to] as const,
     comfort: (deviceId: string, interval: string, from: number, to: number) =>
       ['analytics', 'met', 'comfort', deviceId, interval, from, to] as const,
     fogRisk: (deviceId: string, interval: string, from: number, to: number) =>
