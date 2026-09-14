@@ -68,3 +68,4 @@ MOBILE_API_KEY=obs_mob_… MOBILE_ORG_ID=<seeded org id> yarn simulator
 Sign in as the seeded admin → the shell renders → the notification bell goes live
 when the simulator crosses the seeded alert threshold → invite a user / edit org
 settings → the change appears in the audit log with a diff.
+
