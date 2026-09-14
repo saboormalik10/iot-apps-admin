@@ -69,3 +69,4 @@ Sign in as the seeded admin → the shell renders → the notification bell goes
 when the simulator crosses the seeded alert threshold → invite a user / edit org
 settings → the change appears in the audit log with a diff.
 
+
