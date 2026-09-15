@@ -223,11 +223,22 @@ metMeasureSchema.index(
 // the measures it counts — see models/MetRecord.ts.
 metMeasureSchema.index(
   { createdAt: 1 },
-  // 15 days. Halved from 30 (Sept 2026) because the database filled faster
-  // than the old window: ~19 MB/day means 512 MB was reached in about two and a
-  // half weeks, BEFORE any cleanup began. The daily rollups in
-  // `metdailysummaries` are unaffected and keep the long-term history.
-  { expireAfterSeconds: 1_296_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+  /**
+   * 30 days — one month, restored Sept 2026 once records became per-MINUTE.
+   *
+   * It had been halved to 15 because per-second rows filled 512 MB in under
+   * three weeks at ~19 MB/day. One record a minute instead of one a second is
+   * about 61x fewer rows, measured on live data, which puts a month at roughly
+   * 20 MB per station — so the window that forced the cut is no longer the
+   * constraint. The daily rollups in `metdailysummaries` keep the long-term
+   * history regardless and have no TTL.
+   *
+   * CHANGING THIS NUMBER IS NOT ENOUGH ON ITS OWN. MongoDB will not alter an
+   * existing TTL from a re-declaration — `createIndex` with a different
+   * `expireAfterSeconds` conflicts rather than updates. Run
+   * `npm run migrate:met-ttl -- --apply`, which issues the `collMod`.
+   */
+  { expireAfterSeconds: 2_592_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
 );
 
 export const MetMeasure = model<IMetMeasure>('MetMeasure', metMeasureSchema);

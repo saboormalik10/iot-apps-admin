@@ -131,7 +131,15 @@ describe('environmental ingest + prefix routing (e2e)', () => {
     // record carrying their mean — the shape the customer asked for.
     expect((await measureCount()) - before).toBe(1);
 
-    const row = await MetMeasure.findOne({ organizationId: orgId, res: '1m', windSampleCount: { $gt: 0 } })
+    // Scoped through THIS test's records. Filtering by organisation alone picks
+    // up whatever another suite left in the same org — these run against a
+    // shared database.
+    const myRecords = await MetRecord.find({ deviceId }).select('_id').lean();
+    const row = await MetMeasure.findOne({
+      recordId: { $in: myRecords.map((r) => r._id) },
+      res: '1m',
+      windSampleCount: { $gt: 0 },
+    })
       .sort({ timestampMs: -1 })
       .lean();
     expect(row!.windSampleCount).toBe(5);

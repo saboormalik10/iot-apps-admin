@@ -12,6 +12,8 @@
     "qc:dryrun": "ts-node src/scripts/qc-dryrun.ts",
     "qc:distribution": "ts-node src/scripts/qc-distribution.ts",
     "minute:impact": "ts-node src/scripts/minute-impact.ts",
+    "storage:report": "ts-node src/scripts/storage-report.ts",
+    "migrate:met-ttl": "ts-node src/scripts/migrate-met-ttl.ts",
     "test": "jest --config test/jest-e2e.json",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/**/*.ts",
