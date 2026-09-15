@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
 import { AlertTriangle, ArrowLeft, Paperclip } from 'lucide-react';
@@ -8,7 +8,6 @@ import type { MetMeasureRow } from '@/lib/api/types';
 import { recordCsvHref } from '@/lib/api/endpoints';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { SERIES_ROLES, fmt } from '@/components/charts/chart-utils';
-import { StatTile } from '@/components/charts/stat-tile';
 import { DataTable } from '@/components/data/data-table';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,34 +19,28 @@ import { GpsTrackMap } from './gps-track-map';
 import { ExportMenu } from '@/components/data/export-menu';
 import { ShareButton } from '@/features/share/share-button';
 import { useOrg } from '@/features/org/use-org';
-import { useRecord, useRecordMeasures } from './use-records';
+import { useRecord, useRecordMeasures, useRecordSeries } from './use-records';
+import { useScope } from '@/lib/hooks/use-scope';
+import { formatDateTime } from '@/lib/time';
+import { zoneLabel } from '@/lib/time/zone-label';
 import { mergeMeasureRows } from './merge-measure-rows';
 import { describeQc } from './describe-qc';
 
 const VIZ_LIMIT = 2000; // cap the series/map/stats fetch; the table paginates separately
 const TABLE_LIMIT = 100;
-const DEFAULT_FIELDS = ['tempC', 'pressureHpa'];
+// Temperature and wind: the two channels with the longest history here, so the
+// chart opens with something drawn rather than two empty axes.
+const DEFAULT_FIELDS = ['tempC', 'windSpeedMs'];
 
-const avg = (rows: MetMeasureRow[], key: keyof MetMeasureRow): number | null => {
-  let sum = 0;
-  let n = 0;
-  for (const r of rows) {
-    const v = r[key];
-    if (typeof v === 'number') {
-      sum += v;
-      n++;
-    }
-  }
-  return n ? sum / n : null;
-};
-const last = (rows: MetMeasureRow[], key: keyof MetMeasureRow): number | null => {
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const v = rows[i][key];
-    if (typeof v === 'number') return v;
-  }
-  return null;
-};
-const fmtDate = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/**
+ * Timestamps read in the STATION's timezone, not the viewer's.
+ *
+ * Every reading here was recorded against the station's local clock. Rendering
+ * it in the browser's zone silently shifts it — a customer in another country
+ * would see times that disagree with the record's own day boundary and with
+ * everything the station reports.
+ */
+const fmtDate = (ms: number, tz?: string) => formatDateTime(ms, tz ? { mode: 'device', tz } : {});
 
 /**
  * Record detail (plan §Month 9) — the rich MET record view: a column-picker chart
@@ -59,10 +52,48 @@ export function RecordDetail({ id }: { id: string }) {
   const { data: record, isLoading: recordLoading, isError, error, refetch } = useRecord(id);
   // Read only for its timezone, so the station day can name the zone it is in.
   const { data: org } = useOrg();
-  const { data: viz } = useRecordMeasures(id, 1, VIZ_LIMIT);
+  /**
+   * Both the chart and the table read the RANGE the scope bar has selected.
+   *
+   * Without it, page 1 of a day was simply its first `limit` readings — the
+   * first half hour at 1 Hz — whatever range was showing. Temperature and
+   * pressure are sampled once a minute, so that slice held a handful of points
+   * and the charts looked empty; anything written later in the day was
+   * unreachable entirely.
+   */
+  const { window: scopeWindow } = useScope();
+  const measureWindow = useMemo(
+    () => ({ from: scopeWindow.from, to: scopeWindow.to }),
+    [scopeWindow.from, scopeWindow.to],
+  );
+
+  const { data: viz } = useRecordMeasures(id, 1, VIZ_LIMIT, measureWindow);
   const [tablePage, setTablePage] = useState(1);
-  const { data: tablePageData, isLoading: tableLoading } = useRecordMeasures(id, tablePage, TABLE_LIMIT);
+  const { data: tablePageData, isLoading: tableLoading } = useRecordMeasures(
+    id,
+    tablePage,
+    TABLE_LIMIT,
+    measureWindow,
+  );
+
+  // A page number means nothing across a different range: staying on page 3 of a
+  // narrower window shows an empty table, which reads as "no readings".
+  useEffect(() => {
+    setTablePage(1);
+  }, [measureWindow]);
   const [fields, setFields] = useState<string[]>(DEFAULT_FIELDS);
+
+  /**
+   * The chart reads a BUCKETED series, not raw rows.
+   *
+   * Raw rows are returned oldest-first and capped, so on a 1 Hz record the cap
+   * was reached inside the first half hour — and the channels logged once a
+   * minute contributed a few dozen points bunched at the left edge while
+   * thousands more sat unplotted. Buckets cover the window evenly, so a
+   * once-a-minute channel is represented as well as a once-a-second one.
+   */
+  const { data: series, isLoading: seriesLoading } = useRecordSeries(id, fields, measureWindow);
+  const seriesRows = series?.data ?? [];
 
   const vizRows = useMemo(() => viz?.rows.filter((r) => r.rowType === 'data') ?? [], [viz]);
 
@@ -77,9 +108,24 @@ export function RecordDetail({ id }: { id: string }) {
   const toggle = (key: string) =>
     setFields((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : cur.length >= 5 ? cur : [...cur, key]));
 
+  const stationTz = org?.timezone || undefined;
+  const tzLabel = zoneLabel(stationTz);
+
   const columns = useMemo<ColumnDef<MetMeasureRow, unknown>[]>(
     () => [
-      { header: 'Time', cell: ({ row }) => new Date(row.original.timestampMs).toLocaleTimeString() },
+      {
+        // The zone is in the HEADER, so every row below it is unambiguous
+        // without repeating it 100 times.
+        header: `Time${tzLabel ? ` (${tzLabel})` : ''}`,
+        cell: ({ row }) =>
+          new Intl.DateTimeFormat('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+            timeZone: stationTz,
+          }).format(new Date(row.original.timestampMs)),
+      },
       // Headers carry the ACTIVE unit, not the stored one: a column of numbers
       // silently converted under a "°C" heading is worse than no conversion.
       { header: `Temp ${units.unitFor('°C')}`, cell: ({ row }) => units.format(row.original.tempC, '°C') },
@@ -135,8 +181,9 @@ export function RecordDetail({ id }: { id: string }) {
       },
     ],
     // `units` matters now: without it the headers and cells would keep the units
-    // that were in force when the table first mounted.
-    [units],
+    // that were in force when the table first mounted. `stationTz`/`tzLabel` for
+    // the same reason — switching customer changes the zone every row is read in.
+    [units, stationTz, tzLabel],
   );
 
   const backLink = (
@@ -179,8 +226,8 @@ export function RecordDetail({ id }: { id: string }) {
           {backLink}
           <h1 className="mt-1 text-2xl font-semibold">{record.deviceName}</h1>
           <p className="text-sm text-muted-foreground">
-            {fmtDate(record.dateStartMs)}
-            {record.dateEndMs != null ? ` – ${fmtDate(record.dateEndMs)}` : ''} · {record.measureCount.toLocaleString()}{' '}
+            {fmtDate(record.dateStartMs, stationTz)}
+            {record.dateEndMs != null ? ` – ${fmtDate(record.dateEndMs, stationTz)}` : ''} · {record.measureCount.toLocaleString()}{' '}
             measures
           </p>
           {/* The station's own day, named as such.
@@ -225,15 +272,14 @@ export function RecordDetail({ id }: { id: string }) {
         </Card>
       ) : null}
 
-      {/* GPS-quality + power sub-panels */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Satellites" value={fmt(last(vizRows, 'gpsSatellites'), 0)} sub={`avg ${fmt(avg(vizRows, 'gpsSatellites'), 1)}`} />
-        <StatTile label="HDOP" value={fmt(last(vizRows, 'gpsHorDilution'), 1)} />
-        <StatTile label="Fix quality" value={fmt(last(vizRows, 'gpsQuality'), 0)} />
-        <StatTile label="Voltage" value={`${fmt(last(vizRows, 'voltageV'), 2)} V`} />
-        <StatTile label="Battery" value={`${fmt(last(vizRows, 'batteryVoltageV'), 2)} V`} />
-        <StatTile label="Current" value={`${fmt(last(vizRows, 'currentA'), 2)} A`} />
-      </div>
+      {/* REMOVED (Sept 2026): the GPS-quality and power sub-panels (Satellites,
+          HDOP, Fix quality, Voltage, Battery, Current). Every one rendered a
+          permanent dash: across 612,246 readings in the last seven days all six
+          fields held ZERO values. Nothing in the SFTP/CSV path writes them — they
+          come from the mobile BLE heartbeat, and these stations have none. An
+          empty tile reads as "the sensor stopped" rather than "not measured",
+          which is worse than no tile. Same call as the firmware panel and the
+          device-settings page. The fields stay on the model and in the export. */}
 
       {/* Column-picker chart (small multiples) */}
       <section className="space-y-3">
@@ -256,20 +302,26 @@ export function RecordDetail({ id }: { id: string }) {
             );
           })}
         </div>
-        {vizRows.length === 0 ? (
-          <EmptyState title="No measures" body="This record has no data rows to plot." />
-        ) : fields.length === 0 ? (
+        {fields.length === 0 ? (
           <EmptyState title="Pick a column" body="Choose up to 5 measure columns to chart." />
+        ) : seriesLoading ? (
+          <LoadingState label="Loading chart…" />
+        ) : seriesRows.length === 0 ? (
+          <EmptyState title="No measures" body="This record has no data in the selected range." />
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {fields.map((key, idx) => {
               const field = MEASURE_FIELDS.find((f) => f.key === key)!;
               // Converted here rather than at the axis: the chart draws whatever
               // it is handed, so the values and the unit label have to move together.
-              const rows = vizRows.map((m) => ({
-                timestampMs: m.timestampMs,
-                value: units.value(m[key as keyof MetMeasureRow] as number | null, field.unit),
-              }));
+              const rows = seriesRows
+                // A bucket with no reading for THIS field is a genuine gap; keeping
+                // it as a null point would draw the line down to zero.
+                .filter((b) => b[key] !== null && b[key] !== undefined)
+                .map((b) => ({
+                  timestampMs: b.ts as number,
+                  value: units.value(b[key] as number | null, field.unit),
+                }));
               return (
                 <TimeSeriesChart
                   key={key}

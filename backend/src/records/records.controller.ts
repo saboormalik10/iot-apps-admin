@@ -225,6 +225,36 @@ export class RecordsController {
   @ApiQuery({ name: 'limit', required: false, description: 'Page size (default 1000, max 5000)' })
   @ApiOkResponse({ description: 'Paginated measures' })
   @ApiErrors('unauthorized', 'notFound')
+  @ApiOperation({
+    summary: 'Bucketed series for the record chart',
+    description:
+      'Equal-width buckets across the window, one averaged point each. Reading raw rows instead would return the ' +
+      'first N measures of the record — at 1 Hz that is the first half hour, so a channel sampled once a minute ' +
+      'contributes a handful of points and its chart reads as empty.',
+  })
+  @Get(':id/series')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('data:read')
+  async getSeries(
+    @Param('id') id: string,
+    @Query('fields') fields?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('points') points?: string,
+    @CurrentUser() user?: JWTPayload,
+  ) {
+    const ms = (v?: string) => (v && Number.isFinite(Number(v)) ? Number(v) : undefined);
+    const data = await this.recordsService.getSeries({
+      organizationId: user!.organizationId,
+      recordId: id,
+      fields: (fields ?? '').split(',').map((f) => f.trim()).filter(Boolean),
+      from: ms(from),
+      to: ms(to),
+      points: ms(points),
+    });
+    return { data };
+  }
+
   @Get(':id/measures')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('data:read')
@@ -232,13 +262,20 @@ export class RecordsController {
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @CurrentUser() user?: JWTPayload,
   ) {
+    // A finite number or nothing — `Number('')` is 0, which would silently become
+    // a lower bound of 1970 and read as "the whole day" by accident.
+    const ms = (v?: string) => (v && Number.isFinite(Number(v)) ? Number(v) : undefined);
     return this.recordsService.getMeasures({
       organizationId: user!.organizationId,
       recordId: id,
       page: page ? Number(page) : 1,
       limit: limit ? Math.min(Number(limit), 5000) : 1000,
+      from: ms(from),
+      to: ms(to),
     });
   }
 

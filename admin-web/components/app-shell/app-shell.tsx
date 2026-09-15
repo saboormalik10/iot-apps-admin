@@ -16,6 +16,7 @@ import { BrandMark } from './brand-mark';
 import { BrandAccent } from './brand-accent';
 import { OrgSwitcher } from '@/features/tenancy/org-switcher';
 import { ActingAsBanner } from '@/features/tenancy/acting-as-banner';
+import { StationClock } from './station-clock';
 import { CommandPalette } from './command-palette';
 import { isFeatureEnabled } from '@/lib/config/flags';
 import type { SessionUser } from '@/lib/api/types';
@@ -58,6 +59,9 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           <div className="flex-1" />
           {/* Renders nothing unless the signed-in user is a platform admin. */}
           <OrgSwitcher />
+          {/* Station local time + UTC. Placed before the status controls so the
+              time reads as context for the data, not as another control. */}
+          <StationClock />
           <LiveIndicator />
           <UnitsToggle />
           <ThemeToggle />

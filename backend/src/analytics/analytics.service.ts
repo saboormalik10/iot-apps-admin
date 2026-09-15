@@ -88,6 +88,56 @@ export class AnalyticsService {
       .lean();
   }
 
+  /**
+   * Per-bucket means, computed in the DATABASE.
+   *
+   * The alternative — and what this replaced — was `metMeasures()` followed by a
+   * loop: every matching document was shipped from Atlas to the API and bucketed
+   * in JavaScript. At 1 Hz a 24-hour window is 86,400 documents to move and walk
+   * in order to return 24 numbers, which is why those panels sat on "Loading…".
+   *
+   * `$group` does the same arithmetic where the data already is and returns one
+   * row per bucket. `$avg` ignores null and missing exactly as the old
+   * field-by-field arrays did, so the values are unchanged — only the work moved.
+   *
+   * A field whose bucket held no readings comes back null rather than absent, so
+   * a caller can tell "no data this hour" from "zero".
+   */
+  private async metBucketMeans(
+    orgId: Types.ObjectId,
+    deviceId: string,
+    fromMs: number,
+    toMs: number,
+    intervalMs: number,
+    fields: readonly string[],
+  ): Promise<Array<{ ts: number } & Record<string, number | null>>> {
+    const recordIds = await this.metRecordIds(orgId, deviceId, fromMs, toMs);
+    if (!recordIds.length) return [];
+
+    const group = {
+      _id: { $multiply: [{ $floor: { $divide: ['$timestampMs', intervalMs] } }, intervalMs] },
+      ...Object.fromEntries(fields.map((f) => [f, { $avg: `$${f}` }])),
+    } as PipelineStage.Group['$group'];
+
+    const rows = await MetMeasure.aggregate<Record<string, number | null> & { _id: number }>([
+      {
+        $match: {
+          recordId: { $in: recordIds },
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+        },
+      },
+      { $group: group },
+      { $sort: { _id: 1 } },
+    ]);
+
+    return rows.map((r) => {
+      const out: { ts: number } & Record<string, number | null> = { ts: r._id };
+      for (const f of fields) out[f] = round(r[f] ?? null) ?? null;
+      return out;
+    });
+  }
+
   private async nepSessionIds(
     orgId: Types.ObjectId,
     deviceId: string,
@@ -945,32 +995,14 @@ export class AnalyticsService {
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const rows = await this.metMeasures(
-      new Types.ObjectId(orgId),
-      deviceId,
-      fromMs,
-      toMs,
-      ['tempC', 'humidityPct', 'windSpeedMs'],
-    );
-    type Acc = { t: number[]; h: number[]; w: number[] };
-    const buckets = new Map<number, Acc>();
-    for (const r of rows) {
-      const b = bucketStart(r.timestampMs as number, intervalMs);
-      let a = buckets.get(b);
-      if (!a) {
-        a = { t: [], h: [], w: [] };
-        buckets.set(b, a);
-      }
-      if (r.tempC != null) a.t.push(r.tempC as number);
-      if (r.humidityPct != null) a.h.push(r.humidityPct as number);
-      if (r.windSpeedMs != null) a.w.push(r.windSpeedMs as number);
-    }
-    const data = Array.from(buckets.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([ts, a]) => {
-        const tempC = a.t.length ? round(mean(a.t)) : null;
-        const humidityPct = a.h.length ? round(mean(a.h)) : null;
-        const windSpeedMs = a.w.length ? round(mean(a.w)) : null;
+    const buckets = await this.metBucketMeans(new Types.ObjectId(orgId), deviceId, fromMs, toMs, intervalMs, [
+      'tempC',
+      'humidityPct',
+      'windSpeedMs',
+    ]);
+
+    const data = buckets
+      .map(({ ts, tempC, humidityPct, windSpeedMs }) => {
         const hi = heatIndexC(tempC, humidityPct);
         const wc = windChillC(tempC, windSpeedMs);
         const effectiveTempC = hi ?? wc ?? tempC;
@@ -1004,32 +1036,21 @@ export class AnalyticsService {
     const cached = fromCache(key);
     if (cached) return cached;
 
-    const rows = await this.metMeasures(
-      new Types.ObjectId(orgId),
-      deviceId,
-      fromMs,
-      toMs,
-      ['tempC', 'dewPointC', 'humidityPct'],
-    );
-    type Acc = { t: number[]; d: number[]; h: number[] };
-    const buckets = new Map<number, Acc>();
-    for (const r of rows) {
-      const b = bucketStart(r.timestampMs as number, intervalMs);
-      let a = buckets.get(b);
-      if (!a) {
-        a = { t: [], d: [], h: [] };
-        buckets.set(b, a);
-      }
-      if (r.tempC != null) a.t.push(r.tempC as number);
-      if (r.dewPointC != null) a.d.push(r.dewPointC as number);
-      if (r.humidityPct != null) a.h.push(r.humidityPct as number);
-    }
-    const data = Array.from(buckets.entries())
-      .sort((a, b) => a[0] - b[0])
-      .filter(([, a]) => a.t.length && a.d.length)
-      .map(([ts, a]) => {
-        const tempC = round(mean(a.t))!;
-        const dewPointC = round(mean(a.d))!;
+    const buckets = await this.metBucketMeans(new Types.ObjectId(orgId), deviceId, fromMs, toMs, intervalMs, [
+      'tempC',
+      'dewPointC',
+      'humidityPct',
+    ]);
+
+    const data = buckets
+      // A bucket needs BOTH to have a spread at all. `$avg` returns null for a
+      // field with no readings in the bucket, which is the same condition the
+      // old `a.t.length && a.d.length` check expressed.
+      .filter(
+        (b): b is { ts: number } & Record<string, number | null> & { tempC: number; dewPointC: number } =>
+          b.tempC !== null && b.dewPointC !== null,
+      )
+      .map(({ ts, tempC, dewPointC, humidityPct }) => {
         const spread = round(tempC - dewPointC)!;
         return {
           ts,
@@ -1037,7 +1058,7 @@ export class AnalyticsService {
           dewPointC,
           spread,
           fogRisk: fogRisk(spread),
-          relativeHumidityPct: a.h.length ? round(mean(a.h)) : null,
+          relativeHumidityPct: humidityPct,
         };
       });
     return toCache(key, { deviceId, interval, data });

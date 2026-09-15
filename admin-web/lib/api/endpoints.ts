@@ -387,14 +387,43 @@ export const listRecords = async (q: RecordsQuery = {}, signal?: AbortSignal): P
 
 export const getRecord = (id: string, signal?: AbortSignal) => http.get<MetRecordRow>(`/records/${id}`, signal);
 
+/**
+ * Bucketed series for the record chart.
+ *
+ * Equal-width buckets across the window, one averaged point each — NOT the first
+ * N raw rows. At 1 Hz those first N covered half an hour, so a channel logged
+ * once a minute contributed a stub at the left edge and read as "no data".
+ */
+export const getRecordSeries = async (
+  id: string,
+  fields: string[],
+  window?: { from?: number; to?: number },
+  points = 500,
+  signal?: AbortSignal,
+): Promise<{ data: Array<Record<string, number | null>>; intervalMs: number; fields: string[] }> => {
+  const qs = new URLSearchParams({ fields: fields.join(','), points: String(points) });
+  if (window?.from !== undefined) qs.set('from', String(window.from));
+  if (window?.to !== undefined) qs.set('to', String(window.to));
+  return http.get<{ data: Array<Record<string, number | null>>; intervalMs: number; fields: string[] }>(
+    `/records/${id}/series?${qs.toString()}`,
+    signal,
+  );
+};
+
 export const getRecordMeasures = async (
   id: string,
   page = 1,
   limit = 1000,
+  window?: { from?: number; to?: number },
   signal?: AbortSignal,
 ): Promise<Page<MetMeasureRow>> => {
+  const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+  // Only sent when bounded. An "All time" scope has no `from`, and sending an
+  // empty one would be read as a lower bound of 1970.
+  if (window?.from !== undefined) qs.set('from', String(window.from));
+  if (window?.to !== undefined) qs.set('to', String(window.to));
   const body = await http.getRaw<{ data: MetMeasureRow[]; meta: { page: number; limit: number; total: number; pages: number } }>(
-    `/records/${id}/measures?page=${page}&limit=${limit}`,
+    `/records/${id}/measures?${qs.toString()}`,
     signal,
   );
   const m = body.meta ?? { page: 1, limit: body.data?.length ?? 0, total: body.data?.length ?? 0, pages: 1 };

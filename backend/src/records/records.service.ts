@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Document, Types } from 'mongoose';
+import { Document, Types, type PipelineStage } from 'mongoose';
 import { MetRecord, IMetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { Device } from '../models/Device';
@@ -38,6 +38,9 @@ export interface ListMeasuresOptions {
   recordId: string;
   page?: number;
   limit?: number;
+  /** Window bounds in epoch ms. Omitted means the whole day the record covers. */
+  from?: number;
+  to?: number;
 }
 
 /**
@@ -218,15 +221,121 @@ export class RecordsService {
   }
 
   async getMeasures(opts: ListMeasuresOptions) {
-    const { organizationId, recordId, page = 1, limit = 1000 } = opts;
+    const { organizationId, recordId, page = 1, limit = 1000, from, to } = opts;
     await this.getRecord(organizationId, recordId);
     const skip = (page - 1) * limit;
-    const query = { recordId: new Types.ObjectId(recordId), organizationId: new Types.ObjectId(organizationId) };
+    /**
+     * The window matters more than it looks.
+     *
+     * A record is one DAY, and a day at 1 Hz held ~86,000 readings. Without a
+     * window, page 1 was simply the first `limit` readings of that day — the
+     * first half hour — no matter which range the scope bar had selected. The
+     * chart above the table then plotted that half hour, so any channel the
+     * station samples once a minute (temperature, pressure) contributed a
+     * handful of points and looked like it had no data at all, and anything
+     * written later in the day was invisible.
+     *
+     * Served by `recordId_1_timestampMs_1`, so narrowing also makes it cheaper.
+     */
+    const span: Record<string, number> = {};
+    if (typeof from === 'number') span.$gte = from;
+    if (typeof to === 'number') span.$lte = to;
+    const query = {
+      recordId: new Types.ObjectId(recordId),
+      organizationId: new Types.ObjectId(organizationId),
+      ...(Object.keys(span).length ? { timestampMs: span } : {}),
+    };
     const [items, total] = await Promise.all([
       MetMeasure.find(query).sort({ timestampMs: 1 }).skip(skip).limit(limit).lean(),
       MetMeasure.countDocuments(query),
     ]);
     return { data: items, meta: { page, limit, total, pages: Math.ceil(total / limit) } };
+  }
+
+  /**
+   * Fields the chart may plot. A WHITELIST, not a convenience.
+   *
+   * These names are interpolated into an aggregation (`$avg: '$<field>'`), so an
+   * unchecked value from the query string would let a caller read any field on
+   * the document — including ones no endpoint exposes. Everything outside this
+   * list is ignored rather than rejected, so adding a channel to the UI before
+   * the API knows about it degrades to a missing series instead of a 400.
+   */
+  private static readonly SERIES_FIELDS = new Set([
+    'tempC', 'humidityPct', 'pressureHpa', 'dewPointC',
+    'windSpeedMs', 'windGustMs', 'windSpeedMean2mMs', 'windSpeedMean10mMs',
+    'windDirTrueDeg', 'windDirRelDeg', 'windSpeedKmh', 'windSpeedKnots',
+    'precipMm', 'precipRateMmHr', 'solarWm2', 'qnhHpa', 'qfeHpa',
+    'gpsAltM', 'voltageV', 'batteryVoltageV', 'currentA',
+  ]);
+
+  /**
+   * A bucketed series for the record chart.
+   *
+   * WHY NOT JUST READ THE ROWS
+   * The chart used to plot the first N measures of the record. A day at 1 Hz is
+   * ~86,000 rows, so N=2,000 covered the first THIRTY-THREE MINUTES — and since
+   * wind is logged every second while temperature, humidity and pressure arrive
+   * once a minute, that slice held 1,967 wind readings against 33 of each
+   * environmental channel. Those four charts drew a stub at the left edge and
+   * read as "no data", while 1,109 temperature readings sat in the same record
+   * unplotted. Measured on the live record, not inferred.
+   *
+   * Bucketing fixes it by construction: every point covers an equal slice of the
+   * WINDOW, so a channel sampled once a minute is as well represented as one
+   * sampled every second, whatever the span. `$avg` skips null and missing, so a
+   * bucket with no reading for a field returns null for that field alone and the
+   * others are unaffected.
+   */
+  async getSeries(opts: {
+    organizationId: string;
+    recordId: string;
+    fields: string[];
+    from?: number;
+    to?: number;
+    points?: number;
+  }) {
+    const record = await this.getRecord(opts.organizationId, opts.recordId);
+    const fields = opts.fields.filter((f) => RecordsService.SERIES_FIELDS.has(f));
+    if (fields.length === 0) return { data: [], intervalMs: 0, fields: [] };
+
+    // Default to the record's own span so the chart is full without the caller
+    // having to know the day's bounds.
+    const fromMs = opts.from ?? (record.dateStartMs as number) ?? 0;
+    const toMs = opts.to ?? (record.dateEndMs as number) ?? Date.now();
+    const points = Math.min(Math.max(opts.points ?? 500, 10), 2000);
+    // Never finer than a minute: that is the stored resolution, so smaller
+    // buckets would only manufacture empty ones between real readings.
+    const intervalMs = Math.max(60_000, Math.ceil(Math.max(toMs - fromMs, 1) / points));
+
+    const group = {
+      _id: { $multiply: [{ $floor: { $divide: ['$timestampMs', intervalMs] } }, intervalMs] },
+      ...Object.fromEntries(fields.map((f) => [f, { $avg: `$${f}` }])),
+    } as PipelineStage.Group['$group'];
+
+    const rows = await MetMeasure.aggregate<Record<string, number | null> & { _id: number }>([
+      {
+        $match: {
+          recordId: new Types.ObjectId(opts.recordId),
+          organizationId: new Types.ObjectId(opts.organizationId),
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+        },
+      },
+      { $group: group },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const data = rows.map((r) => {
+      const out: Record<string, number | null> = { ts: r._id };
+      for (const f of fields) {
+        const v = r[f];
+        out[f] = v === null || v === undefined ? null : Math.round(v * 100) / 100;
+      }
+      return out;
+    });
+
+    return { data, intervalMs, fields };
   }
 
   async bulkInsertMeasures(organizationId: string, recordId: string, measures: MeasureInput[]) {

@@ -101,7 +101,12 @@ export const queryKeys = {
   // ── Records (Month 9) ──
   records: (q: RecordsQuery) => ['records', q] as const,
   record: (id: string) => ['records', id] as const,
-  recordMeasures: (id: string, page: number, limit: number) => ['records', id, 'measures', page, limit] as const,
+  // The window is PART of the key: without it, changing the range would serve
+  // the previous range's rows from cache and the table would not move.
+  recordSeries: (id: string, fields: string[], from?: number, to?: number) =>
+    ['records', id, 'series', fields.join(','), from ?? null, to ?? null] as const,
+  recordMeasures: (id: string, page: number, limit: number, from?: number, to?: number) =>
+    ['records', id, 'measures', page, limit, from ?? null, to ?? null] as const,
 
   // ── Devices (Month 8) ──
   devices: (q: DevicesQuery) => ['devices', q] as const,
