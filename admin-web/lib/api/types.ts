@@ -298,6 +298,13 @@ export interface Device {
   lastBatteryVoltage: number | null;
   lastBatteryCharging: boolean | null;
   isOnline: boolean;
+  /**
+   * Keep the raw per-second samples as well as the minute record.
+   *
+   * Off by default. The switch is for a "special circumstance" — commissioning a
+   * site, or chasing a suspected sensor fault.
+   */
+  storeRawSamples?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -556,6 +563,25 @@ export interface MetMeasureRow {
   windSpeedRelMs: number | null;
   windDirTrueDeg: number | null;
   windDirRelDeg: number | null;
+  /**
+   * WMO gust for this minute: the peak 3-SECOND mean, computed at ingest.
+   *
+   * Computed there because it cannot be recovered later — a minute mean has
+   * already smoothed away the very peak the gust is meant to capture.
+   */
+  windGustMs?: number | null;
+  windGustDirDeg?: number | null;
+  /** Rolling WMO means ending at this minute. */
+  windSpeedMean2mMs?: number | null;
+  windDir2mDeg?: number | null;
+  windSpeedMean10mMs?: number | null;
+  windDir10mDeg?: number | null;
+  /** Per-second samples behind this minute — 60 is a full minute at 1 Hz. */
+  windSampleCount?: number;
+  /** Minutes present in the 10-minute window; under 10 means it is partial. */
+  windMean10mMinutes?: number;
+  /** `'1m'` for a one-minute record. Absent on readings stored before Sept 2026. */
+  res?: '1m';
   tempC: number | null;
   humidityPct: number | null;
   pressureHpa: number | null;

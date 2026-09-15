@@ -99,6 +99,7 @@ export function EditDeviceDialog({
   const [name, setName] = useState(device.customName ?? device.name);
   const [serialNo, setSerialNo] = useState(device.serialNo ?? '');
   const [firmwareVersion, setFirmwareVersion] = useState(device.firmwareVersion ?? '');
+  const [storeRawSamples, setStoreRawSamples] = useState(device.storeRawSamples === true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const update = useUpdateDevice(device._id);
   const toast = useApiToast();
@@ -108,6 +109,7 @@ export function EditDeviceDialog({
       customName: name || undefined,
       serialNo: serialNo || null,
       firmwareVersion: firmwareVersion || null,
+      storeRawSamples,
     });
     if (!parsed.success) {
       setErrors(Object.fromEntries(parsed.error.issues.map((i) => [i.path[0], i.message])));
@@ -133,6 +135,26 @@ export function EditDeviceDialog({
           <Field label="Display name" value={name} onChange={setName} error={errors.customName} />
           <Field label="Serial number" value={serialNo} onChange={setSerialNo} error={errors.serialNo} />
           <Field label="Firmware version" value={firmwareVersion} onChange={setFirmwareVersion} error={errors.firmwareVersion} />
+
+          {/* The "special circumstance" switch. Readings are stored one record
+              per minute; this additionally keeps the per-second samples the
+              minute was built from, for commissioning or fault-finding. */}
+          <label className="flex items-start gap-3 rounded-md border p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0"
+              checked={storeRawSamples}
+              onChange={(e) => setStoreRawSamples(e.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">Keep raw per-second samples</span>
+              <span className="block text-xs text-muted-foreground">
+                Off by default. Readings are stored once per minute; turn this on to also keep every
+                second for this station while commissioning it or investigating a fault. Raw samples
+                are deleted automatically after 7 days — the original files stay on the SFTP server.
+              </span>
+            </span>
+          </label>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

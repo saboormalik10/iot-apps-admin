@@ -126,8 +126,18 @@ describe('environmental ingest + prefix routing (e2e)', () => {
     const before = await measureCount();
     const res = await send('WindSonic_20260908_1915.csv', windCsv('2026-09-08T19:15:00+10:00'));
     expect(res.results[0].status).toBe('ingested');
-    // Wind is stored per sample, not averaged.
-    expect((await measureCount()) - before).toBe(5);
+    // ONE record per minute, not one per sample. The five 1 Hz readings in this
+    // file all fall in the same clock minute and are folded into a single
+    // record carrying their mean — the shape the customer asked for.
+    expect((await measureCount()) - before).toBe(1);
+
+    const row = await MetMeasure.findOne({ organizationId: orgId, res: '1m', windSampleCount: { $gt: 0 } })
+      .sort({ timestampMs: -1 })
+      .lean();
+    expect(row!.windSampleCount).toBe(5);
+    expect(row!.windSpeedMs).toBeCloseTo(1.26 / 3.6, 2); // 1.26 km/h in m/s
+    // The minute is stamped at the minute, not at whichever second landed last.
+    expect(row!.timestampMs % 60_000).toBe(0);
   });
 
   it('REFUSES an unrouted prefix and writes nothing', async () => {
@@ -219,7 +229,8 @@ describe('environmental ingest + prefix routing (e2e)', () => {
       const before = await offMeasureCount();
       const res = await sendOff('WindSonic_20260908_1956.csv', windCsv('2026-09-08T19:56:00+10:00'));
       expect(res.results[0].status).toBe('ingested');
-      expect((await offMeasureCount()) - before).toBe(5);
+      // One minute record, as everywhere else.
+      expect((await offMeasureCount()) - before).toBe(1);
     });
   });
 

@@ -7,6 +7,18 @@ export interface IMetMeasure extends Document {
   dataSentence: string;
   timeStamp: string;
   timestampMs: number;
+  /**
+   * Resolution of this record. `'1m'` is a one-minute record — the shape
+   * everything has written since Sept 2026.
+   *
+   * Absent on the per-reading rows written before that. They are left exactly as
+   * they are and expire on the existing TTL; nothing needs to migrate, and a
+   * read path that does not care sees both as ordinary rows with the same field
+   * names. It exists so the uniqueness rule below can apply to new records
+   * WITHOUT tripping over the historical duplicates — the sensor genuinely
+   * emitted two readings in the same second, 280 times in the sampled corpus.
+   */
+  res?: '1m';
   // Wind
   windSpeedMs: number | null;
   windSpeedKmh: number | null;
@@ -15,6 +27,39 @@ export interface IMetMeasure extends Document {
   windSpeedTrueMs: number | null;
   windDirRelDeg: number | null;
   windDirTrueDeg: number | null;
+  /**
+   * Per-second samples behind this minute. 60 is a full minute at 1 Hz.
+   *
+   * Reported rather than assumed: a minute rebuilt from 6 samples after a
+   * dropout is not the same measurement as one built from 60, and it is what
+   * weights this minute when it is folded into the 2- and 10-minute means.
+   */
+  windSampleCount?: number;
+  /**
+   * Mean unit-vector components of this minute's direction.
+   *
+   * Stored so a longer window can be recombined EXACTLY from minutes that are
+   * already written: 350° and 10° average to 0°, and that is only recoverable
+   * from sine and cosine. Not for display — `windDirRelDeg` is the bearing.
+   */
+  windDirSin?: number;
+  windDirCos?: number;
+  /**
+   * WMO gust: the peak 3-second mean within this minute, and its direction.
+   *
+   * Computed at ingest because it CANNOT be recovered afterwards — a minute mean
+   * has already smoothed away the peak the gust is meant to capture. This is
+   * what a hardware logger reports and why every AWS sends gust beside mean.
+   */
+  windGustMs?: number | null;
+  windGustDirDeg?: number | null;
+  /** Rolling WMO means ending at this minute — 2-minute and 10-minute. */
+  windSpeedMean2mMs?: number | null;
+  windDir2mDeg?: number | null;
+  windSpeedMean10mMs?: number | null;
+  windDir10mDeg?: number | null;
+  /** Minutes actually present in the 10-minute window — thin windows stay visible. */
+  windMean10mMinutes?: number;
   // Atmosphere
   tempC: number | null;
   humidityPct: number | null;
@@ -94,6 +139,17 @@ const metMeasureSchema = new Schema<IMetMeasure>(
     windSpeedTrueMs: { type: Number },
     windDirRelDeg: { type: Number },
     windDirTrueDeg: { type: Number },
+    res: { type: String, enum: ['1m'] },
+    windSampleCount: { type: Number },
+    windDirSin: { type: Number },
+    windDirCos: { type: Number },
+    windGustMs: { type: Number },
+    windGustDirDeg: { type: Number },
+    windSpeedMean2mMs: { type: Number },
+    windDir2mDeg: { type: Number },
+    windSpeedMean10mMs: { type: Number },
+    windDir10mDeg: { type: Number },
+    windMean10mMinutes: { type: Number },
     tempC: { type: Number },
     humidityPct: { type: Number },
     pressureHpa: { type: Number },
@@ -128,6 +184,32 @@ metMeasureSchema.index({ organizationId: 1, timestampMs: -1 });
 // from this declaration on the next connect.
 // Dashboard query: latest data row per record, windrose lookback
 metMeasureSchema.index({ recordId: 1, rowType: 1, timestampMs: -1 });
+
+/**
+ * One minute record per station, enforced.
+ *
+ * Wind and environmental arrive as SEPARATE files for the same minute, so the
+ * minute record is upserted: whichever lands first creates it and the other
+ * merges into it. Without a unique key a catch-up batch handling both at once
+ * could create two half-filled records for the same instant.
+ *
+ * PARTIAL on `res: '1m'`, and that is what makes it buildable at all: the
+ * historical per-reading rows contain genuine duplicate timestamps — the sensor
+ * emits faster than 1 Hz and the timestamp is truncated to whole seconds — so a
+ * blanket unique index here would fail to build and, if it somehow did, would
+ * reject real data.
+ */
+metMeasureSchema.index(
+  // `res` sits SECOND on purpose. Uniqueness is wanted on (recordId, timestampMs)
+  // among minute records, but that exact key pattern is already declared above
+  // for range scans — and one key pattern must have exactly one declaration, or
+  // removing the visible one leaves the index quietly alive. Putting the
+  // discriminator in the middle gives a genuinely distinct index that enforces
+  // the same constraint, and keeps it from being a prefix of, or prefixed by,
+  // the scan index.
+  { recordId: 1, res: 1, timestampMs: 1 },
+  { unique: true, partialFilterExpression: { res: '1m' }, name: 'minute_record_unique' },
+);
 
 // 30-day retention for station data, as agreed with the client.
 //

@@ -10,6 +10,14 @@ import { Organization } from '../models/Organization';
 import { MetRecord } from '../models/MetRecord';
 import { MetMeasure } from '../models/MetMeasure';
 import { applyQc, type QcState } from './qc';
+import {
+  aggregateToMinutes,
+  combineMinutes,
+  MINUTE_MS,
+  type MinuteAggregate,
+  type MinuteWindowInput,
+} from './minute-aggregate';
+import { MetRawSample } from '../models/MetRawSample';
 import { MetIngestFile } from '../models/MetIngestFile';
 import { ParsedMetRow } from './met-csv/parse-met-csv';
 import { getStreamParser } from './registry';
@@ -57,6 +65,8 @@ interface ResolvedStation {
   streamRoutes: StreamRoute[];
   /** Stream types this station is currently not permitted to ingest. */
   disabledStreamTypes: string[];
+  /** Keep the raw per-second samples as well as the minute record. Off by default. */
+  storeRawSamples: boolean;
 }
 
 /** How long a station's QC tail stays useful, and how many stations to hold. */
@@ -159,7 +169,7 @@ export class IngestService {
     if (String(mapping.organizationId) !== organizationId) return null;
 
     const [device, org] = await Promise.all([
-      Device.findOne({ _id: mapping.deviceId, deletedAt: null }).select('name organizationId headingOffsetDeg availableSensors').lean(),
+      Device.findOne({ _id: mapping.deviceId, deletedAt: null }).select('name organizationId headingOffsetDeg availableSensors storeRawSamples').lean(),
       Organization.findById(mapping.organizationId).select('timezone').lean(),
     ]);
     if (!device) return null;
@@ -167,6 +177,7 @@ export class IngestService {
     const resolved: ResolvedStation = {
       organizationId: String(mapping.organizationId),
       deviceId: String(mapping.deviceId),
+      storeRawSamples: device.storeRawSamples === true,
       // Which parser reads this station's files. Stored per station because two
       // customers on the same box can send entirely different formats.
       streamType: mapping.streamType || 'met-csv',
@@ -262,57 +273,183 @@ export class IngestService {
     }
   }
 
-  private toMeasureDocs(
-    rows: ParsedMetRow[],
+  /**
+   * Minute records already written that a rolling window needs.
+   *
+   * Scoped through the day records rather than by device id, because
+   * `MetMeasure` carries `recordId` and not `deviceId`. A 10-minute window can
+   * reach across local midnight, so both days are resolved — otherwise the first
+   * ten minutes of every day would silently compute their means from nothing.
+   */
+  private async loadRecentMinutes(
+    station: ResolvedStation,
+    fromMs: number,
+    toMs: number,
+  ): Promise<MinuteWindowInput[]> {
+    const dayKeys = [...new Set([localDayKey(fromMs, station.timezone), localDayKey(toMs, station.timezone)])];
+    const records = await MetRecord.find({
+      deviceId: new Types.ObjectId(station.deviceId),
+      dayKey: { $in: dayKeys },
+    })
+      .select('_id')
+      .lean();
+    if (records.length === 0) return [];
+
+    const rows = await MetMeasure.find({
+      recordId: { $in: records.map((r) => r._id as Types.ObjectId) },
+      res: '1m',
+      timestampMs: { $gte: fromMs, $lte: toMs },
+    })
+      .select('timestampMs windSpeedMs windSampleCount windDirSin windDirCos')
+      .lean();
+
+    return rows.map((r) => ({
+      minuteMs: r.timestampMs,
+      windSpeedMs: r.windSpeedMs ?? null,
+      windSampleCount: r.windSampleCount ?? 0,
+      windDirSin: r.windDirSin ?? null,
+      windDirCos: r.windDirCos ?? null,
+    }));
+  }
+
+  /**
+   * Write one record per minute, merging rather than replacing.
+   *
+   * `$set` of only the keys this stream actually produced is the important part:
+   * the wind file and the environmental file describe the SAME minute and arrive
+   * separately, so a wholesale replace would have each erase the other's
+   * columns, and the row would flip between half-empty shapes depending on which
+   * file landed last.
+   */
+  private async upsertMinuteRecords(
+    minutes: MinuteAggregate[],
+    windowPool: MinuteWindowInput[],
     recordId: Types.ObjectId,
     organizationId: Types.ObjectId,
     headingOffsetDeg: number,
-  ) {
-    /**
-     * Drop keys whose value is null before inserting.
-     *
-     * Removing `default: null` from the schema is only half the job: this mapper
-     * NAMES every sensor field, so `tempC: r.tempC` writes an explicit null for a
-     * wind-only station no matter what the schema says. Measured on the live
-     * deployment — the row was still 566 B with 9 stored nulls after the schema
-     * change alone.
-     *
-     * Absent and null read identically everywhere (`{f: null}` matches missing,
-     * `$avg`/`$min`/`$max` skip both, JS `??` treats them the same), and the
-     * rollup's counters were made missing-safe with `$ifNull` at the same time.
-     */
-    const omitNulls = <T extends Record<string, unknown>>(doc: T): Partial<T> =>
-      Object.fromEntries(Object.entries(doc).filter(([, v]) => v !== null)) as Partial<T>;
+  ): Promise<number> {
+    if (minutes.length === 0) return 0;
 
-    return rows.map((r) => omitNulls({
-      recordId,
+    const ops = minutes.map((m) => {
+      const hasWind = m.windSampleCount > 0;
+      const mean2 = hasWind ? combineMinutes(windowPool, m.minuteMs, 2 * MINUTE_MS) : null;
+      const mean10 = hasWind ? combineMinutes(windowPool, m.minuteMs, 10 * MINUTE_MS) : null;
+
+      const set: Record<string, unknown> = {
+        organizationId,
+        rowType: 'data',
+        res: '1m',
+        source: 'sftp',
+        dataSentence: m.raw,
+        timeStamp: new Date(m.minuteMs).toISOString(),
+      };
+      const assign = (k: string, v: unknown) => {
+        // Absent, not null: a wind-only station would otherwise store an explicit
+        // null for every environmental column on all 1,440 records a day.
+        if (v !== null && v !== undefined) set[k] = v;
+      };
+
+      if (hasWind) {
+        assign('windSpeedMs', m.windSpeedMs);
+        assign('windSpeedKmh', m.windSpeedMs === null ? null : Math.round(m.windSpeedMs * 3.6 * 100) / 100);
+        assign('windDirRelDeg', m.windDirRelDeg);
+        assign('windDirTrueDeg', this.trueBearing(m.windDirRelDeg, headingOffsetDeg));
+        assign('windSampleCount', m.windSampleCount);
+        assign('windDirSin', m.windDirSin);
+        assign('windDirCos', m.windDirCos);
+        assign('windGustMs', m.windGustMs);
+        assign('windGustDirDeg', this.trueBearing(m.windGustDirDeg, headingOffsetDeg));
+        assign('windSpeedMean2mMs', mean2?.speedMs ?? null);
+        assign('windDir2mDeg', this.trueBearing(mean2?.dirDeg ?? null, headingOffsetDeg));
+        assign('windSpeedMean10mMs', mean10?.speedMs ?? null);
+        assign('windDir10mDeg', this.trueBearing(mean10?.dirDeg ?? null, headingOffsetDeg));
+        assign('windMean10mMinutes', mean10?.minutes);
+      }
+      assign('tempC', m.tempC);
+      assign('humidityPct', m.humidityPct);
+      assign('pressureHpa', m.pressureHpa);
+      assign('dewPointC', m.dewPointC);
+      assign('solarWm2', m.solarWm2);
+      assign('precipMm', m.precipMm);
+      assign('voltageV', m.voltageV);
+      assign('gpsLat', m.gpsLat);
+      assign('gpsLng', m.gpsLng);
+      if (m.qc?.length) set.qc = m.qc;
+
+      return {
+        updateOne: {
+          filter: { recordId, timestampMs: m.minuteMs, res: '1m' },
+          update: { $set: set, $setOnInsert: { recordId, timestampMs: m.minuteMs } },
+          upsert: true,
+        },
+      };
+    });
+
+    const res = await MetMeasure.bulkWrite(ops, { ordered: false });
+    // Only new minutes count toward the day's measure total; a second file
+    // merging into a minute that already exists must not inflate it.
+    return res.upsertedCount ?? 0;
+  }
+
+  /**
+   * Keep the per-second samples too, for a station that asked for them.
+   *
+   * Deliberately a separate collection: `metmeasures` is one record per minute
+   * now, and putting 1 Hz rows back into it would put two resolutions behind one
+   * query. See `Device.storeRawSamples`.
+   */
+  private async storeRawSamples(
+    station: ResolvedStation,
+    organizationId: Types.ObjectId,
+    rows: ParsedMetRow[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const deviceId = new Types.ObjectId(station.deviceId);
+    const docs = rows.map((r) => ({
+      deviceId,
       organizationId,
-      rowType: 'data' as const,
-      // The raw CSV line, kept verbatim for provenance and re-parsing.
-      dataSentence: r.raw,
-      timeStamp: new Date(r.timestampMs).toISOString(),
+      minuteMs: Math.floor(r.timestampMs / MINUTE_MS) * MINUTE_MS,
       timestampMs: r.timestampMs,
-      source: 'sftp' as const,
-      windSpeedMs: r.windSpeedMs,
-      windSpeedKmh: r.windSpeedKmh,
-      windSpeedKnots: r.windSpeedKnots,
-      windDirRelDeg: r.windDirRelDeg,
-      // Both are stored: only the wind rose falls back to the relative field —
-      // alerts, the gust chart, the CSV export and the compass tile all read true.
-      windDirTrueDeg: this.trueBearing(r.windDirRelDeg, headingOffsetDeg),
-      tempC: r.tempC,
-      humidityPct: r.humidityPct,
-      pressureHpa: r.pressureHpa,
-      dewPointC: r.dewPointC,
-      solarWm2: r.solarWm2,
-      precipMm: r.precipMm,
-      voltageV: r.voltageV,
-      gpsLat: r.gpsLat,
-      gpsLng: r.gpsLng,
-      // `?? null` so a clean row's key is dropped by omitNulls below rather than
-      // stored as an empty array on every one of the day's 86,400 documents.
-      qc: r.qc ?? null,
+      ...(r.windSpeedMs === null ? {} : { windSpeedMs: r.windSpeedMs }),
+      ...(r.windDirRelDeg === null ? {} : { windDirRelDeg: r.windDirRelDeg }),
+      ...(r.qc?.length ? { qc: r.qc } : {}),
     }));
+    // Never fatal: raw retention is a debugging convenience, and losing it must
+    // not fail an ingest whose minute records were written correctly.
+    await MetRawSample.insertMany(docs, { ordered: false }).catch((err: unknown) =>
+      this.logger.warn(`raw sample store failed for ${station.deviceName}: ${String(err)}`),
+    );
+  }
+
+  /** Minute aggregates in the per-reading shape `pickLatest`/`accumulateExtremes` read. */
+  private minutesAsRows(minutes: MinuteAggregate[]): ParsedMetRow[] {
+    const rows: ParsedMetRow[] = [];
+    for (const m of minutes) {
+      const base = {
+        raw: m.raw,
+        windSpeedKmh: m.windSpeedMs === null ? null : Math.round(m.windSpeedMs * 3.6 * 100) / 100,
+        windSpeedKnots: null,
+        windDirRelDeg: m.windDirRelDeg,
+        tempC: m.tempC,
+        humidityPct: m.humidityPct,
+        pressureHpa: m.pressureHpa,
+        dewPointC: m.dewPointC,
+        solarWm2: m.solarWm2,
+        precipMm: m.precipMm,
+        voltageV: m.voltageV,
+        gpsLat: m.gpsLat,
+        gpsLng: m.gpsLng,
+        status: null,
+      };
+      rows.push({ ...base, timestampMs: m.minuteMs, windSpeedMs: m.windSpeedMs });
+      // The GUST is offered to the extremes alongside the mean. Without it an
+      // alert on "wind above X" would stop firing the moment we started storing
+      // minutes, because a mean hides the peak that the threshold is about.
+      if (m.windGustMs !== null) {
+        rows.push({ ...base, timestampMs: m.minuteMs, windSpeedMs: m.windGustMs });
+      }
+    }
+    return rows;
   }
 
   /**
@@ -375,8 +512,12 @@ export class IngestService {
       streamType: station.streamType,
       /** Already ingested — importing again would insert nothing. */
       duplicateOf: already ? { filename: already.filename, receivedAt: already.receivedAt, rows: already.rows } : null,
-      rowsWouldInsert: already ? 0 : parsed.rows.length,
+      // What will actually be WRITTEN is one record per minute, not one per
+      // reading. Saying "86,400 rows" before an import that creates 1,440 would
+      // describe a different operation than the one about to run.
+      rowsWouldInsert: already ? 0 : aggregateToMinutes(parsed.rows).length,
       rowsParsed: parsed.rows.length,
+      minutesWouldInsert: aggregateToMinutes(parsed.rows).length,
       /**
        * What QC would reject, so the preview can say it before anything is
        * written. Run from an EMPTY state and not remembered: a dry run must not
@@ -558,7 +699,7 @@ export class IngestService {
     if (!Types.ObjectId.isValid(deviceId)) return null;
     const [device, org] = await Promise.all([
       Device.findOne({ _id: new Types.ObjectId(deviceId), organizationId: new Types.ObjectId(organizationId), deletedAt: null })
-        .select('name headingOffsetDeg availableSensors')
+        .select('name headingOffsetDeg availableSensors storeRawSamples')
         .lean(),
       Organization.findById(organizationId).select('timezone').lean(),
     ]);
@@ -567,6 +708,7 @@ export class IngestService {
       organizationId,
       deviceId,
       deviceName: device.name,
+      storeRawSamples: device.storeRawSamples === true,
       timezone: org?.timezone || 'UTC',
       // The admin-upload path has no station account to read a stream type from.
       // MET CSV is the only format an operator can upload through the wizard,
@@ -713,47 +855,76 @@ export class IngestService {
       );
     }
 
+    // ── Per-second readings → one record per minute ────────────────────────
+    // The stored record is the MINUTE, not the reading. See minute-aggregate.ts
+    // for why the gust has to be computed here rather than derived later.
+    const minutes = aggregateToMinutes(qc.rows);
+
+    // The 2- and 10-minute means reach back beyond this file, so the minutes
+    // already written are loaded once for the whole batch. Read from the
+    // database rather than an in-process buffer because the API is serverless:
+    // consecutive files for one station may be handled by different instances.
+    const priorMinutes = await this.loadRecentMinutes(
+      station,
+      minutes[0].minuteMs - 10 * MINUTE_MS,
+      minutes[0].minuteMs - MINUTE_MS,
+    );
+
     // ── Group by LOCAL day ─────────────────────────────────────────────────
     // A file normally covers one minute, but a catch-up batch or a file spanning
     // local midnight can touch two days. Grouping here keeps one record per day.
-    const byDay = new Map<string, ParsedMetRow[]>();
-    for (const row of qc.rows) {
-      const key = localDayKey(row.timestampMs, station.timezone);
+    const byDay = new Map<string, MinuteAggregate[]>();
+    for (const m of minutes) {
+      const key = localDayKey(m.minuteMs, station.timezone);
       const bucket = byDay.get(key);
-      if (bucket) bucket.push(row);
-      else byDay.set(key, [row]);
+      if (bucket) bucket.push(m);
+      else byDay.set(key, [m]);
     }
 
     let inserted = 0;
     let lastRecordId: Types.ObjectId | null = null;
 
     for (const [dayKey, rows] of byDay) {
-      let first = rows[0].timestampMs;
-      for (const r of rows) if (r.timestampMs < first) first = r.timestampMs;
+      let first = rows[0].minuteMs;
+      for (const r of rows) if (r.minuteMs < first) first = r.minuteMs;
 
       const recordId = await this.upsertDayRecord(station, dayKey, first);
       lastRecordId = recordId;
 
-      const docs = this.toMeasureDocs(rows, recordId, organizationId, station.headingOffsetDeg);
-      // `ordered: false` so one bad document cannot abort the rest of the batch.
-      await MetMeasure.insertMany(docs, { ordered: false });
-      inserted += docs.length;
-      const candidate = this.pickLatest(rows, recordId, station.headingOffsetDeg);
+      // UPSERT, never insert: wind and environmental arrive as separate files
+      // for the same minute, so whichever lands first creates the record and the
+      // other merges into it. That is also what finally puts a minute's wind and
+      // its temperature on ONE row instead of two half-empty ones.
+      const written = await this.upsertMinuteRecords(
+        rows,
+        [...priorMinutes, ...minutes],
+        recordId,
+        organizationId,
+        station.headingOffsetDeg,
+      );
+      inserted += written;
+
+      if (station.storeRawSamples) await this.storeRawSamples(station, organizationId, qc.rows);
+
+      // `pickLatest` and `accumulateExtremes` read a per-reading shape; the
+      // minute carries the same quantities under a different name for time.
+      const asRows = this.minutesAsRows(rows);
+      const candidate = this.pickLatest(asRows, recordId, station.headingOffsetDeg);
       if (!latestRef.value || candidate.measuredAtMs > latestRef.value.measuredAtMs) latestRef.value = candidate;
-      this.accumulateExtremes(rows, station.headingOffsetDeg, extremes);
+      this.accumulateExtremes(asRows, station.headingOffsetDeg, extremes);
 
       // $max / $min widen the day's span commutatively, so out-of-order arrival
       // during a catch-up cannot narrow it.
-      let lo = rows[0].timestampMs;
-      let hi = rows[0].timestampMs;
+      let lo = rows[0].minuteMs;
+      let hi = rows[0].minuteMs;
       for (const r of rows) {
-        if (r.timestampMs < lo) lo = r.timestampMs;
-        if (r.timestampMs > hi) hi = r.timestampMs;
+        if (r.minuteMs < lo) lo = r.minuteMs;
+        if (r.minuteMs > hi) hi = r.minuteMs;
       }
       await MetRecord.updateOne(
         { _id: recordId },
         {
-          $inc: { measureCount: docs.length },
+          $inc: { measureCount: written },
           $min: { dateStartMs: lo },
           $max: { dateEndMs: hi },
           // Last writer wins. A station that genuinely switches unit mid-day ends

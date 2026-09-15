@@ -86,6 +86,28 @@ export function RecordDetail({ id }: { id: string }) {
       { header: 'RH %', cell: ({ row }) => fmt(row.original.humidityPct, 0) },
       { header: `Press ${units.unitFor('hPa')}`, cell: ({ row }) => units.format(row.original.pressureHpa, 'hPa') },
       { header: `Wind ${units.unitFor('m/s')}`, cell: ({ row }) => units.format(row.original.windSpeedMs, 'm/s') },
+      // Gust beside mean, the way every weather report presents them — a mean
+      // alone hides the peak, and the peak alone overstates the conditions.
+      { header: `Gust ${units.unitFor('m/s')}`, cell: ({ row }) => units.format(row.original.windGustMs ?? null, 'm/s') },
+      { header: `2-min ${units.unitFor('m/s')}`, cell: ({ row }) => units.format(row.original.windSpeedMean2mMs ?? null, 'm/s') },
+      {
+        header: `10-min ${units.unitFor('m/s')}`,
+        cell: ({ row }) => {
+          const r = row.original;
+          const partial = r.windMean10mMinutes !== undefined && r.windMean10mMinutes < 10;
+          return (
+            <span
+              className={partial ? 'text-muted-foreground' : undefined}
+              // A 10-minute mean built from four minutes is not a 10-minute mean.
+              // Dimmed and explained rather than presented as complete.
+              title={partial ? `Built from ${r.windMean10mMinutes} of 10 minutes` : undefined}
+            >
+              {units.format(r.windSpeedMean10mMs ?? null, 'm/s')}
+              {partial ? '*' : ''}
+            </span>
+          );
+        },
+      },
       { header: 'Dir °', cell: ({ row }) => fmt(row.original.windDirTrueDeg, 0) },
       { header: `Dew ${units.unitFor('°C')}`, cell: ({ row }) => units.format(row.original.dewPointC, '°C') },
       {

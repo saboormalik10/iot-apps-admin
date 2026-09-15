@@ -150,6 +150,7 @@ export const updateDeviceSchema = z.object({
   customName: z.string().max(120).nullable().optional(),
   serialNo: z.string().max(120).nullable().optional(),
   firmwareVersion: z.string().max(60).nullable().optional(),
+  storeRawSamples: z.boolean().optional(),
 });
 export type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
 

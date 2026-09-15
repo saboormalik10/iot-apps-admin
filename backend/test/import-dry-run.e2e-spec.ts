@@ -77,7 +77,11 @@ describe('IngestService.dryRunForDevice', () => {
     const r = await service.dryRunForDevice(orgId, deviceId, CSV, 'sample.csv');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.rowsWouldInsert).toBe(12);
+    // What gets WRITTEN is one record per minute. The fixture's 12 readings all
+    // fall in the same clock minute, so one record is created from them — while
+    // `rowsParsed` still reports the 12 readings that were read.
+    expect(r.rowsWouldInsert).toBe(1);
+    expect(r.rowsParsed).toBe(12);
     expect(r.sensorsSeen).toEqual(expect.arrayContaining(['wind_speed', 'wind_dir']));
   });
 
@@ -126,7 +130,8 @@ describe('IngestService.dryRunForDevice', () => {
       const r = await service.dryRunForDevice(orgId, deviceId, CSV, 'sample.csv');
       if (!r.ok) throw new Error('expected ok');
       expect(r.duplicateOf).not.toBeNull();
-      expect(r.duplicateOf!.rows).toBe(12);
+      // The ledger records what was WRITTEN — one minute record, not 12 readings.
+      expect(r.duplicateOf!.rows).toBe(1);
       expect(r.rowsWouldInsert).toBe(0);
     });
 
@@ -139,7 +144,7 @@ describe('IngestService.dryRunForDevice', () => {
     it('switches the day from create to APPEND', async () => {
       const r = await service.dryRunForDevice(orgId, deviceId, CSV, 'sample.csv');
       if (!r.ok) throw new Error('expected ok');
-      expect(r.days[0]).toMatchObject({ action: 'append', existingMeasures: 12 });
+      expect(r.days[0]).toMatchObject({ action: 'append', existingMeasures: 1 });
     });
 
     it('treats a single changed byte as a different file', async () => {
@@ -149,7 +154,7 @@ describe('IngestService.dryRunForDevice', () => {
       const r = await service.dryRunForDevice(orgId, deviceId, edited, 'sample.csv');
       if (!r.ok) throw new Error('expected ok');
       expect(r.duplicateOf).toBeNull();
-      expect(r.rowsWouldInsert).toBe(12);
+      expect(r.rowsWouldInsert).toBe(1);
     });
   });
 

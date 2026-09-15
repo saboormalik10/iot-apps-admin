@@ -37,6 +37,23 @@ export interface IDevice extends Document {
   sensorsUpdatedAt: Date | null;
   /** Most recent wind-speed unit code the station reported, e.g. `K`. */
   reportedSpeedUnit: string | null;
+  /**
+   * Keep the raw per-second samples as well as the minute record.
+   *
+   * Off by default, and that default is the whole point: the station logs wind
+   * at 1 Hz, which is 86,400 rows a day that almost nothing reads a single one
+   * of. Ingest computes the minute mean, the WMO gust and the rolling means from
+   * those samples and then discards them.
+   *
+   * Turn it on per station for the "special circumstance" — commissioning a new
+   * site, chasing a suspected sensor fault, or a study that genuinely needs
+   * per-second detail. Raw samples land in `metrawsamples` with a short TTL of
+   * their own, so switching it on cannot quietly fill the database for good.
+   *
+   * Note the per-second data is never truly lost either way: the original CSV
+   * files are kept permanently on the SFTP server and can be replayed.
+   */
+  storeRawSamples: boolean;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -62,6 +79,7 @@ const deviceSchema = new Schema<IDevice>(
     availableSensors: { type: [String], default: [] },
     sensorsUpdatedAt: { type: Date, default: null },
     reportedSpeedUnit: { type: String, default: null },
+    storeRawSamples: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },

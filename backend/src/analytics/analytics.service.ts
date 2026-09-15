@@ -773,14 +773,35 @@ export class AnalyticsService {
           },
         },
       },
+      /**
+       * TWO ROW SHAPES, one answer.
+       *
+       * Since Sept 2026 a record is one MINUTE and carries `windGustMs` — the
+       * peak 3-second mean computed at ingest, while the per-second samples
+       * still existed. That figure cannot be recomputed here: a minute mean has
+       * already smoothed the peak away, and the `$setWindowFields` window above
+       * would span a single document and return the minute's own average, which
+       * would silently under-report every gust on the chart.
+       *
+       * The per-reading rows written before that carry no `windGustMs`, so they
+       * still need the sliding window. `$ifNull` picks whichever the row can
+       * actually support, which is what lets the two coexist during the fifteen
+       * days the old rows take to expire — with no migration and no cutover.
+       */
+      {
+        $set: {
+          gustValue: { $ifNull: ['$windGustMs', '$gust3s'] },
+          gustDir: { $ifNull: ['$windGustDirDeg', '$windDirTrueDeg'] },
+        },
+      },
       {
         $group: {
           _id: { $multiply: [{ $floor: { $divide: ['$timestampMs', intervalMs] } }, intervalMs] },
           best: {
             $max: {
-              speed: '$gust3s',
+              speed: '$gustValue',
               negTs: { $multiply: ['$timestampMs', -1] },
-              dir: '$windDirTrueDeg',
+              dir: '$gustDir',
             },
           },
         },

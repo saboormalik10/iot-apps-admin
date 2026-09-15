@@ -11,6 +11,7 @@
     "backfill:daily-summary": "ts-node src/scripts/backfill-daily-summary.ts",
     "qc:dryrun": "ts-node src/scripts/qc-dryrun.ts",
     "qc:distribution": "ts-node src/scripts/qc-distribution.ts",
+    "minute:impact": "ts-node src/scripts/minute-impact.ts",
     "test": "jest --config test/jest-e2e.json",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src/**/*.ts",

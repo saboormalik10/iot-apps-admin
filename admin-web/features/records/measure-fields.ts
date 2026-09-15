@@ -18,6 +18,11 @@ export const MEASURE_FIELDS: MeasureField[] = [
   { key: 'humidityPct', label: 'Humidity', unit: '%' },
   { key: 'pressureHpa', label: 'Pressure', unit: 'hPa' },
   { key: 'windSpeedMs', label: 'Wind speed', unit: 'm/s' },
+  // The WMO quantities, now stored on every minute record rather than derived at
+  // query time. The gust in particular cannot be recomputed from stored data.
+  { key: 'windGustMs', label: 'Gust (3s peak)', unit: 'm/s' },
+  { key: 'windSpeedMean2mMs', label: 'Wind 2-min mean', unit: 'm/s' },
+  { key: 'windSpeedMean10mMs', label: 'Wind 10-min mean', unit: 'm/s' },
   { key: 'windSpeedTrueMs', label: 'Wind speed (true)', unit: 'm/s' },
   { key: 'windSpeedRelMs', label: 'Wind speed (rel)', unit: 'm/s' },
   { key: 'windDirTrueDeg', label: 'Wind dir (true)', unit: '°' },

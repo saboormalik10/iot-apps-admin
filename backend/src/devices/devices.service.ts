@@ -148,7 +148,7 @@ export class DevicesService {
   async updateDevice(
     organizationId: string,
     deviceId: string,
-    body: { name?: string; customName?: string; serialNo?: string; firmwareVersion?: string },
+    body: { name?: string; customName?: string; serialNo?: string; firmwareVersion?: string; storeRawSamples?: boolean },
     actor: { userId: string; email: string },
   ): Promise<IDevice> {
     const device = await this.getDevice(organizationId, deviceId);
@@ -158,12 +158,14 @@ export class DevicesService {
       customName: device.customName,
       serialNo: device.serialNo,
       firmwareVersion: device.firmwareVersion,
+      storeRawSamples: device.storeRawSamples,
     };
 
     if (body.name !== undefined) device.name = body.name;
     if (body.customName !== undefined) device.customName = body.customName;
     if (body.serialNo !== undefined) device.serialNo = body.serialNo;
     if (body.firmwareVersion !== undefined) device.firmwareVersion = body.firmwareVersion;
+    if (body.storeRawSamples !== undefined) device.storeRawSamples = body.storeRawSamples;
 
     await device.save();
 

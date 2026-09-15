@@ -37,6 +37,17 @@ export class UpdateDeviceDto {
 
   @ApiPropertyOptional()
   firmwareVersion?: string;
+
+  /**
+   * Keep the raw per-second samples as well as the minute record.
+   *
+   * The "special circumstance" switch: off by default, because the station logs
+   * at 1 Hz and almost nothing reads a single second. Turn it on to commission a
+   * site or chase a suspected sensor fault. Raw samples expire on their own
+   * short TTL, so leaving it on cannot quietly fill the database for good.
+   */
+  @ApiPropertyOptional({ description: 'Keep raw per-second samples (default false)' })
+  storeRawSamples?: boolean;
 }
 
 /** Partial device settings (send only changed keys). */
