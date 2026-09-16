@@ -14,6 +14,8 @@
     "minute:impact": "ts-node src/scripts/minute-impact.ts",
     "storage:report": "ts-node src/scripts/storage-report.ts",
     "field-presence": "ts-node src/scripts/field-presence.ts",
+    "capacity-report": "ts-node src/scripts/capacity-report.ts",
+    "purge:legacy-rows": "ts-node src/scripts/purge-legacy-rows.ts",
     "migrate:met-ttl": "ts-node src/scripts/migrate-met-ttl.ts",
     "test": "jest --config test/jest-e2e.json",
     "lint": "eslint src --ext .ts",

@@ -116,12 +116,12 @@ metRecordSchema.index(
 // daily aggregates survive the record's removal.
 metRecordSchema.index(
   { createdAt: 1 },
-  // 35 days — deliberately longer than the measures' 30, so a day's record is
+  // 735 days — deliberately longer than the measures' 730, so a day's record is
   // never orphaned while its readings are still being removed. Moved with the
   // measures when retention went back to one month; see MetMeasure and run
   // `npm run migrate:met-ttl -- --apply`, since a re-declaration alone does not
   // change a TTL that already exists.
-  { expireAfterSeconds: 3_024_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
+  { expireAfterSeconds: 63_504_000, partialFilterExpression: { source: 'sftp' }, name: 'sftp_ttl_createdAt' },
 );
 
 export const MetRecord = model<IMetRecord>('MetRecord', metRecordSchema);

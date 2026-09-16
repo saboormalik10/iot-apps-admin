@@ -27,9 +27,9 @@ const ALLOW_SHORTEN = process.argv.includes('--allow-shorten');
 
 /** Keep these in step with the model declarations. */
 const TARGETS = [
-  { collection: 'metmeasures', index: 'sftp_ttl_createdAt', seconds: 30 * 86_400 },
+  { collection: 'metmeasures', index: 'sftp_ttl_createdAt', seconds: 730 * 86_400 },
   // Always longer than the measures', so a day record outlives the readings it counts.
-  { collection: 'metrecords', index: 'sftp_ttl_createdAt', seconds: 35 * 86_400 },
+  { collection: 'metrecords', index: 'sftp_ttl_createdAt', seconds: 735 * 86_400 },
 ];
 
 const days = (s: number) => (s / 86_400).toFixed(0);
