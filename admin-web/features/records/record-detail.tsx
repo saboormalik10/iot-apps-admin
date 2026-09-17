@@ -348,9 +348,11 @@ export function RecordDetail({ id }: { id: string }) {
           <div className="flex items-baseline justify-between gap-2">
             <h3 className="text-sm font-medium">Measures</h3>
             {/* Said once, because the alternative is someone counting rows and
-                concluding the page is dropping them. */}
+                concluding the page is dropping them. Wind IS sampled every
+                second — it is stored as one row per minute carrying that
+                minute's mean, its peak 3-second gust, and the rolling means. */}
             <p className="text-xs text-muted-foreground">
-              Temperature is recorded once a minute; wind, every second.
+              One row per minute. Wind is sampled every second and summarised here.
             </p>
           </div>
           <DataTable

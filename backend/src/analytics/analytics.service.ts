@@ -907,7 +907,7 @@ export class AnalyticsService {
 
     const rows = await MetMeasure.aggregate<{
       _id: number;
-      speedMs: number | null;
+      weighted: number;
       sumSin: number;
       sumCos: number;
       dirCount: number;
@@ -929,15 +929,37 @@ export class AnalyticsService {
               WMO_MEAN_WINDOW_MS,
             ],
           },
-          speedMs: { $avg: '$windSpeedMs' },
-          samples: { $sum: 1 },
+          /**
+           * WEIGHTED by the readings behind each row, not a plain average of
+           * rows.
+           *
+           * A row used to be one reading; since Sept 2026 it is one MINUTE,
+           * carrying `windSampleCount` — how many 1 Hz readings it was built
+           * from. Averaging rows unweighted would let a minute rebuilt from six
+           * samples after a dropout count as much as a full one, and would also
+           * disagree with the 10-minute mean stored on the record itself, which
+           * is weighted. Legacy per-reading rows have no count, so they weigh 1
+           * — which is exactly what they are.
+           */
+          weighted: { $sum: { $multiply: ['$windSpeedMs', { $ifNull: ['$windSampleCount', 1] }] } },
+          /**
+           * READINGS, not rows. Counting rows made this report 10 for a full
+           * ten-minute window instead of ~600, so the "thin window" note fired
+           * on every bucket and stopped meaning anything.
+           */
+          samples: { $sum: { $ifNull: ['$windSampleCount', 1] } },
           // Vector components, summed here and resolved below.
           sumSin: {
             $sum: {
               $cond: [
                 { $eq: ['$windDirTrueDeg', null] },
                 0,
-                { $sin: { $degreesToRadians: '$windDirTrueDeg' } },
+                {
+                  $multiply: [
+                    { $sin: { $degreesToRadians: '$windDirTrueDeg' } },
+                    { $ifNull: ['$windSampleCount', 1] },
+                  ],
+                },
               ],
             },
           },
@@ -946,11 +968,20 @@ export class AnalyticsService {
               $cond: [
                 { $eq: ['$windDirTrueDeg', null] },
                 0,
-                { $cos: { $degreesToRadians: '$windDirTrueDeg' } },
+                {
+                  $multiply: [
+                    { $cos: { $degreesToRadians: '$windDirTrueDeg' } },
+                    { $ifNull: ['$windSampleCount', 1] },
+                  ],
+                },
               ],
             },
           },
-          dirCount: { $sum: { $cond: [{ $eq: ['$windDirTrueDeg', null] }, 0, 1] } },
+          dirCount: {
+            $sum: {
+              $cond: [{ $eq: ['$windDirTrueDeg', null] }, 0, { $ifNull: ['$windSampleCount', 1] }],
+            },
+          },
         },
       },
       { $sort: { _id: 1 } },
@@ -968,9 +999,10 @@ export class AnalyticsService {
           dirDeg = round(((deg % 360) + 360) % 360);
         }
       }
+      const speedMs = r.samples > 0 ? r.weighted / r.samples : null;
       return {
         ts: r._id,
-        speedMs: r.speedMs === null ? null : round(r.speedMs),
+        speedMs: speedMs === null ? null : round(speedMs),
         dirDeg,
         samples: r.samples,
       };
