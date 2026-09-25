@@ -1,0 +1,952 @@
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { DomainEvent, type MetMeasuresEvent } from '../realtime/realtime.events';
+import { Types, PipelineStage } from 'mongoose';
+import { downsampleEnvelope } from '../utils/cache.util';
+import { sectorIndex, speedBandIndex, SPEED_BANDS } from '../analytics/analytics.util';
+
+// ─── Sensor → DB field map ─────────────────────────────────────────────────
+
+const SENSOR_FIELD_MAP: Record<string, string> = {
+  wind_speed: 'windSpeedMs',
+  wind_dir: 'windDirTrueDeg',
+  temperature: 'tempC',
+  humidity: 'humidityPct',
+  pressure: 'pressureHpa',
+  solar: 'solarWm2',
+  precipitation: 'precipMm',
+  dew_point: 'dewPointC',
+  voltage: 'voltageV',
+};
+
+const SENSOR_UNIT_MAP: Record<string, string> = {
+  wind_speed: 'm/s',
+  wind_dir: '°',
+  temperature: '°C',
+  humidity: '%',
+  pressure: 'hPa',
+  solar: 'W/m²',
+  precipitation: 'mm',
+  dew_point: '°C',
+  voltage: 'V',
+};
+
+// ─── Adaptive time-bucketing for the MET history graphs ─────────────────────
+// (`downsample`/`downsampleEnvelope` now live in ../utils/cache.util so the
+//  analytics module and the dashboard share one implementation.)
+
+/** Hard cap on points returned per MET history series. Adaptive bucketing (below)
+ *  already targets ~this many buckets; the peak-preserving `downsampleEnvelope`
+ *  is a safety net that keeps the min/max band intact if a series still overshoots.
+ *  Was 1500 + naive decimation — lowered now that the envelope preserves spikes. */
+const MET_HISTORY_MAX_POINTS = 500;
+
+/** How many buckets the DB aggregation aims to return, regardless of window width.
+ *  ~500 points is more than a chart has pixels, so the graph looks identical. */
+const MET_HISTORY_TARGET_BUCKETS = 500;
+
+/** Bucket-size ladder (ms), coarsest-last. `pickBucketMs` selects the smallest
+ *  bucket that keeps the series under the target for the window — but never finer
+ *  than 1 minute (the native sample cadence), so we never invent resolution. */
+const BUCKET_LADDER_MS = [
+  60_000, // 1 min
+  5 * 60_000, // 5 min
+  15 * 60_000, // 15 min
+  30 * 60_000, // 30 min
+  60 * 60_000, // 1 h
+  3 * 60 * 60_000, // 3 h
+  6 * 60 * 60_000, // 6 h
+  12 * 60 * 60_000, // 12 h
+  24 * 60 * 60_000, // 1 day
+];
+
+export function pickBucketMs(spanMs: number, targetBuckets = MET_HISTORY_TARGET_BUCKETS): number {
+  const raw = spanMs / Math.max(1, targetBuckets);
+  return BUCKET_LADDER_MS.find((v) => v >= raw) ?? BUCKET_LADDER_MS[BUCKET_LADDER_MS.length - 1];
+}
+
+/** Bucket size for a MET history query. Bases granularity on the ACTUAL data
+ *  span (clamped to the records that overlap the window), NOT the raw `from`/`to`
+ *  — the frontend sends `from=0` for "All time", and sizing off epoch would
+ *  collapse everything into a handful of day-wide buckets. */
+function metBucketMs(
+  records: Array<{ dateStartMs?: number | null; dateEndMs?: number | null }>,
+  fromMs: number,
+  toMs: number,
+): number {
+  const now = Date.now();
+  // reduce (not Math.min(...spread)) — a device can accumulate a lot of records
+  // and spreading a huge array into Math.min risks a call-stack overflow.
+  let minStart = Infinity;
+  let maxEnd = -Infinity;
+  for (const r of records) {
+    if (typeof r.dateStartMs === 'number' && r.dateStartMs < minStart) minStart = r.dateStartMs;
+    const end = typeof r.dateEndMs === 'number' ? r.dateEndMs : now;
+    if (end > maxEnd) maxEnd = end;
+  }
+  const effFrom = Math.max(fromMs, Number.isFinite(minStart) ? minStart : fromMs);
+  const effTo = Math.min(toMs, Number.isFinite(maxEnd) ? maxEnd : toMs);
+  return pickBucketMs(Math.max(60_000, effTo - effFrom));
+}
+import { Device } from '../models/Device';
+import { MetRecord } from '../models/MetRecord';
+import { MetMeasure } from '../models/MetMeasure';
+import { AlertRule } from '../models/AlertRule';
+import { Organization } from '../models/Organization';
+import { rainSummary, rise, totalBefore } from '../query/rain-totals';
+
+// ─── Daily-count sparkline helper (§10.8) ────────────────────────────────────
+
+/** Aggregates the last `days` daily document counts (by `createdAt`, UTC),
+ *  zero-filled oldest→newest, for KPI-tile sparklines. */
+async function dailyCounts(
+  model: { aggregate(pipeline: unknown[]): Promise<Array<{ _id: string; count: number }>> },
+  orgId: Types.ObjectId,
+  days: number,
+  extraMatch: Record<string, unknown> = {},
+  /**
+   * Field to sum instead of counting documents.
+   *
+   * The MET sparkline sits under a tile that now shows READINGS, so counting
+   * day-records would draw a line in a different unit from the number above it —
+   * a spike of "7" beside a headline of "1,105,209".
+   */
+  sumField?: string,
+): Promise<number[]> {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - (days - 1)); // include today → `days` buckets
+  const rows = await model.aggregate([
+    {
+      $match: {
+        organizationId: orgId,
+        deletedAt: null,
+        createdAt: { $gte: start },
+        ...extraMatch,
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' } },
+        count: sumField ? { $sum: `$${sumField}` } : { $sum: 1 },
+      },
+    },
+  ]);
+  const byDay = new Map(rows.map((r) => [r._id, r.count]));
+  const out: number[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setUTCDate(d.getUTCDate() + i);
+    out.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0);
+  }
+  return out;
+}
+
+// ─── In-process cache (30-second TTL) ────────────────────────────────────────
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const cache = new Map<string, CacheEntry<unknown>>();
+
+function fromCache<T>(key: string): T | null {
+  const entry = cache.get(key) as CacheEntry<T> | undefined;
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  cache.delete(key);
+  return null;
+}
+
+function toCache<T>(key: string, data: T, ttlMs = 30_000): T {
+  cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+  return data;
+}
+
+/**
+ * Forget an organisation's cached answers. Called when a minute is written and
+ * when a station is edited: the portal re-fetches the station list and headline
+ * counts on each new minute, and without this got the previous minute's answer
+ * back for up to 30 s - and a station edit (a heading offset, a name) did not
+ * show until the cache ran out.
+ */
+export function clearDashboardCache(organizationId: string): void {
+  for (const key of cache.keys()) if (key.includes(`:${organizationId}`)) cache.delete(key);
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+/**
+ * Sensor fields worth carrying forward from an earlier row when the newest one
+ * does not have them — see the note in `getMetLatest`.
+ *
+ * Readings only. Nothing derived from the row's own identity (timestamps, ids)
+ * and nothing positional: a GPS fix from fifteen minutes ago is not where the
+ * thing is now, and holding one would be worse than showing none.
+ */
+const COALESCED_FIELDS = [
+  'windSpeedMs',
+  'windSpeedKmh',
+  'windSpeedKnots',
+  'windSpeedRelMs',
+  'windSpeedTrueMs',
+  'windDirRelDeg',
+  'windDirTrueDeg',
+  'tempC',
+  'humidityPct',
+  'pressureHpa',
+  'dewPointC',
+  'precipMm',
+  'precipRateMmHr',
+  'solarWm2',
+  'qnhHpa',
+  'qfeHpa',
+] as const;
+
+@Injectable()
+export class DashboardService {
+  /** A minute was written: the next re-fetch must see it. */
+  @OnEvent(DomainEvent.MET_MEASURES)
+  onMeasures(e: MetMeasuresEvent): void {
+    clearDashboardCache(e.organizationId);
+  }
+
+  // ── GET /dashboard/summary ────────────────────────────────────────────────
+
+  async getSummary(
+    organizationId: string,
+    type?: 'MET-LINK' | 'NEP-LINK',
+    deviceId?: string,
+    /**
+     * The scope bar's window. Only the DATA tiles narrow to it — device counts
+     * and armed-rule counts are "now" facts, and "devices in the last hour" is
+     * not a question with an answer.
+     */
+    window?: { from?: number; to?: number },
+  ) {
+    const from = window?.from;
+    const to = window?.to;
+    // The window is part of the identity of this result: without it a range
+    // change is served the previous range's numbers from cache.
+    const cacheKey = `summary:${organizationId}:${type ?? 'all'}:${deviceId ?? 'all'}:${from ?? 'x'}-${to ?? 'x'}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    // Scope narrowing: `type` restricts device counts to that family and zeroes the
+    // other family's data counts; `deviceId` narrows every count to one device.
+    const devMatch: Record<string, unknown> = { organizationId: orgId, deletedAt: null };
+    if (type) devMatch.type = type;
+    if (deviceId && Types.ObjectId.isValid(deviceId)) devMatch._id = new Types.ObjectId(deviceId);
+
+    const dataMatch: Record<string, unknown> = {};
+    if (deviceId && Types.ObjectId.isValid(deviceId)) dataMatch.deviceId = new Types.ObjectId(deviceId);
+
+    const countMet = !type || type === 'MET-LINK';
+
+    const SPARKLINE_DAYS = 14;
+    const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+    const zeros = () => Promise.resolve(new Array(SPARKLINE_DAYS).fill(0) as number[]);
+
+    const [
+      totalDevices,
+      onlineDevices,
+      metDevices,
+      totalRecords,
+      activeAlertRules,
+      recordsSparkline,
+    ] = await Promise.all([
+      Device.countDocuments(devMatch),
+      // Online = seen in the last 5 min (same rule as the fleet table), not the
+      // sticky isOnline flag which is never reset.
+      Device.countDocuments({ ...devMatch, lastSeenAt: { $gte: new Date(Date.now() - ONLINE_THRESHOLD_MS) } }),
+      countMet ? Device.countDocuments({ ...devMatch, type: 'MET-LINK' }) : Promise.resolve(0),
+      // READINGS, not day-records.
+      //
+      // A MetRecord is one document per station per LOCAL DAY (M14), so counting
+      // them counts DAYS: the tile sat on "17" for a fortnight and moved once a
+      // day, which reads as a broken number rather than a slow one. `measureCount`
+      // is maintained on the record as rows are ingested, so summing 17 documents
+      // gives the reading count without touching the 1.1M measures themselves.
+      countMet ? this.metReadings(orgId, dataMatch, from, to) : Promise.resolve({ readings: 0, days: 0 }),
+      AlertRule.countDocuments({ organizationId: orgId, isActive: true }),
+      countMet ? dailyCounts(MetRecord, orgId, SPARKLINE_DAYS, dataMatch, 'measureCount') : zeros(),
+    ]);
+
+    const result = {
+      totalDevices,
+      onlineDevices,
+      offlineDevices: totalDevices - onlineDevices,
+      metLinkDevices: metDevices,
+      // Kept under its old name for the existing consumers; it is now the reading
+      // count. `totalMetDays` carries what the tile used to show, for anyone who
+      // actually wanted "how many days of data do we hold".
+      totalMetRecords: totalRecords.readings,
+      totalMetDays: totalRecords.days,
+      /**
+       * Which figures the window applies to.
+       *
+       * Devices, online and armed rules are current state; narrowing them to a
+       * range would be meaningless. Saying so lets the tiles label themselves
+       * instead of appearing to ignore the filter — the reported complaint.
+       */
+      windowed: from != null || to != null,
+      // §10.8 enrichment — armed alert rules + last-14-day daily-count sparklines
+      activeAlertRules,
+      sparklines: { records: recordsSparkline },
+      serverTime: new Date().toISOString(),
+    };
+
+    return toCache(cacheKey, result);
+  }
+
+  /**
+   * MET readings and days, narrowed to the window when one is given.
+   *
+   * With no window this stays the cheap path: `measureCount` is maintained on
+   * each record, so summing a handful of day-documents answers it without
+   * touching the measures at all.
+   *
+   * With a window that shortcut is wrong — a record spans a whole local day, so
+   * a range shorter than a day would still contribute the day's full count. The
+   * readings are counted directly instead, over the records the window actually
+   * overlaps, using the same `recordId + rowType + timestampMs` index that
+   * serves the records list.
+   */
+  private async metReadings(
+    orgId: Types.ObjectId,
+    dataMatch: Record<string, unknown>,
+    from?: number,
+    to?: number,
+  ): Promise<{ readings: number; days: number }> {
+    const base: Record<string, unknown> = { organizationId: orgId, deletedAt: null, ...dataMatch };
+
+    if (from == null && to == null) {
+      const agg = await MetRecord.aggregate<{ readings: number; days: number }>([
+        { $match: base },
+        { $group: { _id: null, readings: { $sum: '$measureCount' }, days: { $sum: 1 } } },
+      ]);
+      return agg[0] ?? { readings: 0, days: 0 };
+    }
+
+    // Records OVERLAPPING the window — matching on `dateStartMs` alone would ask
+    // whether the day BEGAN inside it, which is false for every sub-day range.
+    const overlap: Record<string, unknown> = { ...base };
+    if (to != null) overlap.dateStartMs = { $lte: to };
+    if (from != null) overlap.$or = [{ dateEndMs: null }, { dateEndMs: { $gte: from } }];
+
+    const records = await MetRecord.find(overlap).select('_id').lean();
+    if (records.length === 0) return { readings: 0, days: 0 };
+
+    const span: Record<string, number> = {};
+    if (from != null) span.$gte = from;
+    if (to != null) span.$lte = to;
+    const counted = await MetMeasure.aggregate<{ n: number }>([
+      {
+        $match: {
+          recordId: { $in: records.map((r) => r._id as Types.ObjectId) },
+          rowType: 'data',
+          timestampMs: span,
+        },
+      },
+      { $count: 'n' },
+    ]);
+    return { readings: counted[0]?.n ?? 0, days: records.length };
+  }
+
+  // ── GET /dashboard/devices ────────────────────────────────────────────────
+
+  async getDevices(organizationId: string) {
+    const cacheKey = `devices:${organizationId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+    // This list feeds the fleet table, the scope-bar device picker and the
+    // alert-rule builder.
+    const devices = await Device.find({
+      organizationId: orgId,
+      deletedAt: null,
+    })
+      .sort({ type: 1, name: 1 })
+      .lean();
+
+    const now = Date.now();
+    const result = devices.map((d) => ({
+      _id: d._id,
+      name: d.customName ?? d.name,
+      bleId: d.bleId,
+      type: d.type,
+      firmwareVersion: d.firmwareVersion,
+      lastSeenAt: d.lastSeenAt,
+      isOnline: d.lastSeenAt ? now - d.lastSeenAt.getTime() < ONLINE_THRESHOLD_MS : false,
+      lastBatteryPct: d.lastBatteryPct,
+      lastBatteryCharging: d.lastBatteryCharging,
+      // Consumed by the alert-rule builder so it cannot offer a sensor the
+      // device will never report — a rule that looks armed but can never fire.
+      availableSensors: d.availableSensors ?? [],
+      headingOffsetDeg: d.headingOffsetDeg ?? 0,
+    }));
+
+    return toCache(cacheKey, result);
+  }
+
+  // ── GET /dashboard/met/latest ─────────────────────────────────────────────
+
+  async getMetLatest(organizationId: string, deviceId: string) {
+    const cacheKey = `met:latest:${organizationId}:${deviceId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    // Find the most recent non-deleted record for this device
+    const latestRecord = await MetRecord.findOne({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+    })
+      .sort({ dateStartMs: -1 })
+      .select('_id deviceName dateStart')
+      .lean();
+
+    if (!latestRecord) return toCache(cacheKey, null);
+
+    // Get the latest data row from that record
+    const newest = await MetMeasure.findOne({
+      recordId: latestRecord._id,
+      rowType: 'data',
+    })
+      .sort({ timestampMs: -1 })
+      .lean();
+
+    if (!newest) return toCache(cacheKey, null);
+
+    /**
+     * Fill each sensor from the most recent row that actually HAS it.
+     *
+     * A station can write more than one stream into the same day record — wind
+     * at 1 Hz and environmental once a minute — as separate rows at different
+     * timestamps. Taking the newest row wholesale therefore returns wind with a
+     * null temperature, or temperature with a null wind, alternating: the live
+     * panel would flicker between two half-empty states rather than showing the
+     * station.
+     *
+     * Coalescing per field is what makes "latest" mean the station's current
+     * condition rather than whichever row happened to land last. `measuredAtMs`
+     * stays the NEWEST row's, so the freshness indicator still reports the last
+     * time the station said anything.
+     *
+     * Bounded to a short lookback so a sensor that died an hour ago reads as
+     * absent rather than being held alive by a stale value forever.
+     */
+    const COALESCE_WINDOW_MS = 15 * 60 * 1000;
+    const latestMeasure: Record<string, unknown> = { ...newest };
+    const missing = COALESCED_FIELDS.filter((f) => latestMeasure[f] === null || latestMeasure[f] === undefined);
+
+    if (missing.length > 0) {
+      const recent = await MetMeasure.find({
+        recordId: latestRecord._id,
+        rowType: 'data',
+        timestampMs: { $gte: newest.timestampMs - COALESCE_WINDOW_MS, $lte: newest.timestampMs },
+      })
+        .sort({ timestampMs: -1 })
+        .select([...missing, 'timestampMs'].join(' '))
+        .lean();
+
+      for (const field of missing) {
+        // `recent` is newest-first, so the first non-null wins.
+        const hit = recent.find((r) => (r as Record<string, unknown>)[field] != null);
+        if (hit) latestMeasure[field] = (hit as Record<string, unknown>)[field];
+      }
+    }
+
+    // The mast's surveyed offset travels with the reading: the live dial needs it
+    // to know whether the bearing it is drawing is TRUE or merely relative, and
+    // fetching it separately would mean a second round trip per poll.
+    const device = await Device.findById(devId).select('headingOffsetDeg windDirReference').lean();
+
+    const result = {
+      recordId: latestRecord._id,
+      deviceName: latestRecord.deviceName,
+      headingOffsetDeg: device?.headingOffsetDeg ?? 0,
+      windDirReference: device?.windDirReference ?? null,
+      recordDateStart: latestRecord.dateStart,
+      measuredAt: latestMeasure.timeStamp,
+      measuredAtMs: latestMeasure.timestampMs,
+      // Wind
+      windSpeedMs: latestMeasure.windSpeedMs,
+      windSpeedKmh: latestMeasure.windSpeedKmh,
+      windSpeedKnots: latestMeasure.windSpeedKnots,
+      windSpeedRelMs: latestMeasure.windSpeedRelMs,
+      windSpeedTrueMs: latestMeasure.windSpeedTrueMs,
+      windDirRelDeg: latestMeasure.windDirRelDeg,
+      windDirTrueDeg: latestMeasure.windDirTrueDeg,
+      // Atmosphere
+      tempC: latestMeasure.tempC,
+      humidityPct: latestMeasure.humidityPct,
+      pressureHpa: latestMeasure.pressureHpa,
+      dewPointC: latestMeasure.dewPointC,
+      // No `precipMm`: stored, it is the site's running rain total since the
+      // software started — a number that reads like rain and is not. Rain today,
+      // in the last hour and its rate come from GET /dashboard/met/rain.
+      solarWm2: latestMeasure.solarWm2,
+      qnhHpa: latestMeasure.qnhHpa,
+      qfeHpa: latestMeasure.qfeHpa,
+      // Power
+      voltageV: latestMeasure.voltageV,
+      batteryVoltageV: latestMeasure.batteryVoltageV,
+      currentA: latestMeasure.currentA,
+      // GPS
+      gpsLat: latestMeasure.gpsLat,
+      gpsLng: latestMeasure.gpsLng,
+      gpsAltM: latestMeasure.gpsAltM,
+      gpsSatellites: latestMeasure.gpsSatellites,
+      phoneLat: latestMeasure.phoneLat,
+      phoneLng: latestMeasure.phoneLng,
+    };
+
+    return toCache(cacheKey, result);
+  }
+
+  // ── GET /dashboard/met/windrose ───────────────────────────────────────────
+
+  async getMetWindrose(organizationId: string, deviceId: string) {
+    const cacheKey = `met:windrose:${organizationId}:${deviceId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    // Find most recent record
+    const latestRecord = await MetRecord.findOne({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+    })
+      .sort({ dateStartMs: -1 })
+      .select('_id')
+      .lean();
+
+    const emptyMatrix = () => Array.from({ length: 16 }, () => Array(SPEED_BANDS.length).fill(0));
+    const bands = SPEED_BANDS.map((b) => b.label);
+
+    if (!latestRecord) {
+      return toCache(cacheKey, {
+        recordId: null,
+        newestTsMs: null,
+        bands,
+        matrices: {
+          true: { '10m': emptyMatrix(), '2m': emptyMatrix() },
+          relative: { '10m': emptyMatrix(), '2m': emptyMatrix() },
+        },
+      });
+    }
+
+    // Last 600 measures (≈10 min at 1/sec)
+    const last600 = await MetMeasure.find({
+      recordId: latestRecord._id,
+      rowType: 'data',
+      windSpeedMs: { $ne: null },
+      windDirTrueDeg: { $ne: null },
+    })
+      .sort({ timestampMs: -1 })
+      .limit(600)
+      .select('windSpeedMs windDirTrueDeg windDirRelDeg timestampMs')
+      .lean();
+
+    // Last 120 measures (≈2 min)
+    const last120 = last600.slice(0, 120);
+
+    // Bin server-side into the 16-sector × speed-band matrix the WindRose chart
+    // renders — so the browser receives a ~640-number matrix instead of up to 600
+    // raw samples and does zero client-side bucketing (§ graph-data contract).
+    const buildMatrix = (
+      samples: typeof last600,
+      dirField: 'windDirTrueDeg' | 'windDirRelDeg',
+    ): number[][] => {
+      const m = emptyMatrix();
+      for (const s of samples) {
+        const dir = s[dirField];
+        const spd = s.windSpeedMs;
+        if (dir == null || spd == null) continue;
+        m[sectorIndex(dir)][speedBandIndex(spd)] += 1;
+      }
+      return m;
+    };
+
+    const result = {
+      recordId: latestRecord._id,
+      // Arrays are sorted newest-first, so element 0 is the freshest sample.
+      newestTsMs: last600[0]?.timestampMs ?? null,
+      bands,
+      matrices: {
+        true: {
+          '10m': buildMatrix(last600, 'windDirTrueDeg'),
+          '2m': buildMatrix(last120, 'windDirTrueDeg'),
+        },
+        relative: {
+          '10m': buildMatrix(last600, 'windDirRelDeg'),
+          '2m': buildMatrix(last120, 'windDirRelDeg'),
+        },
+      },
+    };
+
+    return toCache(cacheKey, result);
+  }
+
+  // ── GET /dashboard/met/history ────────────────────────────────────────────
+
+  async getMetHistory(
+    organizationId: string,
+    deviceId: string,
+    sensor: string,
+    fromMs: number,
+    toMs: number,
+  ) {
+    const field = SENSOR_FIELD_MAP[sensor];
+    if (!field) {
+      throw new BadRequestException(
+        `Unknown sensor "${sensor}". Valid values: ${Object.keys(SENSOR_FIELD_MAP).join(', ')}`,
+      );
+    }
+
+    const cacheKey = `met:history:${organizationId}:${deviceId}:${sensor}:${fromMs}:${toMs}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    // Find all records for this device that overlap the time window
+    const records = await MetRecord.find({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+      dateStartMs: { $lte: toMs },
+      $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+    })
+      .select('_id dateStartMs dateEndMs')
+      .lean();
+
+    if (!records.length) {
+      return toCache(cacheKey, { sensor, unit: SENSOR_UNIT_MAP[sensor], data: [], bucketMs: 60_000 });
+    }
+
+    const recordIds = records.map((r) => r._id);
+
+    // Adaptive bucket size: keep the returned series ~MET_HISTORY_TARGET_BUCKETS
+    // points wide whatever the window, instead of always bucketing at 1 minute
+    // (which yields ~40k buckets for a 30-day window that then have to be thrown
+    // away). Narrow windows stay at full 1-minute resolution.
+    const bucketMs = metBucketMs(records, fromMs, toMs);
+
+    const pipeline = [
+      {
+        $match: {
+          recordId: { $in: recordIds },
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+          [field]: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: { $subtract: ['$timestampMs', { $mod: ['$timestampMs', bucketMs] }] },
+          min: { $min: `$${field}` },
+          max: { $max: `$${field}` },
+          avg: { $avg: `$${field}` },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 as const } },
+      {
+        $project: {
+          _id: 0,
+          timestampMs: '$_id',
+          min: { $round: ['$min', 2] },
+          max: { $round: ['$max', 2] },
+          avg: { $round: ['$avg', 2] },
+          count: 1,
+        },
+      },
+    ];
+
+    // Safety net: even after adaptive bucketing, cap the series — but with the
+    // peak-preserving envelope so gusts/extremes survive the reduction.
+    const data = downsampleEnvelope(await MetMeasure.aggregate(pipeline), MET_HISTORY_MAX_POINTS);
+    const result = { sensor, unit: SENSOR_UNIT_MAP[sensor], data, bucketMs };
+    return toCache(cacheKey, result);
+  }
+
+  // ── GET /dashboard/met/history-multi ──────────────────────────────────────
+
+  /**
+   * Multi-sensor variant of `getMetHistory`: aggregates every requested sensor's
+   * min/avg/max per adaptive bucket in ONE round-trip (a `$facet` sub-pipeline
+   * per sensor), so the dashboard graph stack fetches all 8 charts with a single
+   * request + payload instead of 8. Each sub-pipeline keeps its own `$ne: null`
+   * filter so per-sensor extremes are correct even where other sensors are null.
+   */
+  async getMetHistoryMulti(
+    organizationId: string,
+    deviceId: string,
+    sensors: string[],
+    fromMs: number,
+    toMs: number,
+  ) {
+    if (!sensors.length) {
+      throw new BadRequestException('sensors is required (comma-separated list)');
+    }
+    const fields = sensors.map((sensor) => {
+      const field = SENSOR_FIELD_MAP[sensor];
+      if (!field) {
+        throw new BadRequestException(
+          `Unknown sensor "${sensor}". Valid values: ${Object.keys(SENSOR_FIELD_MAP).join(', ')}`,
+        );
+      }
+      return { sensor, field };
+    });
+
+    const cacheKey = `met:history-multi:${organizationId}:${deviceId}:${sensors.join(',')}:${fromMs}:${toMs}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    const records = await MetRecord.find({
+      organizationId: orgId,
+      deviceId: devId,
+      deletedAt: null,
+      dateStartMs: { $lte: toMs },
+      $or: [{ dateEndMs: null }, { dateEndMs: { $gte: fromMs } }],
+      // No row-level demo filter: this query is already pinned to one device, and
+      // the device is what makes data demo or real. The caller can only reach a
+      // device the current mode allows — the device list and the scope dropdown
+    })
+      .select('_id dateStartMs dateEndMs')
+      .lean();
+
+    const emptySeries = () =>
+      Object.fromEntries(fields.map(({ sensor }) => [sensor, { unit: SENSOR_UNIT_MAP[sensor], data: [] }]));
+
+    if (!records.length) {
+      return toCache(cacheKey, { from: fromMs, to: toMs, bucketMs: 60_000, series: emptySeries() });
+    }
+
+    const recordIds = records.map((r) => r._id);
+    const bucketMs = metBucketMs(records, fromMs, toMs);
+
+    // One `$facet` per sensor — MongoDB scans the windowed rows once, then runs
+    // each sensor's group/project against that shared input.
+    const facet: Record<string, unknown[]> = {};
+    for (const { sensor, field } of fields) {
+      facet[sensor] = [
+        { $match: { [field]: { $ne: null } } },
+        {
+          $group: {
+            _id: { $subtract: ['$timestampMs', { $mod: ['$timestampMs', bucketMs] }] },
+            min: { $min: `$${field}` },
+            max: { $max: `$${field}` },
+            avg: { $avg: `$${field}` },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+        {
+          $project: {
+            _id: 0,
+            timestampMs: '$_id',
+            min: { $round: ['$min', 2] },
+            max: { $round: ['$max', 2] },
+            avg: { $round: ['$avg', 2] },
+            count: 1,
+          },
+        },
+      ];
+    }
+
+    const pipeline = [
+      {
+        $match: {
+          recordId: { $in: recordIds },
+          rowType: 'data',
+          timestampMs: { $gte: fromMs, $lte: toMs },
+        },
+      },
+      { $facet: facet },
+    ] as unknown as PipelineStage[];
+
+    const [facetResult] = (await MetMeasure.aggregate(pipeline)) as Array<Record<string, unknown[]>>;
+
+    /**
+     * Rain is drawn ACCUMULATED over the range: each point is the rain since the
+     * range began, so the last point is the range's total — whatever the bucket
+     * size. The stored value is the site's running total, whose average per
+     * bucket means nothing; the bucket's highest total, less the total just before
+     * the range, is the rain so far.
+     */
+    const rainRows = facetResult?.precipitation as Array<Record<string, number>> | undefined;
+    if (rainRows?.length) {
+      const before = await totalBefore(recordIds as Types.ObjectId[], fromMs);
+      for (const r of rainRows) {
+        const soFar = rise(before, r.max) ?? 0;
+        r.min = soFar;
+        r.max = soFar;
+        r.avg = soFar;
+      }
+    }
+
+    const series = Object.fromEntries(
+      fields.map(({ sensor }) => [
+        sensor,
+        {
+          unit: SENSOR_UNIT_MAP[sensor],
+          data: downsampleEnvelope((facetResult?.[sensor] ?? []) as never[], MET_HISTORY_MAX_POINTS),
+        },
+      ]),
+    );
+
+    return toCache(cacheKey, { from: fromMs, to: toMs, bucketMs, series });
+  }
+
+  // ── GET /dashboard/met/rain ───────────────────────────────────────────────
+
+  async getMetRain(organizationId: string, deviceId: string) {
+    if (!deviceId || !Types.ObjectId.isValid(deviceId)) throw new BadRequestException('deviceId is required');
+    const [device, org] = await Promise.all([
+      Device.findOne({ _id: new Types.ObjectId(deviceId), organizationId: new Types.ObjectId(organizationId), deletedAt: null })
+        .select('rainDayStartHour')
+        .lean(),
+      Organization.findById(organizationId).select('timezone').lean(),
+    ]);
+    if (!device) throw Object.assign(new Error('Device not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    return rainSummary(device._id as Types.ObjectId, org?.timezone || 'UTC', device.rainDayStartHour ?? 0);
+  }
+
+  // ── GET /dashboard/met/stats ──────────────────────────────────────────────
+
+  async getMetStats(organizationId: string, deviceId: string) {
+    const cacheKey = `met:stats:${organizationId}:${deviceId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const devId = new Types.ObjectId(deviceId);
+
+    const records = await MetRecord.find({ organizationId: orgId, deviceId: devId, deletedAt: null })
+      .select('_id dateStartMs measureCount')
+      .lean();
+
+    if (!records.length) {
+      return toCache(cacheKey, { deviceId, totalRecords: 0, totalMeasures: 0, totalLoggingHours: 0 }, 3_600_000);
+    }
+
+    const recordIds = records.map((r) => r._id);
+    const totalMeasures = records.reduce((a, r) => a + (r.measureCount ?? 0), 0);
+
+    const agg = await MetMeasure.aggregate([
+      { $match: { recordId: { $in: recordIds }, rowType: 'data' } },
+      {
+        $group: {
+          _id: null,
+          maxWindSpeedMs: { $max: '$windSpeedMs' },
+          maxWindSpeedKmh: { $max: '$windSpeedKmh' },
+          minTempC: { $min: '$tempC' },
+          maxTempC: { $max: '$tempC' },
+          minPressureHpa: { $min: '$pressureHpa' },
+          maxPressureHpa: { $max: '$pressureHpa' },
+        },
+      },
+    ]);
+    const a = agg[0] ?? {};
+    const dateStarts = records.map((r) => r.dateStartMs).filter((v) => v != null);
+
+    const result = {
+      deviceId,
+      totalRecords: records.length,
+      totalMeasures,
+      totalLoggingHours: Math.round((totalMeasures / 3600) * 100) / 100,
+      firstRecordAt: dateStarts.length ? Math.min(...dateStarts) : null,
+      lastRecordAt: dateStarts.length ? Math.max(...dateStarts) : null,
+      maxWindSpeedMs: a.maxWindSpeedMs ?? null,
+      maxWindSpeedKmh: a.maxWindSpeedKmh ?? null,
+      minTempC: a.minTempC ?? null,
+      maxTempC: a.maxTempC ?? null,
+      minPressureHpa: a.minPressureHpa ?? null,
+      maxPressureHpa: a.maxPressureHpa ?? null,
+    };
+    // 1-hour cache for lifetime stats
+    return toCache(cacheKey, result, 3_600_000);
+  }
+
+  // ── GET /dashboard/org/device-map ─────────────────────────────────────────
+
+  async getOrgDeviceMap(organizationId: string) {
+    const cacheKey = `org:device-map:${organizationId}`;
+    const cached = fromCache<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const orgId = new Types.ObjectId(organizationId);
+    const ONLINE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+
+    const devices = await Device.find({ organizationId: orgId, deletedAt: null }).lean();
+
+    const out = await Promise.all(
+      devices.map(async (d) => {
+        let lastGpsLat: number | null = null;
+        let lastGpsLng: number | null = null;
+        let lastGpsAltM: number | null = null;
+        let lastWindSpeedKmh: number | null = null;
+
+        if (d.type === 'MET-LINK') {
+          const m = await MetMeasure.findOne({
+            organizationId: orgId,
+            gpsLat: { $ne: null },
+            gpsLng: { $ne: null },
+            recordId: { $in: await this._deviceRecordIds(orgId, d._id as Types.ObjectId) },
+          })
+            .sort({ timestampMs: -1 })
+            .select('gpsLat gpsLng gpsAltM windSpeedKmh')
+            .lean();
+          if (m) {
+            lastGpsLat = m.gpsLat;
+            lastGpsLng = m.gpsLng;
+            lastGpsAltM = m.gpsAltM;
+            lastWindSpeedKmh = m.windSpeedKmh;
+          }
+        }
+
+        if (lastGpsLat == null || lastGpsLng == null) return null; // omit devices with no GPS
+
+        return {
+          deviceId: (d._id as Types.ObjectId).toString(),
+          deviceName: d.customName ?? d.name,
+          type: d.type,
+          isOnline: d.lastSeenAt ? now - new Date(d.lastSeenAt).getTime() < ONLINE_MS : false,
+          lastSeenAt: d.lastSeenAt,
+          lastGpsLat,
+          lastGpsLng,
+          lastGpsAltM,
+          lastWindSpeedKmh,
+          batteryPct: d.lastBatteryPct,
+        };
+      }),
+    );
+    return toCache(cacheKey, out.filter((x) => x !== null), 5 * 60_000);
+  }
+
+  private async _deviceRecordIds(orgId: Types.ObjectId, deviceId: Types.ObjectId): Promise<Types.ObjectId[]> {
+    const recs = await MetRecord.find({ organizationId: orgId, deviceId, deletedAt: null }).select('_id').lean();
+    return recs.map((r) => r._id as Types.ObjectId);
+  }
+}

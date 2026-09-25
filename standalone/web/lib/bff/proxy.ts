@@ -1,0 +1,160 @@
+import 'server-only';
+import { gzip } from 'zlib';
+import { promisify } from 'util';
+import { NextResponse, type NextRequest } from 'next/server';
+import { backendFetch } from './backend';
+import { refreshAccessToken, RefreshFailedError } from './refresh';
+import { withClaims } from './claims';
+import { isCsrfSafe } from './csrf';
+import { getSession, isSessionLive, touchSession, type SessionData } from '../session';
+import type { IronSession } from 'iron-session';
+
+const gzipAsync = promisify(gzip);
+
+/** Content types worth gzipping (text-like). Binary/already-compressed types skip. */
+const COMPRESSIBLE = /^(application\/json|application\/javascript|text\/|image\/svg\+xml)/i;
+/** Don't bother compressing tiny bodies — the header overhead isn't worth it. */
+const MIN_COMPRESS_BYTES = 1024;
+
+const HOP_BY_HOP = new Set([
+  'host',
+  'connection',
+  'cookie',
+  'authorization',
+  'content-length',
+  'transfer-encoding',
+  'keep-alive',
+]);
+
+/** Copy request headers through, stripping hop-by-hop + auth/cookie (we set our own). */
+function forwardHeaders(src: Headers): Headers {
+  const out = new Headers();
+  src.forEach((value, key) => {
+    if (!HOP_BY_HOP.has(key.toLowerCase())) out.set(key, value);
+  });
+  return out;
+}
+
+/**
+ * Pass a backend Response back to the browser.
+ *
+ * For compressible JSON/text we gzip here so the browser→BFF hop is compressed on
+ * EVERY deployment (local dev, self-hosted, Vercel) and is visible in DevTools as
+ * `content-encoding: gzip`. The backend already gzips its hop, but the BFF's fetch
+ * (undici) decodes that transparently, so this re-compresses the decoded body.
+ * File downloads (content-disposition) and small/binary bodies stream unchanged.
+ */
+async function passThrough(res: Response, acceptEncoding: string): Promise<NextResponse> {
+  const headers = new Headers();
+  const ct = res.headers.get('content-type');
+  if (ct) headers.set('content-type', ct);
+  const cd = res.headers.get('content-disposition');
+  if (cd) headers.set('content-disposition', cd); // exports / file downloads
+  headers.set('cache-control', 'no-store');
+
+  const wantsGzip = /\bgzip\b/.test(acceptEncoding);
+  const compressible = !cd && !!ct && COMPRESSIBLE.test(ct);
+  if (wantsGzip && compressible) {
+    // Buffering is fine here: these are API JSON payloads, not large file streams
+    // (those carry content-disposition and are excluded above).
+    const raw = Buffer.from(await res.arrayBuffer());
+    if (raw.length >= MIN_COMPRESS_BYTES) {
+      const gz = await gzipAsync(raw);
+      headers.set('content-encoding', 'gzip');
+      headers.set('vary', 'accept-encoding');
+      headers.set('content-length', String(gz.length));
+      return new NextResponse(gz, { status: res.status, headers });
+    }
+    return new NextResponse(raw, { status: res.status, headers });
+  }
+
+  return new NextResponse(res.body, { status: res.status, headers });
+}
+
+function sessionExpired(): NextResponse {
+  return NextResponse.json(
+    { error: { code: 'SESSION_EXPIRED', message: 'Your session has expired. Please sign in again.' } },
+    { status: 401 },
+  );
+}
+
+/**
+ * The generic pass-through every authenticated call rides on (plan §3.1):
+ *  1. CSRF origin check on mutations.
+ *  2. Read the encrypted session; reject if missing / idled out.
+ *  3. Attach `Authorization: Bearer <access>` and forward to the backend.
+ *  4. On a backend 401, silent-refresh ONCE (deduped) and retry.
+ *  5. If refresh itself fails → destroy the session (hard logout), no loop.
+ * Multipart streams through unchanged (body buffered once so a post-refresh
+ * retry can replay it).
+ */
+export async function forwardToBackend(request: NextRequest, backendPath: string): Promise<NextResponse> {
+  if (!isCsrfSafe(request)) {
+    return NextResponse.json(
+      { error: { code: 'CSRF_REJECTED', message: 'Cross-origin request rejected' } },
+      { status: 403 },
+    );
+  }
+
+  const session = await getSession();
+  if (!isSessionLive(session)) {
+    session.destroy();
+    return sessionExpired();
+  }
+
+  // Slide the idle window; save sparingly to cut cookie churn on read bursts.
+  const now = Date.now();
+  if (!session.lastActiveAt || now - session.lastActiveAt > 30_000) {
+    touchSession(session);
+    await session.save();
+  }
+
+  const method = request.method.toUpperCase();
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const bodyBuf = hasBody ? Buffer.from(await request.arrayBuffer()) : undefined;
+  const path = `${backendPath}${request.nextUrl.search}`;
+
+  const attempt = (token: string): Promise<Response> =>
+    backendFetch(path, { method, headers: forwardHeaders(request.headers), body: bodyBuf }, token);
+
+  let res = await attempt(session.accessToken!);
+
+  if (res.status === 401) {
+    try {
+      const newAccess = await refreshAccessToken(session.refreshToken!);
+      session.accessToken = newAccess;
+      // Re-read the grants: a role edited mid-session takes effect on the next
+      // refresh rather than lingering until the user signs out.
+      if (session.user) session.user = withClaims(session.user, newAccess);
+      await session.save();
+      res = await attempt(newAccess);
+    } catch (err) {
+      if (err instanceof RefreshFailedError) {
+        session.destroy();
+        return sessionExpired();
+      }
+      throw err;
+    }
+  }
+
+  // An administrator has just set this person's password while they were using the
+  // portal: the API refuses everything until they choose their own. Remember it in
+  // the session so the next page sends them there, instead of showing errors on a
+  // dashboard that can no longer load.
+  if (res.status === 403 && session.user && !session.user.mustChangePassword) {
+    const copy = res.clone();
+    const body = await copy.text().catch(() => '');
+    if (body.includes('PASSWORD_CHANGE_REQUIRED')) {
+      session.user = { ...session.user, mustChangePassword: true };
+      await session.save();
+    }
+  }
+
+  return passThrough(res, request.headers.get('accept-encoding') ?? '');
+}
+
+/** Convenience for explicit auth routes that need the raw session. */
+export async function withSession<T>(fn: (session: IronSession<SessionData>) => Promise<T>): Promise<T> {
+  const session = await getSession();
+  return fn(session);
+}

@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
+  }
+  /* Visible keyboard focus everywhere (a11y DoD). */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /**
+   * A table wider than its card scrolls sideways — say so.
+   *
+   * On a trackpad the scrollbar is hidden until you scroll, so a clipped last
+   * column looks like the end of the data: QA read a record's "10-min knots"
+   * column as cut off rather than scrollable (24 Sep 2026). These containers
+   * keep a slim, always-visible bar instead.
+   */
+  .scroll-x-hint {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scroll-x-hint::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scroll-x-hint::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-x-hint::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: hsl(var(--border));
+  }
+  .scroll-x-hint:hover::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* Respect reduced-motion (a11y DoD): neutralize animations/transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Texture channel (§Month 12) ──────────────────────────────────────────────
+ * Charts fill their marks with a pattern whose base is the flat role colour and
+ * whose ink sits at opacity 0 — so a chart is pixel-identical to the solid fill
+ * until one of these rules reveals the ink. Doing the trigger in CSS (not React)
+ * is what lets it work where JS never re-runs: the print dialog and forced-colors
+ * mode. See components/charts/chart-texture.tsx.
+ */
+.chart-texture-ink {
+  opacity: 0;
+}
+
+/* 1. Opt-in: the accessibility setting stamps <html data-texture="on">. */
+:root[data-texture='on'] .chart-texture-ink {
+  opacity: 1;
+}
+
+/* 2. Grayscale print — hue is gone on paper, so identity needs the texture. */
+@media print {
+  .chart-texture-ink {
+    opacity: 1;
+  }
+}
+
+/* 3. Forced-colors (Windows High Contrast): the OS replaces every fill with a
+ *    system colour, collapsing all series to one. `currentColor` on the ink is
+ *    substituted by the OS too, so the angle survives as the identity channel. */
+@media (forced-colors: active) {
+  .chart-texture-ink {
+    opacity: 1;
+    stroke: currentColor;
+    forced-color-adjust: none;
+  }
+}

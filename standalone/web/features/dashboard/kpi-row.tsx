@@ -1,0 +1,118 @@
+'use client';
+
+import { Cpu, Wifi, WifiOff, FileText } from 'lucide-react';
+import { StatTile } from '@/components/charts/stat-tile';
+
+import { fmt } from '@/components/charts/chart-utils';
+import { RANGE_LABELS } from '@/components/data/date-range-picker';
+import { useScope } from '@/lib/hooks/use-scope';
+import { useSummary } from './use-dashboard';
+import { useEffectiveDeviceType } from './use-scoped-device';
+
+/**
+ * KPI stat-tile row (plan §6, Month 8) — headline numbers; the readings tile shows
+ * the last-14-day trend. The scope's device filter narrows every count server-side.
+ */
+export function KpiRow() {
+  const { data, isLoading, isError } = useSummary();
+  const { scope } = useScope();
+  const effectiveType = useEffectiveDeviceType();
+  const showMet = !effectiveType || effectiveType === 'MET-LINK';
+
+  // Name the window the readings were counted in, using the same wording as the
+  // picker so the tile and the control cannot describe it differently.
+  const rangeSub = RANGE_LABELS[scope.range].toLowerCase();
+
+  if (isLoading) return <KpiSkeleton />;
+  if (isError || !data) return null;
+
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      {/* Current state, deliberately NOT narrowed to the range: "devices in the
+          last hour" is not a question with an answer. When a range is active the
+          tiles say so, rather than looking as though they ignored the filter. */}
+      <StatTile
+        // "Stations", as the nav, the Stations screen and the guides all say.
+        // "Devices" is the cloud product's word and was the last place using it.
+        label={data.totalDevices === 1 ? 'Station' : 'Stations'}
+        value={fmt(data.totalDevices, 0)}
+        sub={data.windowed ? 'now' : undefined}
+        icon={<Cpu className="h-4 w-4" />}
+      />
+      <StatTile
+        label="Online"
+        value={fmt(data.onlineDevices, 0)}
+        sub={`${fmt(data.offlineDevices, 0)} offline`}
+        icon={data.onlineDevices > 0 ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+      />
+      {showMet ? (
+        <StatTile
+          /*
+           * READINGS, not records.
+           *
+           * A MetRecord is one document per station per LOCAL DAY, so the old
+           * "MET records" tile counted days — it sat on 17 for a fortnight and
+           * moved once a day, which reads as a broken number. The server now sums
+           * `measureCount`, and the sparkline sums it per day so the trend line is
+           * in the same unit as the headline.
+           */
+          label="Readings"
+          value={fmt(data.totalMetRecords, 0)}
+          sub={
+            data.windowed
+              ? rangeSub
+              : data.totalMetDays
+                ? `over ${fmt(data.totalMetDays, 0)} days`
+                : undefined
+          }
+          icon={<FileText className="h-4 w-4" />}
+          spark={data.sparklines?.records}
+          sparkRole="chart-2"
+        />
+      ) : null}
+      {/* Armed-alerts tile removed with the alerts section. The backend still
+          returns `activeAlertRules` (a count of previously configured rules),
+          but nothing evaluates them, so the number would be misleading.
+      <StatTile
+        label="Armed alerts"
+        value={fmt(data.activeAlertRules, 0)}
+        sub="View alert rules"
+        icon={<BellRing className="h-4 w-4" />}
+        href="/alerts"
+      /> */}
+    </div>
+  );
+}
+
+/**
+ * Loading state for the KPI row (M24 W2).
+ *
+ * It used to render `<TableSkeleton rows={1} cols={6} />`, which is 32px tall
+ * against a loaded row of 98px — so the entire dashboard below it dropped 66px
+ * the moment the summary landed. Measured as one of four separate contributors to
+ * the dashboard's CLS; the LIGHTHOUSE.md write-up had blamed only the live panels.
+ *
+ * Rather than reserve a guessed height, this renders the SAME `StatTile` in the
+ * SAME grid, and fills each slot with `text-transparent` text of realistic
+ * length. The line boxes are therefore the real ones — label, value at
+ * `text-2xl`, and a `sub` line — so the height matches by construction and keeps
+ * matching if a tile's typography changes.
+ */
+function KpiSkeleton() {
+  const Bar = ({ children }: { children: string }) => (
+    <span className="animate-pulse rounded bg-muted text-transparent">{children}</span>
+  );
+
+  return (
+    <div aria-busy="true">
+      <span className="sr-only" role="status">
+        Loading summary…
+      </span>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-hidden="true">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <StatTile key={i} label="—" value={<Bar>0,000</Bar>} sub={<Bar>0 offline</Bar>} />
+        ))}
+      </div>
+    </div>
+  );
+}

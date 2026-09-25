@@ -1,0 +1,201 @@
+import { z } from 'zod';
+
+/**
+ * Zod is the PRIMARY validation guard (plan §10.6 — auth DTOs have no server-side
+ * class-validator). The server `message[]` is only a form-level fallback. Mirror
+ * the backend's real rules: email format + password ≥ 8.
+ */
+const email = z.string().min(1, 'auth.errors.emailRequired').email('auth.errors.emailInvalid');
+const password = z.string().min(8, 'auth.errors.passwordMin');
+
+export const loginSchema = z.object({
+  email,
+  password: z.string().min(1, 'auth.errors.passwordRequired'),
+});
+export type LoginInput = z.infer<typeof loginSchema>;
+
+export const forgotPasswordSchema = z.object({ email });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1),
+    newPassword: password,
+    confirmPassword: z.string().min(1),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    message: 'auth.errors.passwordsMismatch',
+    path: ['confirmPassword'],
+  });
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+// ── OTP password reset (6-digit code → verify → set new password) ──────────────
+const resetCode = z.string().regex(/^\d{6}$/, 'auth.errors.codeRequired');
+
+export const verifyResetCodeSchema = z.object({ email, code: resetCode });
+export type VerifyResetCodeInput = z.infer<typeof verifyResetCodeSchema>;
+
+export const otpResetPasswordSchema = z
+  .object({
+    code: resetCode,
+    newPassword: password,
+    confirmPassword: z.string().min(1),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    message: 'auth.errors.passwordsMismatch',
+    path: ['confirmPassword'],
+  });
+export type OtpResetPasswordInput = z.infer<typeof otpResetPasswordSchema>;
+
+// ── Org / people ──────────────────────────────────────────────────────────────
+export const roleSchema = z.enum(['admin', 'operator', 'viewer']);
+
+export const updateOrgSchema = z.object({
+  name: z.string().min(1).max(200),
+  contactEmail: z.string().email().or(z.literal('')).optional(),
+  country: z.string().min(1).max(100),
+  timezone: z.string().min(1).max(100),
+});
+export type UpdateOrgInput = z.infer<typeof updateOrgSchema>;
+
+export const updateUserSchema = z.object({
+  role: roleSchema.optional(),
+  // Assigning by id is the only way to grant a CUSTOM role; the server mirrors the
+  // role's `baseRole` onto `role` so the legacy guards keep working.
+  roleId: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+/**
+ * Add a person directly, with a password.
+ *
+ * There is no email on a site PC, so the operator sets the password and passes it
+ * on; the person is asked to choose their own at their first sign-in.
+ *
+ * Every message here is either plain English or a translation key that resolves —
+ * `passwordTooShort` used to reach the screen verbatim.
+ */
+export const createUserSchema = z.object({
+  email,
+  password: z.string().min(8, { message: 'auth.errors.passwordMin' }).max(128),
+  firstName: z.string().max(100).optional(),
+  lastName: z.string().max(100).optional(),
+  role: roleSchema.optional(),
+  roleId: z.string().optional(),
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+// ── Profile ─────────────────────────────────────────────────────────────────
+export const profileSchema = z
+  .object({
+    firstName: z.string().min(1, { message: 'profile.errors.firstName' }).max(100),
+    lastName: z.string().min(1, { message: 'profile.errors.lastName' }).max(100),
+    currentPassword: z.string().optional(),
+    newPassword: z.string().optional(),
+    confirmPassword: z.string().optional(),
+  })
+  .superRefine((v, ctx) => {
+    const changing = Boolean(v.newPassword && v.newPassword.length > 0);
+    if (!changing) return;
+    if ((v.newPassword ?? '').length < 8) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'auth.errors.passwordMin', path: ['newPassword'] });
+    }
+    if (!v.currentPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'auth.errors.currentPasswordRequired',
+        path: ['currentPassword'],
+      });
+    }
+    if (v.newPassword !== v.confirmPassword) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'auth.errors.passwordsMismatch', path: ['confirmPassword'] });
+    }
+  });
+export type ProfileInput = z.infer<typeof profileSchema>;
+
+// ── Devices (Month 8) ─────────────────────────────────────────────────────────
+export const deviceTypeSchema = z.enum(['MET-LINK', 'NEP-LINK']);
+
+export const updateDeviceSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  customName: z.string().max(120).nullable().optional(),
+  serialNo: z.string().max(120).nullable().optional(),
+  firmwareVersion: z.string().max(60).nullable().optional(),
+  storeRawSamples: z.boolean().optional(),
+  rainDayStartHour: z.number().int().min(0).max(23).optional(),
+  headingOffsetDeg: z.number().finite().min(-360).max(360).optional(),
+});
+export type UpdateDeviceInput = z.infer<typeof updateDeviceSchema>;
+
+// `deviceSettingsSchema` lived here as the SOLE guard for PATCH /devices/:id/settings,
+// because the backend DTO validates nothing. It went with the device-settings editor
+// in M25. Nothing in this portal calls that endpoint any more; if one ever does, it
+// must bring its own Zod back — the server still will not check the body.
+
+/**
+ * Display units. The server validates these with `@IsIn` (unlike most DTOs here),
+ * so this is a convenience guard rather than the sole one — but the lists must
+ * still match `lib/units/convert.ts`, because a value that passes here and has no
+ * conversion entry would render every affected number blank.
+ */
+export const displayUnitsSchema = z.object({
+  windSpeed: z.enum(['m/s', 'km/h', 'knots', 'mph', 'bft']).optional(),
+  pressure: z.enum(['hPa', 'mbar', 'inHg', 'mmHg']).optional(),
+  temperature: z.enum(['°C', '°F']).optional(),
+  altitude: z.enum(['m', 'ft']).optional(),
+});
+export type DisplayUnitsFormInput = z.infer<typeof displayUnitsSchema>;
+
+// ── Alert rules (Month 11) ────────────────────────────────────────────────────
+// Client Zod is the PRIMARY guard (§10.6): the CreateAlertRuleDto leaves `sensor`
+// a free string and puts NO @Min on threshold/cooldown. Crucially, we restrict
+// `sensor` to the keys the backend alert-evaluator can actually resolve
+// (MET_SENSOR_MAP in alert-rules/evaluate.ts) — a rule on any other key would be
+// accepted by the API but could never fire, silently.
+export const MET_ALERT_SENSORS = ['wind_speed', 'wind_dir', 'temperature', 'humidity', 'pressure', 'dew_point'] as const;
+
+const alertConditionSchema = z.enum(['gt', 'lt', 'gte', 'lte']);
+const alertAppTypeSchema = z.enum(['MET']);
+/** A 24-hex Mongo ObjectId (deviceId / notifyUserIds — the DTO's only real check). */
+const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/, 'Invalid id');
+
+export const alertRuleSchema = z
+  .object({
+    name: z.string().min(1, 'Name is required').max(120),
+    deviceId: objectId.describe('Select a device'),
+    appType: alertAppTypeSchema,
+    sensor: z.string().min(1, 'Select a sensor'),
+    condition: alertConditionSchema,
+    threshold: z
+      .number({ invalid_type_error: 'Threshold must be a number' })
+      .finite('Threshold must be a number'),
+    unit: z.string().min(1, 'Unit is required').max(20),
+    cooldownMinutes: z
+      .number({ invalid_type_error: 'Cooldown must be a number' })
+      .int()
+      .min(0, 'Cooldown cannot be negative')
+      .max(10080, 'Cooldown is too large')
+      .default(60),
+    notifyUserIds: z.array(objectId).default([]),
+    isActive: z.boolean().default(true),
+  })
+  .superRefine((v, ctx) => {
+    const allowed: readonly string[] = MET_ALERT_SENSORS;
+    if (!allowed.includes(v.sensor)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Not a valid ${v.appType} sensor`, path: ['sensor'] });
+    }
+  });
+export type AlertRuleInput = z.infer<typeof alertRuleSchema>;
+
+export const updateAlertRuleSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  sensor: z.string().min(1).optional(),
+  condition: alertConditionSchema.optional(),
+  threshold: z.number().finite().optional(),
+  unit: z.string().min(1).max(20).optional(),
+  cooldownMinutes: z.number().int().min(0).max(10080).optional(),
+  notifyUserIds: z.array(objectId).optional(),
+  isActive: z.boolean().optional(),
+});
+export type UpdateAlertRuleInput = z.infer<typeof updateAlertRuleSchema>;

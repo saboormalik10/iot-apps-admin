@@ -1,0 +1,144 @@
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import {
+  getMetRain,
+  getSummary,
+  getDashboardDevices,
+  getMetLatest,
+  getMetRangeSummary,
+  getMetWindrose,
+  getMetHistory,
+  getMetHistoryMulti,
+} from '@/lib/api/endpoints';
+import { queryKeys } from '@/lib/query/keys';
+import { useScope } from '@/lib/hooks/use-scope';
+
+/**
+ * Dashboard query hooks (plan §14). Realtime handlers invalidate these keys.
+ *
+ * The Scope Bar's "Include demo data" toggle is threaded through here: it's passed
+ * to the backend (which filters demo records/sessions) AND appended to the query key
+ * — at the END, so the realtime prefix-invalidations (e.g. queryKeys.summary) still
+ * match. Default is OFF → demo data is excluded.
+ */
+
+export function useSummary() {
+  const { scope, window } = useScope();
+  return useQuery({
+    // Scope (type/device) appended AFTER the prefix so realtime
+    // prefix-invalidations on queryKeys.summary still match.
+    //
+    // The WINDOW is part of the key too: the data tiles are counted within it,
+    // so without it a range change would be served the previous range's numbers
+    // from cache. `window` is minute-quantised and memoised by `useScope`, so
+    // this does not churn (see the note in use-scope.ts).
+    queryKey: [
+      ...queryKeys.summary,
+      scope.deviceType ?? null,
+      scope.deviceId ?? null,
+      window.from ?? null,
+      window.to,
+    ] as const,
+    queryFn: ({ signal }) =>
+      getSummary(
+        { type: scope.deviceType, deviceId: scope.deviceId, from: window.from, to: window.to },
+        signal,
+      ),
+  });
+}
+
+export function useDashboardDevices() {
+  // This feeds the scope-bar device picker AND the fleet table, so scoping it is
+  // what stops a demo device being selectable in real mode (and the reverse).
+  const { scope } = useScope();
+  return useQuery({
+    queryKey: [...queryKeys.dashboardDevices] as const,
+    queryFn: ({ signal }) => getDashboardDevices(signal),
+  });
+}
+
+/**
+ * Rain today, in the last hour, and its rate. Separate from the latest reading
+ * because rain is a difference of totals the server works out, not a value the
+ * `met:latest` push carries; the realtime hook refetches it each minute.
+ */
+export function useMetRain(deviceId?: string) {
+  return useQuery({
+    queryKey: queryKeys.metRain(deviceId ?? ''),
+    queryFn: ({ signal }) => getMetRain(deviceId!, signal),
+    enabled: Boolean(deviceId),
+  });
+}
+
+export function useMetLatest(deviceId?: string) {
+  return useQuery({
+    queryKey: [...queryKeys.metLatest(deviceId ?? '')] as const,
+    queryFn: ({ signal }) => getMetLatest(deviceId!, signal),
+    enabled: Boolean(deviceId),
+  });
+}
+
+/**
+ * min / mean / max for a sensor across the scope-bar window.
+ *
+ * This is what makes the date filter visible on the live panel. The panel itself
+ * shows one moment — a dial points one way — so the range can only change it when
+ * the station has been quiet. These three numbers describe the whole window, and
+ * they move on every preset.
+ *
+ * Uses the same memoised, minute-quantised window as `useMetLatest`, for the same
+ * reason: an inline `Date.now()` in the key refetches forever.
+ */
+export function useMetRangeSummary(deviceId?: string, sensor = 'wind_speed', enabled = true) {
+  const { window } = useScope();
+  const from = window.from ?? 0;
+  const to = window.to;
+  return useQuery({
+    queryKey: [...queryKeys.metRangeSummary(deviceId ?? '', sensor, `${from}-${to}`)] as const,
+    queryFn: ({ signal }) => getMetRangeSummary({ deviceId: deviceId!, sensor, from, to }, signal),
+    enabled: Boolean(deviceId) && enabled,
+  });
+}
+
+export function useMetWindrose(deviceId?: string) {
+  const { scope } = useScope();
+  return useQuery({
+    queryKey: [...queryKeys.metWindrose(deviceId ?? '')] as const,
+    queryFn: ({ signal }) => getMetWindrose(deviceId!, signal),
+    enabled: Boolean(deviceId),
+  });
+}
+
+export function useMetHistory(params?: { deviceId: string; sensor: string; from: number; to: number; }) {
+  return useQuery({
+    queryKey: params
+      ? ([...queryKeys.metHistory(params.deviceId, params.sensor, params.from, params.to)] as const)
+      : (['met-history', 'idle'] as const),
+    queryFn: ({ signal }) => getMetHistory(params!, signal),
+    enabled: Boolean(params?.deviceId),
+  });
+}
+
+/**
+ * One request for the whole sensor graph stack (min/avg/max per adaptive bucket
+ * for every sensor at once) — replaces the 8-way fan-out of `useMetHistory`, so
+ * the dashboard makes a single call with a single, display-sized payload.
+ */
+export function useMetHistoryMulti(params?: {
+  deviceId: string;
+  sensors: string[];
+  from: number;
+  to: number;
+}) {
+  return useQuery({
+    queryKey: params
+      ? ([
+          ...queryKeys.metHistoryMulti(params.deviceId, params.sensors.join(','), params.from, params.to),
+        ] as const)
+      : (['met-history-multi', 'idle'] as const),
+    queryFn: ({ signal }) => getMetHistoryMulti(params!, signal),
+    enabled: Boolean(params?.deviceId),
+  });
+}
+

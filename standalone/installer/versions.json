@@ -1,0 +1,28 @@
+{
+  "$comment": "What a release bundles. Node and MongoDB are checked against the checksums their vendors publish; WinSW and the MongoDB tools publish none, so their SHA-256 is pinned here (taken from the first download, 22 Sep 2026). Changing a version means changing its hash.",
+  "node": {
+    "version": "24.21.0",
+    "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip",
+    "shasumsUrl": "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt"
+  },
+  "mongodb": {
+    "version": "7.0.43",
+    "url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-7.0.43.zip",
+    "sha256Url": "https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-7.0.43.zip.sha256"
+  },
+  "mongodbTools": {
+    "version": "100.19.0",
+    "url": "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-windows-x86_64-100.19.0.zip",
+    "sha256": "e3b9f3077374fc2bc4318f86ebf56268bac0f97f52383dc622b229bad5ba084a"
+  },
+  "winsw": {
+    "version": "2.12.0",
+    "url": "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe",
+    "sha256": "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da"
+  },
+  "vcRedist": {
+    "$comment": "Microsoft Visual C++ 2015-2022 runtime (x64). mongod.exe needs msvcp140/vcruntime140, which a fresh Windows may lack; the installer runs it only when mongod cannot start without it. The URL is the one aka.ms/vs/17/release/vc_redist.x64.exe resolved to on 22 Sep 2026; its path carries the file's SHA-256.",
+    "url": "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"
+  }
+}

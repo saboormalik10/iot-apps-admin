@@ -1,0 +1,40 @@
+/**
+ * The MET sensor allow-list feeding the analytics pickers (multi-sensor,
+ * statistics, comparison). Mirrors the backend MET_SENSOR_FIELD map — §10.5 grew
+ * it 12 → 15 by adding qnh / qfe / gps_altitude (fields already on MetMeasure).
+ * Single source so every picker stays in sync.
+ *
+ * `unit` is the CANONICAL unit — what the API returns and what MetMeasure stores
+ * — never the organisation's chosen display unit. Render sites pass it through
+ * `useUnits().unitFor()` / `.value()`; converting it here would leave the raw
+ * numbers labelled in a unit nothing had converted them to.
+ */
+export interface SensorOption {
+  key: string;
+  label: string;
+  unit: string;
+}
+
+export const MET_SENSORS: SensorOption[] = [
+  { key: 'temperature', label: 'Temperature', unit: '°C' },
+  { key: 'humidity', label: 'Humidity', unit: '%' },
+  { key: 'pressure', label: 'Pressure', unit: 'hPa' },
+  { key: 'wind_speed', label: 'Wind speed', unit: 'm/s' },
+  { key: 'wind_dir', label: 'Wind direction', unit: '°' },
+  { key: 'solar', label: 'Solar', unit: 'W/m²' },
+  // No rain here. The stored value is the site's running total, so an average,
+  // a percentile or an overlay of it means nothing; rain lives on the dashboard
+  // (today, last hour, rate, accumulated graph) and the query screen's hourly and
+  // daily totals.
+  { key: 'dew_point', label: 'Dew point', unit: '°C' },
+  { key: 'voltage', label: 'Voltage', unit: 'V' },
+  { key: 'battery_voltage', label: 'Battery voltage', unit: 'V' },
+  { key: 'current', label: 'Current', unit: 'A' },
+  // §10.5 additions (12 → 15)
+  { key: 'qnh', label: 'QNH', unit: 'hPa' },
+  { key: 'qfe', label: 'QFE', unit: 'hPa' },
+  { key: 'gps_altitude', label: 'GPS altitude', unit: 'm' },
+];
+
+export const sensorLabel = (key: string): string => MET_SENSORS.find((s) => s.key === key)?.label ?? key;
+export const sensorUnit = (key: string): string => MET_SENSORS.find((s) => s.key === key)?.unit ?? '';

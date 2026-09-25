@@ -1,0 +1,169 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { Card } from '@/components/ui/card';
+import { TimeSeriesChart } from '@/components/charts/time-series-chart';
+import { LoadingState, EmptyState } from '@/components/screen-states';
+import { useScope } from '@/lib/hooks/use-scope';
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
+import type { MetHistorySeries } from '@/lib/api/types';
+import { useMetHistoryMulti } from './use-dashboard';
+import { useUnits } from '@/lib/units/use-units';
+
+/**
+ * The per-sensor stack (mirrors the mobile "graphs" layout + the Parklife graph
+ * stack, screenshots 2–3). One single-series line chart per sensor, all sharing
+ * the Scope-Bar window. The PRIMARY chart (wind speed) carries the brush/range
+ * navigator; the rest follow the same window.
+ */
+const SENSORS: { key: string; label: string; brush?: boolean }[] = [
+  { key: 'wind_speed', label: 'Wind speed', brush: true },
+  { key: 'temperature', label: 'Temperature' },
+  { key: 'humidity', label: 'Humidity' },
+  { key: 'pressure', label: 'Pressure' },
+  { key: 'dew_point', label: 'Dew point' },
+  { key: 'solar', label: 'Solar' },
+  // Plotted ACCUMULATED over the range by the server: the last point is the
+  // range's total rain.
+  { key: 'precipitation', label: 'Rain, accumulated' },
+  { key: 'voltage', label: 'Voltage' },
+];
+
+
+export function MetGraphStack({ deviceId }: { deviceId?: string }) {
+  const sensors = useDeviceSensors(deviceId);
+  // Only chart what the station actually reports. This stack hard-coded eight
+  // sensors, so a wind-only device rendered seven cards of EmptyState — each one
+  // still occupying a full row in the scroll.
+  const visibleSensors = SENSORS.filter((sensor) => sensors.has(sensor.key));
+  const { window, scope } = useScope();
+
+  // ONE request for the whole stack — server-aggregated (min/avg/max per adaptive
+  // bucket) so the browser never fetches raw rows or bins anything itself, and
+  // never makes 8 round-trips for 8 charts.
+  const { data, isLoading } = useMetHistoryMulti(
+    deviceId
+      ? {
+          deviceId,
+          sensors: visibleSensors.map((sensor) => sensor.key),
+          // "All time" has no lower bound (window.from undefined) → 0, so the
+          // graph honours the range picker instead of silently showing 6h.
+          from: window.from ?? 0,
+          to: window.to,
+        }
+      : undefined,
+  );
+
+  if (!deviceId) return <EmptyState title="No MET-LINK device" body="Pair a MET-LINK station to see the sensor graphs." />;
+
+  return (
+    <div className="space-y-4">
+      {visibleSensors.map((s) => (
+        <InViewport key={s.key} minHeight={s.brush ? 236 : 200}>
+          <SensorPanel series={data?.series?.[s.key]} isLoading={isLoading} sensor={s.key} label={s.label} brush={s.brush} />
+        </InViewport>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One sensor panel — reads its slice from the single `met/history-multi` payload
+ * (min/avg/max per adaptive bucket). No per-panel fetch, no client aggregation.
+ */
+function SensorPanel({
+  series,
+  isLoading,
+  sensor,
+  label,
+  brush,
+}: {
+  series?: MetHistorySeries;
+  isLoading: boolean;
+  sensor: string;
+  label: string;
+  brush?: boolean;
+}) {
+  const units = useUnits();
+  // The chart branch supplies its own Card (via ChartFrame); the state branches
+  // wear a plain Card so the stack reads consistently.
+  if (isLoading) {
+    return (
+      <Card className="space-y-2 p-4">
+        <h3 className="text-sm font-medium">{label}</h3>
+        <LoadingState label="Loading…" />
+      </Card>
+    );
+  }
+  if (!series?.data?.length) {
+    return (
+      <Card className="space-y-2 p-4">
+        <h3 className="text-sm font-medium">{label}</h3>
+        <EmptyState title="No data in range" body="Widen the date range in the Scope Bar." />
+      </Card>
+    );
+  }
+  return (
+    <TimeSeriesChart
+      title={label}
+      // avg / min / max are all readings on one axis, so all three convert.
+      data={
+        // Cast back after the map: spreading a Record<string, …> and then naming
+        // three keys makes TS forget the index signature, which `xKey` needs.
+        (series.data as unknown as Array<Record<string, number | null>>).map((row) => ({
+          ...row,
+          avg: units.value(row.avg, series.unit),
+          min: units.value(row.min, series.unit),
+          max: units.value(row.max, series.unit),
+        })) as Array<Record<string, number | null>>
+      }
+      xKey="timestampMs"
+      unit={units.unitFor(series.unit)}
+      height={brush ? 200 : 160}
+      brush={brush}
+      series={[
+        { key: 'avg', label: 'Average', role: 'chart-1' },
+        { key: 'min', label: 'Min', role: 'chart-3' },
+        { key: 'max', label: 'Max', role: 'chart-6' },
+      ]}
+      exportName={`met-${sensor}`}
+    />
+  );
+}
+
+/**
+ * Defers mounting its children until they scroll near the viewport, so the eight
+ * Recharts charts don't all lay out on first paint (only ~2–3 are visible). The
+ * data is already loaded once above; this is purely a rendering optimization.
+ */
+function InViewport({ minHeight, children }: { minHeight: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    if (shown) return;
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown]);
+
+  return (
+    <div ref={ref} style={{ minHeight: shown ? undefined : minHeight }}>
+      {shown ? children : null}
+    </div>
+  );
+}

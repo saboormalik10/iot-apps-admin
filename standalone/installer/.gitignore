@@ -1,0 +1,3 @@
+# Downloads (Node, MongoDB, WinSW) and built releases - large, rebuilt on demand
+.cache/
+dist/

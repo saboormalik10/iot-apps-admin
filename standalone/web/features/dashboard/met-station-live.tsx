@@ -1,0 +1,464 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { CloudRain } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Gauge, type GaugeBand } from '@/components/charts/gauge';
+import { Thermometer } from '@/components/charts/thermometer';
+import { BatteryGauge } from '@/components/charts/battery-gauge';
+import { CompassTile } from '@/components/charts/compass-tile';
+import { WindDial } from '@/components/charts/wind-dial';
+import { LiveWindDial } from './live-wind-dial';
+import { useDeviceSensors } from '@/lib/hooks/use-device-sensors';
+import { useUnits } from '@/lib/units/use-units';
+import { StatTile } from '@/components/charts/stat-tile';
+import { BeaufortBadge } from '@/components/charts/beaufort-scale';
+import { LoadingState, EmptyState } from '@/components/screen-states';
+import { fmt } from '@/components/charts/chart-utils';
+import { WindRosePanel } from './wind-rose-panel';
+import { DataFreshness } from './data-freshness';
+import { useMetLatest, useMetRain } from './use-dashboard';
+import { useScope } from '@/lib/hooks/use-scope';
+import { RANGE_LABELS } from '@/components/data/date-range-picker';
+import { useMetRangeSummary } from './use-dashboard';
+import { PresetMenu } from './presets/preset-menu';
+import { useDashboardLayouts } from './presets/use-layouts';
+import { ALL_WIDGET_KEYS, MET_STATION_WIDGETS, tilesToKeys } from './presets/tile-catalog';
+
+/** Pressure threshold bands (hPa) — low/normal/high on the reserved status roles. */
+const PRESSURE_BANDS: GaugeBand[] = [
+  { from: 950, to: 1000, role: 'status-warn', label: 'Low' },
+  { from: 1000, to: 1025, role: 'status-ok', label: 'Normal' },
+  { from: 1025, to: 1050, role: 'status-info', label: 'High' },
+];
+
+/**
+ * Wind-speed threshold bands, in m/s.
+ *
+ * These ARE the 4 Parklife bands (25/50/75/100 km/h) — restated in m/s because
+ * the gauge domain is now canonical, so the displayed unit can change without
+ * moving a threshold. Same visual boundaries, different arithmetic.
+ */
+const WIND_MAX_MS = 100 / 3.6;
+const WIND_BANDS: GaugeBand[] = [
+  { from: 0, to: 25 / 3.6, role: 'seq-1' },
+  { from: 25 / 3.6, to: 50 / 3.6, role: 'seq-3' },
+  { from: 50 / 3.6, to: 75 / 3.6, role: 'seq-4' },
+  { from: 75 / 3.6, to: WIND_MAX_MS, role: 'seq-5' },
+];
+
+/**
+ * MET station "Live" view (plan §5.5 / gap-analysis item 5) — the curated
+ * instrument grid mirroring the Parklife station overview: radial gauges (wind
+ * speed, humidity, pressure), thermometers (temp, dew point), a battery gauge (DC
+ * voltage), a compass (wind direction), the wind rose, and big-number tiles
+ * (precip total/intensity). Fed by the live `met:latest` push via `useMetLatest`
+ * (no polling). Null sensors render empty widgets, never a fabricated 0 (§10.2).
+ *
+ * Which tiles are shown is a per-device, per-user "saved view" (§Month 11): the
+ * PresetMenu toggles visibility and persists named presets via `dashboard-layouts`.
+ * Default is ALL tiles (zero change unless a view is saved/applied).
+ */
+/**
+ * max / mean / min for the selected range, under the live reading.
+ *
+ * The live panel shows ONE moment — a dial points one way — so the date filter can
+ * only change it when the station has been quiet, which is why changing the range
+ * appeared to do nothing. These three numbers describe the whole window and move
+ * on every preset.
+ *
+ * Max leads deliberately. A weekly average wind of 8 km/h tells an operator
+ * nothing; a peak of 60 km/h is the number a speed restriction turns on. Min is
+ * shown only when it means something — for wind it is zero in any window worth
+ * looking at, so the API returns null and it is omitted rather than printed as a
+ * meaningless 0.0.
+ */
+function RangeSummary({ deviceId, unitLabel, format }: {
+  deviceId: string;
+  unitLabel: string;
+  /** Canonical m/s → printed string, so Beaufort shows as a whole force. */
+  format: (v: number) => string;
+}) {
+  const { scope } = useScope();
+  const { data, isLoading } = useMetRangeSummary(deviceId, 'wind_speed');
+
+  if (isLoading) return <p className="text-xs text-muted-foreground">Summarising {RANGE_LABELS[scope.range].toLowerCase()}…</p>;
+  if (!data || !data.count || data.max == null) return null;
+
+  const parts = [
+    `max ${format(data.max)}`,
+    data.mean != null ? `avg ${format(data.mean)}` : null,
+    data.min != null ? `min ${format(data.min)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <p className="text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">{RANGE_LABELS[scope.range]}</span>
+      {' · '}
+      {parts.join(' · ')} {unitLabel}
+      {/* Long ranges are answered from daily rollups, so the window is rounded
+          outward to whole local days. Saying so costs one word and stops the
+          figures being read as minute-precise. */}
+      {data.basis === 'daily' ? <span className="ml-1 opacity-70">(daily)</span> : null}
+    </p>
+  );
+}
+
+export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto?: boolean }) {
+  /**
+   * The panel shows the LIVE reading — the newest one, whatever the date range.
+   *
+   * A dial points one way and a hero number is one value, so a range can only ever
+   * move that single point; for a station reporting now, every rolling preset
+   * resolves to the same reading, which is why changing the filter appeared to do
+   * nothing. The range belongs to the SUMMARY line below instead, where it
+   * describes the whole window and visibly changes on every preset.
+   *
+   * Staleness is already covered: `DataFreshness` says how old the reading is, and
+   * badges it once past ten minutes.
+   */
+  const { scope } = useScope();
+  const units = useUnits();
+  const { data, isLoading } = useMetLatest(deviceId);
+  const { data: rain } = useMetRain(deviceId);
+  const scoped = scope.range !== 'all';
+  const { data: layouts } = useDashboardLayouts(deviceId);
+  const sensors = useDeviceSensors(deviceId);
+
+  const [visibleKeys, setVisibleKeys] = useState<string[]>(ALL_WIDGET_KEYS);
+  const [appliedId, setAppliedId] = useState<string | null>(null);
+  // Auto-apply the device's default saved view exactly once per device.
+  const autoAppliedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deviceId || !layouts) return;
+    if (autoAppliedFor.current === deviceId) return;
+    autoAppliedFor.current = deviceId;
+    const def = layouts.find((l) => l.isDefault);
+    if (def) {
+      setVisibleKeys(tilesToKeys(def.tiles));
+      setAppliedId(def._id);
+    } else {
+      setVisibleKeys(ALL_WIDGET_KEYS);
+      setAppliedId(null);
+    }
+  }, [deviceId, layouts]);
+
+  /**
+   * A tile shows when the user's saved view includes it AND the device actually
+   * reports it. Without the second clause a wind-only station renders five
+   * permanently empty gauges — the dashboard looks broken rather than accurate.
+   *
+   * `sensors.has()` fails open, so before the device list lands nothing is hidden.
+   *
+   * Declared ABOVE the loading guard on purpose: it depends only on `visibleKeys`
+   * and `sensors`, both of which are known before `data` arrives, so the skeleton
+   * can render the exact same tile set. That is what makes the loaded view drop
+   * in at the same height instead of shifting the page (M24 W2).
+   */
+  const SENSORLESS = new Set(['battery', 'wind_dial']);
+  // Tiles named differently from the sensor behind them. Without this the rain
+  // tiles asked whether the station reports `precip_total` — no station does; the
+  // sensor is `precipitation` — so they vanished the moment the list was known.
+  const SENSOR_OF: Record<string, string> = { precip_total: 'precipitation', precip_rate: 'precipitation', rain_hour: 'precipitation' };
+  const show = (key: string) => {
+    if (!visibleKeys.includes(key)) return false;
+    // `wind_dial` covers speed AND bearing; battery is hardware, not a sensor
+    // the ingester ever sees in a file.
+    if (SENSORLESS.has(key)) return key === 'wind_dial' ? sensors.has('wind_speed') : true;
+    return sensors.has(SENSOR_OF[key] ?? key);
+  };
+  const dayStart = `${String(rain?.rainDayStartHour ?? 0).padStart(2, '0')}:00`;
+
+  if (!deviceId) return <EmptyState title="No MET-LINK device" body="Pair a MET-LINK station to see the live dashboard." />;
+  /**
+   * Order matters here, and getting it wrong is measurable.
+   *
+   * `show()` fails open, so BEFORE the devices list lands it reports every tile.
+   * Rendering the tile-shaped skeleton at that point paints all eleven tiles
+   * (1158px) and then shrinks to whatever the station actually reports (960px) —
+   * a bigger shift than the plain spinner it replaced. Measured exactly that way
+   * on the first attempt.
+   *
+   * So: spinner until the sensor list resolves and the tile count is KNOWN, then
+   * the shaped skeleton at the final size, then the real grid dropping into the
+   * same height with no shift at all.
+   */
+  if (!sensors.resolved) return <LoadingState label="Loading live station…" />;
+  if (isLoading) return <StationSkeleton show={show} />;
+  if (!data) return <EmptyState title="No live MET data" body="This device has not reported measurements yet." />;
+
+  return (
+    <div className="space-y-4">
+      <Card className="space-y-4 p-4">
+        {/* Wraps, because on a phone-width screen the station's name plus the
+            Beaufort badge and the Views button are wider than the card — which
+            pushed the whole dashboard sideways (QA, 24 Sep 2026: 404px of
+            content in a 375px window). */}
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 space-y-0.5">
+            <h2 className="text-sm font-medium">
+              Live station · {data.deviceName}
+              {isAuto ? <span className="ml-2 text-xs font-normal text-muted-foreground">(auto-selected)</span> : null}
+            </h2>
+            <DataFreshness tsMs={data.measuredAtMs} />
+            {scoped && deviceId ? (
+              // m/s from the API, rendered in the organisation's chosen unit —
+              // the alternative is two different units side by side on one panel.
+              <RangeSummary
+                deviceId={deviceId}
+                unitLabel={units.unitFor('m/s')}
+                format={(v) => units.format(v, 'm/s')}
+              />
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <BeaufortBadge windMs={data.windSpeedMs} />
+            <PresetMenu
+              deviceId={deviceId}
+              visibleKeys={visibleKeys}
+              onChange={setVisibleKeys}
+              appliedId={appliedId}
+              onApplied={setAppliedId}
+            />
+          </div>
+        </div>
+
+        {/* One line, because the two cadences beside each other read as two
+            instruments disagreeing: the dial moves every second, the gauges hold
+            the last completed minute, so they legitimately differ. */}
+        <p className="mb-2 text-xs text-muted-foreground">
+          The wind dial is live, every second. Every other reading here is the average of the last completed minute.
+        </p>
+
+        {/* Instrument grid — gauges + thermometers + battery + compass. */}
+        <div className="grid grid-cols-2 items-end gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          {show('wind_dial') ? (
+            <Widget>
+              <LiveWindDial
+                deviceId={deviceId}
+                minute={{ speedMs: data.windSpeedMs, speedKmh: data.windSpeedKmh, dirDeg: data.windDirTrueDeg }}
+                headingOffsetDeg={data.headingOffsetDeg ?? 0}
+                reference={data.windDirReference ?? null}
+                speedUnit={units.unitFor('m/s')}
+                formatSpeed={(ms) => units.format(ms, 'm/s', 2)}
+              />
+            </Widget>
+          ) : null}
+          {show('wind_speed') ? (
+            <Widget>
+              <Gauge
+                value={data.windSpeedMs}
+                min={0}
+                max={WIND_MAX_MS}
+                label="Wind speed"
+                unit={units.unitFor('m/s')}
+                format={(v) => units.format(v, 'm/s')}
+                valueRole="seq-3"
+                bands={WIND_BANDS}
+              />
+            </Widget>
+          ) : null}
+          {show('humidity') ? (
+            <Widget>
+              <Gauge value={data.humidityPct} min={0} max={100} label="Humidity" unit="%" valueRole="seq-2" digits={0} />
+            </Widget>
+          ) : null}
+          {show('pressure') ? (
+            <Widget>
+              <Gauge
+                value={data.pressureHpa}
+                min={950}
+                max={1050}
+                label="Pressure"
+                unit={units.unitFor('hPa')}
+                format={(v) => units.format(v, 'hPa')}
+                valueRole="seq-4"
+                bands={PRESSURE_BANDS}
+              />
+            </Widget>
+          ) : null}
+          {show('solar') ? (
+            <Widget>
+              <Gauge value={data.solarWm2} min={0} max={1200} label="Solar" unit="W/m²" valueRole="chart-3" digits={0} />
+            </Widget>
+          ) : null}
+          {show('temperature') ? (
+            <Widget>
+              <Thermometer
+                value={data.tempC}
+                min={-10}
+                max={50}
+                label="Temperature"
+                unit={units.unitFor('°C')}
+                format={(v) => units.format(v, '°C')}
+              />
+            </Widget>
+          ) : null}
+          {show('dew_point') ? (
+            <Widget>
+              <Thermometer
+                value={data.dewPointC}
+                min={-10}
+                max={30}
+                label="Dew point"
+                unit={units.unitFor('°C')}
+                format={(v) => units.format(v, '°C')}
+              />
+            </Widget>
+          ) : null}
+          {show('wind_dir') ? (
+            <Widget>
+              <CompassTile deg={data.windDirTrueDeg} label="Wind direction" />
+            </Widget>
+          ) : null}
+          {/* Only when the station has actually reported a voltage: mains-powered
+              units never do, and an empty gauge reads as a broken instrument. */}
+          {show('battery') && (data.voltageV ?? data.batteryVoltageV) != null ? (
+            <Widget>
+              <BatteryGauge value={data.voltageV ?? data.batteryVoltageV} min={10} max={15} label="DC voltage" />
+            </Widget>
+          ) : null}
+        </div>
+
+        {/* Rain: today (from the station's rain-day start), the last hour, and the
+            rate. Differences of the stored running total, worked out by the
+            server — never the total itself, which only says how much has fallen
+            since the software started. */}
+        {show('precip_total') || show('rain_hour') || show('precip_rate') ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {show('precip_total') ? (
+              <StatTile
+                label="Rain today"
+                sub={`since ${dayStart}`}
+                icon={<span className="[&_svg]:h-4 [&_svg]:w-4"><CloudRain /></span>}
+                value={<Value v={rain?.todayMm ?? null} unit="mm" />}
+              />
+            ) : null}
+            {show('rain_hour') ? (
+              <StatTile
+                label="Rain last hour"
+                icon={<span className="[&_svg]:h-4 [&_svg]:w-4"><CloudRain /></span>}
+                value={<Value v={rain?.lastHourMm ?? null} unit="mm" />}
+              />
+            ) : null}
+            {show('precip_rate') ? (
+              <StatTile
+                label="Rain rate"
+                sub="last 10 minutes"
+                icon={<span className="[&_svg]:h-4 [&_svg]:w-4"><CloudRain /></span>}
+                value={<Value v={rain?.rateMmHr ?? null} unit="mm/h" />}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+
+      {/* Wind rose — the signature polar chart (already owned). */}
+      {deviceId ? (
+        <Card className="p-4">
+          <WindRosePanel deviceId={deviceId} />
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function Widget({ children }: { children: React.ReactNode }) {
+  return <div className="flex justify-center">{children}</div>;
+}
+
+/**
+ * Loading state for the live station — the fix for the dashboard's CLS gap
+ * (M24 W2; the gap was documented in LIGHTHOUSE.md from the month this shipped).
+ *
+ * It previously rendered a small centred spinner and then swapped in a ~1000px
+ * instrument grid, so everything below jumped down: CLS 0.12 against a 0.1 budget.
+ *
+ * A `min-h-*` on the spinner was tried first and made it WORSE (0.12 → 0.16): a
+ * reserved height that does not match the loaded height just trades a downward
+ * shift for an upward one, and the loaded height genuinely varies with how many
+ * tiles the device's preset shows.
+ *
+ * So this does not guess a height. It renders THE SAME primitives, at the same
+ * sizes, for the same tiles — chosen by the same `show()` the loaded view uses —
+ * with `value={null}`, which every instrument already renders as an empty widget
+ * rather than a fabricated zero. The height therefore matches by construction,
+ * and stays matching when a tile is added to the catalogue.
+ *
+ * It is `aria-hidden` with a live-region label beside it: to a screen reader this
+ * is "loading", not eleven unlabelled empty gauges.
+ */
+function StationSkeleton({ show }: { show: (key: string) => boolean }) {
+  const instruments = MET_STATION_WIDGETS.filter((w) => w.type !== 'stat' && show(w.key));
+  const stats = MET_STATION_WIDGETS.filter((w) => w.type === 'stat' && show(w.key));
+
+  const Bar = ({ className }: { className: string }) => (
+    <div className={`animate-pulse rounded bg-muted ${className}`} />
+  );
+
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <span className="sr-only" role="status">
+        Loading live station…
+      </span>
+
+      <Card className="space-y-4 p-4" aria-hidden="true">
+        {/* Mirrors the loaded header: an h3 line over a DataFreshness line. */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <Bar className="h-5 w-48" />
+            <Bar className="h-4 w-28" />
+          </div>
+          <Bar className="h-8 w-32" />
+        </div>
+
+        <div className="grid grid-cols-2 items-end gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          {instruments.map((w) => (
+            <Widget key={w.key}>
+              {w.type === 'compass' && w.key === 'wind_dial' ? (
+                <WindDial speedMs={null} speedKmh={null} dirDeg={null} headingOffsetDeg={0} />
+              ) : w.type === 'compass' ? (
+                <CompassTile deg={null} label={w.label} />
+              ) : w.type === 'thermometer' ? (
+                <Thermometer value={null} min={-10} max={50} label={w.label} />
+              ) : w.type === 'battery' ? (
+                <BatteryGauge value={null} min={10} max={15} label={w.label} />
+              ) : (
+                <Gauge value={null} min={0} max={100} label={w.label} unit={w.unit} valueRole="seq-3" />
+              )}
+            </Widget>
+          ))}
+        </div>
+
+        {stats.length ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {stats.map((w) => (
+              <StatTile
+                key={w.key}
+                label={w.label}
+                icon={<span className="[&_svg]:h-4 [&_svg]:w-4"><CloudRain /></span>}
+                value={<Value v={null} unit={w.unit} />}
+              />
+            ))}
+          </div>
+        ) : null}
+      </Card>
+
+      {/* The wind rose card below is what the shift used to push down. */}
+      <Card className="p-4" aria-hidden="true">
+        {/* Matches WindRosePanel's pinned 454px block, so the rose does not
+            resize the card when it lands. */}
+        <Bar className="h-[454px] w-full" />
+      </Card>
+    </div>
+  );
+}
+
+function Value({ v, unit }: { v: number | null; unit: string }) {
+  return (
+    <span className="flex items-baseline gap-1">
+      {fmt(v, 2)}
+      <span className="text-sm font-normal text-muted-foreground">{unit}</span>
+    </span>
+  );
+}
