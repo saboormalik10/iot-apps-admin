@@ -36,7 +36,10 @@ definitions, backups — runs anywhere).
 **Build the Windows release:** `node installer/build-release.mjs` → `installer/dist/`
 (add `--exe` for the setup program; it needs Inno Setup 6 — `ISCC=<path to ISCC.exe>`,
 through Wine on Linux).
-**Site guides:** [`docs/site/`](docs/site/).
+**Site guides:** [`docs/site/`](docs/site/) — including an illustrated
+[user guide](docs/site/USER-GUIDE.md). `python3 installer/guide-pdf/build.py` turns it
+into a printable PDF (into `installer/dist/`, generated rather than committed, so it
+cannot drift from the guide).
 
 There is no sensor yet: [`simulator/`](simulator/README.md) plays one.
 
@@ -103,7 +106,8 @@ standalone/
   simulator/    GMX551 test-data generator — the client has no real data yet
   installer/    build-release.mjs, versions.json; windows/ = the .cmd tools and PowerShell scripts
   config/       standalone.env.example — every setting (the installed observator.env)
-  docs/site/    the guides shipped with each release: install, operations, troubleshooting, user
+  docs/site/    the guides shipped with each release: install, operations, troubleshooting,
+                user guide (illustrated — screenshots in docs/site/img/)
   docs/         development notes (BASELINE.md, history/)
 ```
 

@@ -78,17 +78,26 @@ export function AnalyticsScopeBar() {
 
   const showReset =
     Boolean(scope.deviceId) || scope.range !== ANALYTICS_DEFAULT_RANGE;
-  const allLabel = type === 'MET-LINK' ? 'All MET-LINK devices' : 'All NEP-LINK devices';
+  const allLabel = 'All stations';
+  /**
+   * A station picker needs more than one station to pick between. This PC has
+   * one, so the control could never change what is on screen — the same reason
+   * the dashboard's scope bar and the alerts filter drop theirs. (It also said
+   * "All MET-LINK devices", the cloud product's word for a station.)
+   */
+  const showStationPicker = devices.filter((d) => d.type === type).length > 1;
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-card/40 px-3 py-2 text-sm">
-      <DeviceSelect
-        value={scope.deviceId}
-        type={type}
-        onChange={(deviceId) => patch({ deviceId: deviceId ?? null })}
-        allLabel={allLabel}
-        className="h-8 w-[220px]"
-      />
+      {showStationPicker ? (
+        <DeviceSelect
+          value={scope.deviceId}
+          type={type}
+          onChange={(deviceId) => patch({ deviceId: deviceId ?? null })}
+          allLabel={allLabel}
+          className="h-8 w-[220px]"
+        />
+      ) : null}
 
       <DateRangePicker value={scope.range} onChange={(range) => patch({ range })} className="h-8 w-[150px]" />
 
