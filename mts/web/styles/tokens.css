@@ -1,0 +1,368 @@
+/*
+ * MTS design tokens — Sydney Metro M1 weather monitoring portal.
+ *
+ * Colour roles as HSL channel triplets, so Tailwind's `hsl(var(--role) / <alpha>)`
+ * works and nothing needs a raw hex at a call site. Theme is `:root[data-theme]`
+ * (explicit, via next-themes) layered over `prefers-color-scheme` so system dark
+ * is right before hydration and without JS.
+ *
+ * The palette is drawn from the client's own mockups (OBS-MTS-M1-WX-2026-01,
+ * Figures 6–17): a deep navy masthead, white cards on a pale blue-grey page, and a
+ * status language of green normal / amber warning / red alert / grey offline, with
+ * blue reserved for primary actions and for water.
+ *
+ * Three scales are kept deliberately separate, because conflating them is how a
+ * control room ends up misreading a screen:
+ *   • SEVERITY   — how bad is it?            alert · warning · info · normal · cleared · offline
+ *   • OPERATIONAL— what is the plant doing?  running · ready · fault · manual
+ *   • SERIES     — which line is which?      chart-1..8, fixed per measurement
+ *
+ * `scripts/validate_palette.js` parses --chart-1..8 and --chart-surface out of this
+ * file and fails the build if any hue drops under 3:1 against the chart surface or
+ * any pair collides under protan/deutan/tritan simulation.
+ */
+
+:root {
+  /* ── surfaces ─────────────────────────────────────────────────────────── */
+  /* Pale blue-grey page, so white cards read as raised without a shadow. */
+  --background: 210 33% 97%;
+  --foreground: 213 35% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 213 35% 14%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 213 35% 14%;
+
+  /* The masthead is a brand surface in its own right, not a dark --card: it
+     carries the wordmark, the clock and the status chips, and it stays navy in
+     both themes so the product is recognisable at a glance from across a room. */
+  --header: 213 54% 20%;
+  --header-foreground: 210 40% 96%;
+  --header-muted: 210 24% 74%;
+  --header-border: 213 45% 28%;
+  
+  /* The prototype banner, the "all online" chip and the unread badge are solid
+     colour bars carrying text, so they need a background/ink pair of their own.
+     Reusing a severity token gave white text on a pale dark-mode blue at 2:1 —
+     and the banner is the disclaimer, which is the last thing that may go
+     unreadable. */
+  --banner: 211 76% 27%;
+  --banner-foreground: 0 0% 100%;
+  --chip-ok: 152 62% 26%;
+  --chip-ok-foreground: 0 0% 100%;
+  --chip-alert: 4 72% 42%;
+  --chip-alert-foreground: 0 0% 100%;
+  /* The wordmark is navy on a light page and near-white on a dark one; the
+     header token could not do both because there it is the *background*. */
+  --wordmark: 213 54% 20%;
+
+  /* ── primary / neutral ────────────────────────────────────────────────── */
+  /* L=44%: 5.6:1 on white, so a primary link on a card clears AA for body text,
+     and white-on-primary clears it the other way for buttons. */
+  --primary: 211 74% 44%;
+  --primary-foreground: 0 0% 100%;
+  /* For text on a primary tint (an active nav item's bg-primary/10). */
+  --primary-strong: 211 76% 35%;
+  --secondary: 210 22% 95%;
+  --secondary-foreground: 213 30% 25%;
+  --muted: 210 22% 95%;
+  --muted-foreground: 212 16% 38%;
+  --accent: 211 90% 95%;
+  --accent-foreground: 211 76% 30%;
+  --destructive: 4 71% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 212 20% 87%;
+  --input: 212 20% 87%;
+  --ring: 211 74% 44%;
+  --radius: 0.5rem;
+
+  /* ── severity ─────────────────────────────────────────────────────────── */
+  /* Each carries a text-safe -strong step and a -tint for badge/row backgrounds.
+     Never used colour-alone: every badge pairs the tint with a dot and a word. */
+  --sev-alert: 4 71% 46%;
+  --sev-alert-strong: 4 74% 38%;
+  --sev-alert-tint: 4 86% 96%;
+  --sev-warning: 33 94% 42%;
+  --sev-warning-strong: 28 88% 33%;
+  --sev-warning-tint: 40 96% 94%;
+  --sev-info: 211 74% 44%;
+  --sev-info-strong: 211 76% 35%;
+  --sev-info-tint: 211 90% 95%;
+  --sev-normal: 152 62% 32%;
+  --sev-normal-strong: 155 68% 24%;
+  --sev-normal-tint: 150 62% 94%;
+  --sev-cleared: 152 24% 40%;
+  --sev-cleared-strong: 152 28% 30%;
+  --sev-cleared-tint: 152 24% 95%;
+  --sev-offline: 212 12% 52%;
+  --sev-offline-strong: 212 16% 36%;
+  --sev-offline-tint: 212 16% 94%;
+
+  /* ── plant / operational state ────────────────────────────────────────── */
+  /* A pump RUNNING is not "good news" the way a reading within threshold is —
+     during a flood it is the opposite — so these never borrow severity tokens. */
+  --op-running: 152 66% 26%;
+  --op-running-tint: 150 62% 94%;
+  --op-ready: 211 36% 38%;
+  --op-ready-tint: 211 40% 95%;
+  --op-fault: 4 71% 46%;
+  --op-fault-tint: 4 86% 96%;
+  --op-manual: 33 94% 42%;
+  --op-manual-tint: 40 96% 94%;
+
+  /* ── charts ───────────────────────────────────────────────────────────── */
+  --chart-surface: 0 0% 100%;
+  /* The categorical series palette, in its validated slot ORDER — the order is
+     the colour-blind safety mechanism for adjacent series, so it never changes.
+     Which measurement wears which slot is decided once, in lib/viz/roles.ts:
+       1 blue water level · 2 orange temperature · 3 aqua rainfall
+       4 yellow battery/solar · 5 magenta humidity · 6 green float
+       7 violet wind (gust dashed) · 8 red — held back: it would read as alarm
+     `yarn validate-palette` gates it: OKLab ΔE ≥ 8 under protan/deutan for
+     adjacent slots, ≥ 15 under normal vision, and the first three slots also
+     all-pairs (small multiples, scatter). Three light-mode slots sit under 3:1
+     against white, so every chart ships a table view as the relief channel. */
+  --chart-1: 212.8 67.7% 50.2%;
+  --chart-2: 17 82.1% 56.3%;
+  --chart-3: 158.5 73.3% 39.6%;
+  --chart-4: 40.8 100% 46.5%;
+  --chart-5: 337.4 70.3% 69.6%;
+  --chart-6: 120 100% 25.7%;
+  --chart-7: 248.8 48.4% 44.1%;
+  --chart-8: 0.4 73.5% 58.6%;
+  --seq-1: 212.6 85.2% 89.4%;
+  --seq-2: 212.8 79.6% 78.8%;
+  --seq-3: 212.6 77% 67.6%;
+  --seq-4: 212.8 76.8% 56.1%;
+  --seq-5: 213.1 67.5% 44.7%;
+  --seq-6: 213.6 72.3% 33.9%;
+  --seq-7: 213.8 78.3% 23.5%;
+  --ord-1: 212.6 76.6% 73.1%;
+  --ord-2: 212.5 75.3% 62%;
+  --ord-3: 212.8 67.7% 50.2%;
+  --ord-4: 213.1 71.9% 39%;
+  --ord-5: 213.5 77.9% 28.4%;
+  --div-neg: 213.1 67.5% 44.7%;
+  --div-pos: 0 61.3% 52.4%;
+  --div-mid: 45 17.4% 91%;
+  --axis: 212 16% 78%;
+
+  /* A threshold line is not a series — it is the rule the series is judged
+     against, so it has one colour everywhere and is always dashed. */
+  --threshold: 4 71% 50%;
+  --threshold-soft: 212 16% 55%;
+  /* Shaded event bands ("pumps running", vigilance windows). */
+  --band-warning: 40 96% 88%;
+  --band-alert: 4 86% 93%;
+  /* Gridlines are solid hairlines. Dashes belong to thresholds only — a dashed
+     grid made every chart look as if it had twenty thresholds. */
+  --grid: 212 20% 92%;
+
+  /* ── fonts ────────────────────────────────────────────────────────────── */
+  /* A system stack: no external fetch, so the portal renders identically on an
+     air-gapped operations desktop and keeps the CSP free of a font origin. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ── dark ───────────────────────────────────────────────────────────────────
+ * Selected, not flipped. A control room runs dark at night and the screens sit
+ * in peripheral vision, so the severity hues are lifted in lightness to hold
+ * their contrast on a dark surface rather than reusing the light-mode values.
+ */
+:root[data-theme='dark'] {
+  --background: 214 32% 9%;
+  --foreground: 210 24% 92%;
+  --card: 214 30% 12%;
+  --card-foreground: 210 24% 92%;
+  --popover: 214 30% 12%;
+  --popover-foreground: 210 24% 92%;
+
+  --header: 214 44% 13%;
+  --header-foreground: 210 30% 94%;
+  --header-muted: 210 16% 66%;
+  --header-border: 213 32% 22%;
+  
+  --banner: 211 62% 24%;
+  --banner-foreground: 210 40% 96%;
+  --chip-ok: 152 48% 24%;
+  --chip-ok-foreground: 150 62% 88%;
+  --chip-alert: 4 58% 38%;
+  --chip-alert-foreground: 4 90% 95%;
+  --wordmark: 210 36% 94%;
+
+  --primary: 211 80% 62%;
+  --primary-foreground: 214 40% 10%;
+  --primary-strong: 211 84% 72%;
+  --secondary: 214 24% 18%;
+  --secondary-foreground: 210 24% 90%;
+  --muted: 214 24% 18%;
+  --muted-foreground: 211 14% 64%;
+  --accent: 213 38% 22%;
+  --accent-foreground: 211 84% 80%;
+  --destructive: 4 76% 60%;
+  --destructive-foreground: 214 40% 10%;
+  --border: 214 22% 22%;
+  --input: 214 22% 22%;
+  --ring: 211 80% 62%;
+
+  --sev-alert: 4 78% 62%;
+  --sev-alert-strong: 4 84% 74%;
+  --sev-alert-tint: 4 50% 20%;
+  --sev-warning: 38 92% 58%;
+  --sev-warning-strong: 40 94% 70%;
+  --sev-warning-tint: 33 55% 18%;
+  --sev-info: 211 80% 62%;
+  --sev-info-strong: 211 84% 74%;
+  --sev-info-tint: 211 45% 20%;
+  --sev-normal: 152 56% 48%;
+  --sev-normal-strong: 152 60% 62%;
+  --sev-normal-tint: 152 40% 16%;
+  --sev-cleared: 152 22% 56%;
+  --sev-cleared-strong: 152 26% 68%;
+  --sev-cleared-tint: 152 20% 17%;
+  --sev-offline: 212 12% 62%;
+  --sev-offline-strong: 212 14% 74%;
+  --sev-offline-tint: 212 14% 20%;
+
+  --op-running: 152 56% 48%;
+  --op-running-tint: 152 40% 16%;
+  --op-ready: 211 30% 62%;
+  --op-ready-tint: 211 28% 20%;
+  --op-fault: 4 78% 62%;
+  --op-fault-tint: 4 50% 20%;
+  --op-manual: 38 92% 58%;
+  --op-manual-tint: 33 55% 18%;
+
+  --chart-surface: 214 30% 12%;
+  --chart-1: 212.8 76.8% 56.1%;
+  --chart-2: 17.1 70.2% 50%;
+  --chart-3: 159.2 72.7% 35.9%;
+  --chart-4: 39.7 100% 39.4%;
+  --chart-5: 338.2 61.1% 57.6%;
+  --chart-6: 120 100% 25.7%;
+  --chart-7: 246.6 69.4% 71.8%;
+  --chart-8: 0 71.8% 65.3%;
+  --seq-1: 213.5 77.9% 28.4%;
+  --seq-2: 213.1 71.9% 39%;
+  --seq-3: 212.8 67.7% 50.2%;
+  --seq-4: 212.5 75.3% 62%;
+  --seq-5: 212.6 76.6% 73.1%;
+  --seq-6: 213.3 77.8% 84.1%;
+  --seq-7: 212.6 85.2% 89.4%;
+  --ord-1: 213.6 72.3% 33.9%;
+  --ord-2: 213.1 67.5% 44.7%;
+  --ord-3: 212.8 76.8% 56.1%;
+  --ord-4: 212.6 77% 67.6%;
+  --ord-5: 212.8 79.6% 78.8%;
+  --div-neg: 212.5 75.3% 62%;
+  --div-pos: 0 71.8% 65.3%;
+  --div-mid: 213.9 21.1% 21.4%;
+  --axis: 214 16% 34%;
+
+  --threshold: 4 80% 64%;
+  --threshold-soft: 212 14% 52%;
+  --band-warning: 36 40% 22%;
+  --band-alert: 4 40% 22%;
+  --grid: 214 20% 24%;
+}
+
+/* System preference, for the first paint and for no-JS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --background: 214 32% 9%;
+    --foreground: 210 24% 92%;
+    --card: 214 30% 12%;
+    --card-foreground: 210 24% 92%;
+    --popover: 214 30% 12%;
+    --popover-foreground: 210 24% 92%;
+
+    --header: 214 44% 13%;
+    --header-foreground: 210 30% 94%;
+    --header-muted: 210 16% 66%;
+    --header-border: 213 32% 22%;
+    
+    --banner: 211 62% 24%;
+    --banner-foreground: 210 40% 96%;
+    --chip-ok: 152 48% 24%;
+    --chip-ok-foreground: 150 62% 88%;
+    --chip-alert: 4 58% 38%;
+    --chip-alert-foreground: 4 90% 95%;
+    --wordmark: 210 36% 94%;
+
+    --primary: 211 80% 62%;
+    --primary-foreground: 214 40% 10%;
+    --primary-strong: 211 84% 72%;
+    --secondary: 214 24% 18%;
+    --secondary-foreground: 210 24% 90%;
+    --muted: 214 24% 18%;
+    --muted-foreground: 211 14% 64%;
+    --accent: 213 38% 22%;
+    --accent-foreground: 211 84% 80%;
+    --destructive: 4 76% 60%;
+    --destructive-foreground: 214 40% 10%;
+    --border: 214 22% 22%;
+    --input: 214 22% 22%;
+    --ring: 211 80% 62%;
+
+    --sev-alert: 4 78% 62%;
+    --sev-alert-strong: 4 84% 74%;
+    --sev-alert-tint: 4 50% 20%;
+    --sev-warning: 38 92% 58%;
+    --sev-warning-strong: 40 94% 70%;
+    --sev-warning-tint: 33 55% 18%;
+    --sev-info: 211 80% 62%;
+    --sev-info-strong: 211 84% 74%;
+    --sev-info-tint: 211 45% 20%;
+    --sev-normal: 152 56% 48%;
+    --sev-normal-strong: 152 60% 62%;
+    --sev-normal-tint: 152 40% 16%;
+    --sev-cleared: 152 22% 56%;
+    --sev-cleared-strong: 152 26% 68%;
+    --sev-cleared-tint: 152 20% 17%;
+    --sev-offline: 212 12% 62%;
+    --sev-offline-strong: 212 14% 74%;
+    --sev-offline-tint: 212 14% 20%;
+
+    --op-running: 152 56% 48%;
+    --op-running-tint: 152 40% 16%;
+    --op-ready: 211 30% 62%;
+    --op-ready-tint: 211 28% 20%;
+    --op-fault: 4 78% 62%;
+    --op-fault-tint: 4 50% 20%;
+    --op-manual: 38 92% 58%;
+    --op-manual-tint: 33 55% 18%;
+
+    --chart-surface: 214 30% 12%;
+    --chart-1: 212.8 76.8% 56.1%;
+    --chart-2: 17.1 70.2% 50%;
+    --chart-3: 159.2 72.7% 35.9%;
+    --chart-4: 39.7 100% 39.4%;
+    --chart-5: 338.2 61.1% 57.6%;
+    --chart-6: 120 100% 25.7%;
+    --chart-7: 246.6 69.4% 71.8%;
+    --chart-8: 0 71.8% 65.3%;
+    --seq-1: 213.5 77.9% 28.4%;
+    --seq-2: 213.1 71.9% 39%;
+    --seq-3: 212.8 67.7% 50.2%;
+    --seq-4: 212.5 75.3% 62%;
+    --seq-5: 212.6 76.6% 73.1%;
+    --seq-6: 213.3 77.8% 84.1%;
+    --seq-7: 212.6 85.2% 89.4%;
+    --ord-1: 213.6 72.3% 33.9%;
+    --ord-2: 213.1 67.5% 44.7%;
+    --ord-3: 212.8 76.8% 56.1%;
+    --ord-4: 212.6 77% 67.6%;
+    --ord-5: 212.8 79.6% 78.8%;
+    --div-neg: 212.5 75.3% 62%;
+    --div-pos: 0 71.8% 65.3%;
+    --div-mid: 213.9 21.1% 21.4%;
+    --axis: 214 16% 34%;
+
+    --threshold: 4 80% 64%;
+    --threshold-soft: 212 14% 52%;
+    --band-warning: 36 40% 22%;
+    --band-alert: 4 40% 22%;
+    --grid: 214 20% 24%;
+  }
+}

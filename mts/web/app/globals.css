@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
+  }
+  /* Readings, timestamps and thresholds are compared down a column constantly —
+     proportional digits make that harder than it needs to be. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  /* The blinking camera badge and any other motion: off for anyone who asked for
+     less. The badge keeps its amber ring, so "verify on camera" is still visible. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* A wide table inside a card scrolls itself rather than the page — and says so
+     with a visible bar, because a clipped last column reads as the end of the data. */
+  .scroll-x-hint {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scroll-x-hint::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scroll-x-hint::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: hsl(var(--border));
+  }
+}
+
+/* An event page printed is an incident report: white paper, no shadows, charts kept whole. */
+@media print {
+  body {
+    background: white !important;
+  }
+  section,
+  figure {
+    break-inside: avoid;
+  }
+}

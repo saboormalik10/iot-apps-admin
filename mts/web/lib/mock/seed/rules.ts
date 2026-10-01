@@ -1,0 +1,335 @@
+import type { AlertRule, Channel, RuleVersion } from '@/lib/api/types';
+import { THRESHOLDS } from './thresholds';
+
+/**
+ * The nine seeded rules of the client's Figure 17, in the order it lists them,
+ * including the disabled "Wind — extreme" row.
+ *
+ * Wording marked `draftWording` is ours, standing in until MTS confirms theirs —
+ * the proposal is explicit that the exact text is a configuration item and an MTS
+ * decision, so the UI flags which lines are not yet approved rather than quietly
+ * presenting invented operational instructions as settled.
+ */
+
+export const ALERT_RULES: AlertRule[] = [
+  {
+    id: 'rain-intensity',
+    name: 'Rainfall — intensity',
+    parameter: 'rainfall',
+    group: 'rainfall',
+    operator: 'gte',
+    value: THRESHOLDS.rainfall.intensity.value,
+    unit: 'mm',
+    window: '1h-rolling',
+    vigilance: THRESHOLDS.rainfall.intensity.vigilance,
+    resetOnRetrigger: true,
+    severity: 'alert',
+    /* The two RIMCO gauges (§5.3). The section the patrol covers is in the
+       wording; the rule is evaluated where rain is actually measured. */
+    appliesTo: ['marrickville', 'belmore'],
+    message:
+      'Initiate CJC-T front-of-train patrol between Hurlstone Park and Bankstown. Be prepared for network flooding. Demobilise patrols when visibility is limited and implement a 60 kph TSR between Hurlstone Park and Bankstown until cancelled or visibility improves.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'rain-short',
+    name: 'Rainfall — short accumulation',
+    parameter: 'rain_3h',
+    group: 'rainfall',
+    operator: 'gte',
+    value: THRESHOLDS.rainfall.short.value,
+    unit: 'mm',
+    window: '3h-rolling',
+    vigilance: THRESHOLDS.rainfall.short.vigilance,
+    resetOnRetrigger: true,
+    severity: 'alert',
+    appliesTo: ['marrickville', 'belmore'],
+    message: 'Sustained rainfall over three hours. Maintain flooding vigilance across the section.',
+    draftWording: true,
+    recipients: ['ops-controllers'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'rain-multi-day',
+    name: 'Rainfall — multi-day',
+    parameter: 'rain_3d',
+    group: 'rainfall',
+    operator: 'gte',
+    value: THRESHOLDS.rainfall.multiDay.value,
+    unit: 'mm',
+    window: '3d-rolling',
+    vigilance: THRESHOLDS.rainfall.multiDay.vigilance,
+    resetOnRetrigger: true,
+    severity: 'alert',
+    appliesTo: ['marrickville', 'belmore'],
+    message: 'Three-day rainfall total exceeded. Network flooding vigilance in force for 48 hours.',
+    draftWording: true,
+    recipients: ['ops-controllers', 'engineering'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'flood-standing-water',
+    name: 'Flood — standing water',
+    parameter: 'water_level',
+    group: 'flood',
+    operator: 'gte',
+    value: THRESHOLDS.flood.standingWaterMm,
+    unit: 'mm',
+    window: 'instant',
+    resetOnRetrigger: false,
+    severity: 'alert',
+    appliesTo: ['marrickville', 'marrickville-dulwich-hill', 'canterbury', 'campsie', 'belmore', 'lady-game-drive'],
+    message: 'Standing water detected. Information Security Controller: verify standing water on the PTZ camera.',
+    recipients: ['ops-controllers'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'flood-rail-foot',
+    name: 'Flood — above rail foot',
+    parameter: 'water_level',
+    group: 'flood',
+    operator: 'gte',
+    value: THRESHOLDS.flood.railFootMm,
+    unit: 'mm',
+    window: 'instant',
+    resetOnRetrigger: false,
+    severity: 'alert',
+    appliesTo: ['marrickville', 'marrickville-dulwich-hill', 'canterbury', 'campsie', 'belmore', 'lady-game-drive'],
+    message: 'Water above rail foot. Block the line. Staged reinstatement 25 kph → 60 kph → unrestricted on recession.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    /* §5.2 asks for rate-of-rise detection "independent of absolute
+       threshold": a fast rise is worth a warning while the water is still low. */
+    id: 'flood-rate-of-rise',
+    condition: `Rising ≥ ${THRESHOLDS.flood.rateOfRiseMmHr} mm/hr over 10 min`,
+    name: 'Flood — rate of rise',
+    parameter: 'water_level',
+    group: 'flood',
+    operator: 'gte',
+    value: THRESHOLDS.flood.rateOfRiseMmHr,
+    unit: 'mm/hr',
+    window: 'instant',
+    dwell: 'over 10 min',
+    resetOnRetrigger: false,
+    severity: 'warning',
+    appliesTo: ['marrickville', 'marrickville-dulwich-hill', 'canterbury', 'campsie', 'belmore', 'lady-game-drive'],
+    message: 'Water level rising quickly. Monitor the location; prepare for a standing-water or block-the-line alert.',
+    recipients: ['ops-controllers'],
+    channels: ['screen', 'push'],
+    enabled: true,
+    draftWording: true,
+  },
+  {
+    /* §7.3: the third flood state — falling water after a block. */
+    id: 'flood-trending-down',
+    condition: 'Falling for 10 min after the line was blocked',
+    name: 'Flood — trending down',
+    parameter: 'water_level',
+    group: 'flood',
+    operator: 'lte',
+    value: 3,
+    unit: 'mm',
+    window: 'instant',
+    dwell: 'falling for 10 min after a block',
+    resetOnRetrigger: false,
+    severity: 'warning',
+    appliesTo: ['marrickville', 'marrickville-dulwich-hill', 'canterbury', 'campsie', 'belmore', 'lady-game-drive'],
+    message: 'Water level trending down. Carry out system checks and a track inspection, then staged reinstatement 25 kph → 60 kph → unrestricted.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'temp-heat-1',
+    schedule: { from: '2026-11-01', to: '2027-03-31' },
+    name: 'Temperature — heat 1',
+    parameter: 'temperature',
+    group: 'temperature',
+    operator: 'gte',
+    value: THRESHOLDS.temperature.heat1.value,
+    unit: '°C',
+    window: 'instant',
+    dwell: `Rising ${THRESHOLDS.temperature.heat1.rising} · falling ${THRESHOLDS.temperature.heat1.falling}`,
+    resetOnRetrigger: false,
+    severity: 'warning',
+    appliesTo: ['belmore', 'marrickville-dulwich-hill', 'windsor-road'],
+    message: 'Rail temperature threshold reached. Apply 60/40 kph TSR and initiate CJC-T heat patrol.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'temp-heat-2',
+    schedule: { from: '2026-11-01', to: '2027-03-31' },
+    name: 'Temperature — heat 2',
+    parameter: 'temperature',
+    group: 'temperature',
+    operator: 'gte',
+    value: THRESHOLDS.temperature.heat2.value,
+    unit: '°C',
+    window: 'instant',
+    dwell: `Rising ${THRESHOLDS.temperature.heat2.rising} · falling ${THRESHOLDS.temperature.heat2.falling}`,
+    resetOnRetrigger: false,
+    severity: 'alert',
+    appliesTo: ['belmore', 'marrickville-dulwich-hill', 'windsor-road'],
+    message: 'Extreme rail temperature. Apply speed restriction and initiate heat patrol without delay.',
+    draftWording: true,
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'wind-gust',
+    name: 'Wind — gust',
+    parameter: 'wind_gust',
+    group: 'wind',
+    operator: 'gte',
+    value: THRESHOLDS.wind.gustWarn.value,
+    unit: 'km/h',
+    window: 'instant',
+    dwell: 'Per rule',
+    resetOnRetrigger: false,
+    severity: 'warning',
+    appliesTo: ['belmore', 'marrickville-dulwich-hill', 'windsor-road'],
+    message: 'Wind gust threshold reached at listed chainages. Apply TSR per the wind management procedure.',
+    recipients: ['ops-controllers'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'wind-gust-alert',
+    name: 'Wind — gust (alert)',
+    parameter: 'wind_gust',
+    group: 'wind',
+    operator: 'gte',
+    value: THRESHOLDS.wind.gustAlert.value,
+    unit: 'km/h',
+    window: 'instant',
+    dwell: 'Per rule',
+    resetOnRetrigger: false,
+    severity: 'alert',
+    appliesTo: ['belmore', 'marrickville-dulwich-hill', 'windsor-road'],
+    message: 'Wind gust at the upper threshold on the listed MSW kilometrages. Apply TSR wording per the wind management procedure.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    enabled: true,
+  },
+  {
+    id: 'wind-extreme',
+    name: 'Wind — extreme',
+    parameter: 'wind_gust',
+    group: 'wind',
+    operator: 'gte',
+    value: THRESHOLDS.wind.extreme.value,
+    unit: 'km/h',
+    window: 'instant',
+    dwell: 'Per rule',
+    resetOnRetrigger: false,
+    severity: 'alert',
+    /* §7.3: the action covers "all external (non-tunnel) track"; the rule reads
+       the three anemometers that measure it. */
+    appliesTo: ['belmore', 'marrickville-dulwich-hill', 'windsor-road'],
+    message: 'Extreme wind on external (non-tunnel) track. Block the line.',
+    recipients: ['ops-controllers', 'cjc-t'],
+    channels: ['screen', 'push', 'email'],
+    /* Drawn switched off in Figure 17 — kept off so the screen matches. */
+    enabled: false,
+  },
+];
+
+/**
+ * The rule set's published versions, newest first (§7.3: "validated,
+ * version-controlled and recorded against the user who made them").
+ *
+ * One list, read three ways: the rules footer quotes the top entry, the version
+ * history panel lists them all, and the audit trail publishes each as an entry —
+ * so "v6 raised the gust alert to 85 km/h" is said once and agrees everywhere.
+ * Times are offsets from the storm day: [days, hour, minute].
+ */
+export const RULE_HISTORY: RuleVersion[] = [
+  {
+    version: 7,
+    at: [-1, 15, 2],
+    by: 'S. Chen',
+    summary: 'Rainfall — intensity: wording updated, threshold unchanged',
+    changes: [
+      {
+        rule: 'Rainfall — intensity',
+        field: 'Message',
+        from: 'Initiate CJC-T front-of-train patrol between Hurlstone Park and Bankstown. Be prepared for network flooding.',
+        to: '… Demobilise patrols when visibility is limited and implement a 60 kph TSR between Hurlstone Park and Bankstown until cancelled or visibility improves.',
+      },
+    ],
+  },
+  {
+    version: 6,
+    at: [-6, 11, 15],
+    by: 'S. Chen',
+    summary: 'Wind — gust (alert): 80 → 85 km/h, approved at the weekly review',
+    changes: [{ rule: 'Wind — gust (alert)', field: 'Threshold', from: '≥ 80 km/h', to: `≥ ${THRESHOLDS.wind.gustAlert.value} km/h` }],
+  },
+  {
+    version: 5,
+    at: [-8, 9, 40],
+    by: 'S. Chen',
+    summary: 'Wind — extreme: disabled pending MTS confirmation of the chainage list',
+    changes: [{ rule: 'Wind — extreme', field: 'Enabled', from: 'On', to: 'Off' }],
+  },
+  {
+    version: 4,
+    at: [-13, 14, 10],
+    by: 'K. Fraser',
+    summary: 'Temperature — heat 1 and heat 2 scheduled for summer only',
+    changes: [
+      { rule: 'Temperature — heat 1', field: 'Schedule', from: 'Always active', to: '1 Nov 2026 → 31 Mar 2027' },
+      { rule: 'Temperature — heat 2', field: 'Schedule', from: 'Always active', to: '1 Nov 2026 → 31 Mar 2027' },
+    ],
+  },
+  {
+    version: 3,
+    at: [-16, 10, 30],
+    by: 'K. Fraser',
+    summary: 'Flood — rate of rise added (§5.2, independent of the absolute level)',
+    changes: [
+      { rule: 'Flood — rate of rise', field: 'Rule', from: '—', to: 'Added' },
+      { rule: 'Flood — rate of rise', field: 'Trigger', from: '—', to: `Rising ≥ ${THRESHOLDS.flood.rateOfRiseMmHr} mm/hr over 10 min · warning` },
+    ],
+  },
+  {
+    version: 2,
+    at: [-20, 16, 0],
+    by: 'S. Chen',
+    summary: 'CJC-T added to the rainfall-intensity and rail-foot recipients',
+    changes: [
+      { rule: 'Rainfall — intensity', field: 'Recipients', from: 'Ops controllers', to: 'Ops controllers, CJC-T' },
+      { rule: 'Flood — above rail foot', field: 'Recipients', from: 'Ops controllers', to: 'Ops controllers, CJC-T' },
+    ],
+  },
+  {
+    version: 1,
+    at: [-24, 9, 0],
+    by: 'Observator (commissioning)',
+    summary: 'Initial table loaded from the Statement of Requirements — values pending MTS confirmation',
+    changes: [{ rule: 'All rules', field: 'Table', from: '—', to: 'Pre-populated from SoR §3.3.3 and Annexure C' }],
+  },
+];
+
+/**
+ * Delivery channels. SMS appears greyed rather than hidden: the client's own PDF
+ * promises it, our Rev B replaced it with web push, and a greyed chip with a reason
+ * answers the question once instead of inviting it again.
+ */
+export const CHANNELS: Channel[] = [
+  { id: 'screen', label: 'On screen', available: true },
+  { id: 'push', label: 'Web push', available: true },
+  { id: 'email', label: 'Email', available: true },
+  { id: 'sms', label: 'SMS', available: false, reason: 'Out of scope — replaced by web push (Rev B §10)' },
+];
