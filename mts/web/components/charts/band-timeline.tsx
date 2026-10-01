@@ -3,7 +3,7 @@
 import { AlertTriangle, CircleDot } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ExceedanceBand } from '@/lib/api/types';
-import { fmtDuration, fmtTime } from '@/lib/format';
+import { fmtDuration, fmtTime, wallClockTicks } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { HoverTip, TipRow, useHoverTip } from './hover-tip';
 
@@ -45,10 +45,8 @@ export function BandTimeline({
   const x = (t: number) => ((t - from) / span) * 100;
   // Fewer ticks on a narrow screen, so the labels never collide.
   const tickHours = width < 480 ? 6 : width < 800 ? 4 : 2;
-  const firstTick = Math.ceil(from / (tickHours * 3_600_000)) * tickHours * 3_600_000;
-  const ticks: number[] = [];
-  // Leave room at the right edge for the "now" label.
-  for (let t = firstTick; t < to - span * 0.07; t += tickHours * 3_600_000) ticks.push(t);
+  // Sydney clock-face hours (not UTC multiples), leaving room at the right edge for the "now" label.
+  const ticks = wallClockTicks(from, to - span * 0.07, tickHours * 60);
 
   return (
     <div ref={ref} className="relative">

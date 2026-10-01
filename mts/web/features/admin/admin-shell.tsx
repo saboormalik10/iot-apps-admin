@@ -17,6 +17,7 @@ const TABS = [
   { href: '/admin/rules', label: 'Alert rules' },
   { href: '/admin/recipients', label: 'Recipients' },
   { href: '/admin/audit', label: 'Audit trail' },
+  { href: '/admin/system', label: 'System & contract' },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {

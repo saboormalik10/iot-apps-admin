@@ -8,6 +8,7 @@ import type { StationLive } from '@/lib/api/types';
 import { listStations, maintenanceNow } from '@/lib/api/endpoints';
 import { CorridorMap } from '@/components/corridor/corridor-map';
 import { ExceedancePanel } from './exceedance-panel';
+import { FloodPointsPanel } from './flood-points';
 import { VigilancePanel } from './vigilance-panel';
 import { ErrorState, LoadingState } from '@/components/screen-states';
 import { StatusPill, stationTone } from '@/components/status/status-pill';
@@ -103,7 +104,10 @@ export function CorridorPage() {
 
       <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
         <VigilancePanel />
-        <ExceedancePanel />
+        <div className="min-w-0 space-y-4">
+          <ExceedancePanel />
+          <FloodPointsPanel stations={stations} minuteKey={Math.floor(now / 60_000)} />
+        </div>
       </div>
 
       <section className="rounded-lg border bg-card">

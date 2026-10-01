@@ -116,6 +116,20 @@ export default function Page() {
           Colour &amp; chart system →
         </Link>
       </section>
+
+      {/* Hosting, not design: the private-preview gate (lib/gate.ts). */}
+      <section className="rounded-lg border border-dashed bg-card p-4">
+        <h2 className="mb-1 text-sm font-semibold">Private preview access</h2>
+        <p className="text-xs text-muted-foreground">
+          This browser is unlocked for the hosted prototype and stays unlocked for 90 days. Lock it to require the preview
+          password again — on a shared or borrowed machine, for example.
+        </p>
+        <form method="post" action="/api/lock">
+          <Button type="submit" variant="outline" size="sm" className="mt-2">
+            Lock this browser
+          </Button>
+        </form>
+      </section>
     </div>
   );
 }

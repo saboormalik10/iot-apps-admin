@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import type { LocationId, ParameterId } from '@/lib/api/types';
-import { buildSeries } from '@/lib/api/endpoints';
+import { buildSeries, statusFor } from '@/lib/api/endpoints';
 import { ChartFrame } from '@/components/charts/chart-frame';
 import { SeriesChart } from '@/components/charts/series';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { THRESHOLDS, THRESHOLD_LABELS } from '@/lib/mock/seed/thresholds';
 import { cn } from '@/lib/utils';
 import { COMPARABLE, CompareView } from './compare-view';
 import { WindRoseCard } from './wind-rose-card';
+import { levelThresholds } from '@/features/station/station-charts';
 
 /**
  * Trends — the chart language for the whole product.
@@ -91,7 +92,15 @@ export function TrendsPage() {
       rainfall: points('rainfall'),
       temperature: points('temperature'),
       humidity: points('humidity'),
-      level: points('water_level'),
+      /* Per sensor: Lady Game Drive's two tunnels are two lines, not one. */
+      levels: station.sensors
+        .filter((x) => x.parameter === 'water_level')
+        .map((x) => ({
+          id: x.sensorId,
+          label: x.sensorId.includes('-UP-') ? 'Up tunnel' : x.sensorId.includes('-DN-') ? 'Down tunnel' : 'Water level',
+          points: buildSeries('water_level', stationId, from, now, count, x.sensorId),
+        })),
+      pressure: points('pressure'),
       rain1h: points('rain_1h'),
       rain3h: points('rain_3h'),
     };
@@ -112,7 +121,29 @@ export function TrendsPage() {
             Time series with each parameter&apos;s alert threshold drawn against it.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => exportAll(station.name, series)}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            /* Only what this station measures — a column of numbers for a sensor
+               that is not fitted would be invented data in a file that leaves the
+               screen. Named with units, tunnels split. */
+            const cols: Record<string, { t: number; v: number | null }[]> = {};
+            const add = (p: string, name: string, pts: { t: number; v: number | null }[]) => {
+              if (has(p)) cols[name] = pts;
+            };
+            add('wind_mean', 'Wind mean (km/h)', series.windMean);
+            add('wind_gust', 'Wind gust (km/h)', series.windGust);
+            add('rainfall', 'Rainfall intensity (mm/hr)', series.rainfall);
+            add('rainfall', 'Rain 1 h (mm)', series.rain1h);
+            add('rainfall', 'Rain 3 h (mm)', series.rain3h);
+            add('temperature', 'Temperature (°C)', series.temperature);
+            add('humidity', 'Humidity (%RH)', series.humidity);
+            add('pressure', 'Pressure (hPa)', series.pressure);
+            series.levels.forEach((l) => (cols[`${l.label === 'Water level' ? 'Water level' : `Water level — ${l.label.toLowerCase()}`} (mm)`] = l.points));
+            exportAll(station.name, cols);
+          }}
+        >
           <Download className="h-4 w-4" /> Export CSV
         </Button>
       </div>
@@ -332,24 +363,48 @@ export function TrendsPage() {
           </ChartFrame>
         ) : null}
 
-        {/* Rev B adds level to the trends list; the client's Figure 7 predates it. */}
-        {has('water_level') ? (
+        {/* Rev B adds level to the trends list; the client's Figure 7 predates it.
+            Set points are the location's own: pump-start and high-high exist only
+            where there are pumps; elsewhere standing water and the rail foot. */}
+        {series.levels.length ? (
           <ChartFrame
             as="h2"
             title="Water level"
             unit="mm"
             footnote="Millimetres above datum"
-            nowLabel={`now ${fmtInt(last(series.level))} mm`}
-            nowTone={(last(series.level) ?? 0) >= THRESHOLDS.flood.pumpStartMm ? 'alert' : 'normal'}
-            rows={[{ label: 'Water level (mm)', points: series.level }]}
+            nowLabel={`now ${series.levels.map((l) => `${fmtInt(last(l.points))}`).join(' / ')} mm`}
+            nowTone={series.levels.some((l) => statusFor('water_level', last(l.points)) === 'alert') ? 'alert' : series.levels.some((l) => statusFor('water_level', last(l.points)) === 'warning') ? 'warning' : 'normal'}
+            rows={series.levels.map((l) => ({ label: `${l.label} (mm)`, points: l.points }))}
           >
             <SeriesChart
               syncId="trends"
-              series={[{ key: 'level', label: 'Water level', points: series.level, parameter: 'water_level', kind: 'area' }]}
-              thresholds={[
-                { value: THRESHOLDS.flood.railFootMm, label: THRESHOLD_LABELS.railFoot, tone: 'critical' },
-                { value: THRESHOLDS.flood.pumpStartMm, label: THRESHOLD_LABELS.pumpStart, tone: 'setpoint' },
-              ]}
+              legend={series.levels.length > 1}
+              series={series.levels.map((l, i) => ({
+                key: l.id,
+                label: l.label,
+                points: l.points,
+                parameter: 'water_level' as const,
+                kind: series.levels.length > 1 ? ('line' as const) : ('area' as const),
+                dashed: i > 0,
+              }))}
+              thresholds={levelThresholds(station)}
+            />
+          </ChartFrame>
+        ) : null}
+
+        {/* The GMX300 reads pressure too (§5.3): a front shows in the fall before the rain arrives. */}
+        {has('pressure') ? (
+          <ChartFrame
+            as="h2"
+            title="Barometric pressure"
+            unit="hPa"
+            footnote={pressureTendency(series.pressure)}
+            nowLabel={`now ${fmtValue(last(series.pressure), 1)} hPa`}
+            rows={[{ label: 'Pressure (hPa)', points: series.pressure }]}
+          >
+            <SeriesChart
+              syncId="trends"
+              series={[{ key: 'p', label: 'Pressure', points: series.pressure, parameter: 'pressure' }]}
             />
           </ChartFrame>
         ) : null}
@@ -366,4 +421,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+/** "Falling 3.2 hPa in the last 3 hours" — the tendency a forecaster reads first. */
+function pressureTendency(points: { t: number; v: number | null }[]): string {
+  const end = points[points.length - 1];
+  const start = [...points].reverse().find((p) => end && p.v !== null && end.t - p.t >= 3 * 3_600_000);
+  if (!end || end.v === null || !start || start.v === null) return 'Station pressure, GMX300';
+  const d = Math.round((end.v - start.v) * 10) / 10;
+  return `${d < 0 ? 'Falling' : d > 0 ? 'Rising' : 'Steady'} ${Math.abs(d)} hPa in the last 3 hours · GMX300`;
 }

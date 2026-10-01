@@ -352,6 +352,31 @@ export function HealthPage() {
             </tbody>
           </table>
         </div>
+        {/* §7.4: the wording itself changes, and says what it now covers. Shown
+            beside the normal wording so the client can approve both. */}
+        <div className="border-t px-4 py-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">How the wording changes on an alternate source</h3>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className="rounded-md border p-2.5 text-xs">
+              <p className="mb-1 font-semibold">Normal — primary source</p>
+              <p className="text-muted-foreground">
+                <span className="font-semibold text-foreground">ALERT — Marrickville gauge:</span> Rainfall ≥ {THRESHOLDS.rainfall.intensity.value} mm in 1 h.
+                Initiate CJC-T front-of-train patrol between Hurlstone Park and Bankstown.
+              </p>
+            </div>
+            <div className="rounded-md border border-sev-warning/50 bg-sev-warning-tint/50 p-2.5 text-xs">
+              <p className="mb-1 font-semibold">Example — if the Marrickville gauge stopped reporting</p>
+              <p className="text-muted-foreground">
+                <span className="font-semibold text-foreground">ALERT — Belmore triangle gauge, now also covering Marrickville:</span> Rainfall ≥{' '}
+                {THRESHOLDS.rainfall.intensity.value} mm in 1 h. Initiate CJC-T front-of-train patrol between Hurlstone Park and Bankstown.{' '}
+                <span className="italic">Marrickville gauge not reporting — alerting from the designated alternate (§7.4).</span>
+              </p>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            The first alert on any switch is a fault alert telling MTS that alerting has moved to the fallback source. Draft wording — pending MTS confirmation.
+          </p>
+        </div>
       </section>
 
       <section className="rounded-lg border bg-card">
@@ -410,7 +435,9 @@ export function HealthPage() {
                 const cc = chargeController(logger.id);
                 const soc = cc.socPct;
                 const raised = cc.flags.filter((f) => f.active);
-                const low = soc <= THRESHOLDS.power.lowBatteryPct || raised.length > 0;
+                const lowCharge = soc <= THRESHOLDS.power.lowBatteryPct;
+                /* The bar is charge; the status also counts the controller's flags. */
+                const low = lowCharge || raised.length > 0;
                 return (
                   <tr key={logger.id} className="border-b last:border-0">
                     <td className="whitespace-nowrap px-3 py-2">
@@ -423,7 +450,7 @@ export function HealthPage() {
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                           <div
-                            className={cn('h-full rounded-full', low ? 'bg-sev-warning' : 'bg-sev-normal')}
+                            className={cn('h-full rounded-full', lowCharge ? 'bg-sev-warning' : 'bg-sev-normal')}
                             style={{ width: `${soc}%` }}
                           />
                         </div>

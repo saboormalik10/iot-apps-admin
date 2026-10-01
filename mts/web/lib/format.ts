@@ -34,13 +34,13 @@ export function fmtClock(t: number): string {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     timeZone: TZ,
   });
 }
 
 export function fmtTime(t: number): string {
-  return new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ });
+  return new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TZ });
 }
 
 export function fmtDateTime(t: number): string {
@@ -49,17 +49,63 @@ export function fmtDateTime(t: number): string {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     timeZone: TZ,
   });
 }
 
-/** Midnight in Sydney on the day `t` falls in — day bins follow the corridor's calendar, not UTC's. */
+/** Sydney wall-clock minutes past midnight. */
+function wallMinutes(t: number): number {
+  const d = new Date(new Date(t).toLocaleString('en-US', { timeZone: TZ }));
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/**
+ * Midnight in Sydney on the day `t` falls in — day bins follow the corridor's
+ * calendar, not UTC's. DST-correct: on a changeover day the wall clock skips or
+ * repeats an hour, so the first guess is read back and corrected.
+ */
 export function sydneyMidnight(t: number): number {
   // toLocaleString drops milliseconds; take them off `t` too, or "midnight"
   // lands a few hundred ms off and day bins split.
   const d = new Date(new Date(t).toLocaleString('en-US', { timeZone: TZ }));
-  return t - (d.getHours() * 3_600_000 + d.getMinutes() * 60_000 + d.getSeconds() * 1_000) - (t % 1000);
+  const guess = t - (d.getHours() * 3_600_000 + d.getMinutes() * 60_000 + d.getSeconds() * 1_000) - (t % 1000);
+  let off = wallMinutes(guess);
+  if (off > 720) off -= 1440;
+  return guess - off * 60_000;
+}
+
+/** "AEST" or "AEDT" — Sydney is on daylight time from the first Sunday of October. */
+export function sydneyZone(t: number): string {
+  const part = new Intl.DateTimeFormat('en-AU', { timeZone: TZ, timeZoneName: 'short' })
+    .formatToParts(new Date(t))
+    .find((p) => p.type === 'timeZoneName')?.value;
+  return part === 'AEDT' || part === 'AEST' ? part : (part ?? 'AEST');
+}
+
+/**
+ * Axis ticks on the Sydney wall clock: every `stepMin` minutes on the clock face,
+ * from midnight. Stepping a fixed number of milliseconds put the ticks on 13:00
+ * and 01:00 for the rest of the axis once the clocks went forward.
+ */
+export function wallClockTicks(from: number, to: number, stepMin: number): number[] {
+  const ticks: number[] = [];
+  if (stepMin >= 1440) {
+    // Whole days: one tick per Sydney midnight, every n days.
+    const n = Math.round(stepMin / 1440);
+    let i = 0;
+    for (let d = sydneyMidnight(from); d <= to; d = sydneyMidnight(d + 30 * 3_600_000), i++) {
+      if (d >= from && i % n === 0) ticks.push(d);
+    }
+    return ticks;
+  }
+  /* Walk the clock-face grid in the finer of the step and an hour; keep the
+     instants whose wall-clock minute lands on the step. */
+  const walk = Math.min(stepMin, 60) * 60_000;
+  for (let t = sydneyMidnight(from); t <= to; t += walk) {
+    if (t >= from && wallMinutes(t) % stepMin === 0) ticks.push(t);
+  }
+  return ticks;
 }
 
 /** "01 Oct" — for an axis of days. */

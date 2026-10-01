@@ -25,7 +25,7 @@ import type {
   VigilanceStatus,
   WindRoseBin,
 } from '@/lib/api/types';
-import { STORM_DAY, now, sydneyDayStart } from './clock';
+import { STORM_DAY, now, sydneyAt, sydneyDayStart } from './clock';
 import {
   batteryPct,
   rainfallMmHr,
@@ -549,7 +549,7 @@ export async function addAnnotation(eventId: string, text: string): Promise<void
  * carrier outage five days ago, Windsor Road's cellular handover today.
  */
 function outagesFor(loggerId: string, locationId: LocationId, t: number): OutageRecord[] {
-  const day = (d: number, h: number, m = 0) => STORM_DAY + d * DAY + (h * 60 + m) * MIN;
+  const day = (d: number, h: number, m = 0) => sydneyAt(STORM_DAY, d, h, m);
   const known: Record<string, OutageRecord[]> = {
     'LGD-UP-01': [
       { loggerId, locationId, from: day(-5, 2, 14), hours: 47 / 60, cause: 'Cellular carrier outage', planned: false },
@@ -721,7 +721,7 @@ export async function calibrationSchedule(): Promise<CalibrationItem[]> {
  * one's time matches the event history where the two overlap.
  */
 export async function qualityFlags(): Promise<QualityFlag[]> {
-  const day = (d: number, h: number, m = 0) => STORM_DAY + d * DAY + (h * 60 + m) * MIN;
+  const day = (d: number, h: number, m = 0) => sydneyAt(STORM_DAY, d, h, m);
   const flags: QualityFlag[] = [
     {
       id: 'q1',
@@ -924,15 +924,17 @@ export async function powerTrails(days = 7): Promise<PowerTrail[]> {
  */
 export async function maintenanceWindows(): Promise<MaintenanceWindow[]> {
   const t = now();
-  const d = new Date(STORM_DAY + 9 * DAY);
-  // forward to the next Saturday
-  const toSat = (6 - d.getDay() + 7) % 7;
-  const from = STORM_DAY + (9 + toSat) * DAY + 22 * HOUR;
+  /* Forward to the next Saturday — Sydney's weekday, not the server's — and place
+     both ends on the Sydney wall clock: 22:00 Saturday to 10:00 Monday, even when
+     the clocks change in between. */
+  const weekday = new Date(sydneyAt(STORM_DAY, 9, 12)).toLocaleDateString('en-AU', { weekday: 'short', timeZone: 'Australia/Sydney' });
+  const toSat = (6 - ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday) + 7) % 7;
+  const from = sydneyAt(STORM_DAY, 9 + toSat, 22);
   return settle([
     {
       id: 'mw-next',
       from,
-      to: from + 36 * HOUR,
+      to: sydneyAt(STORM_DAY, 9 + toSat + 2, 10),
       scope: 'Annual calibration and preventive maintenance — all seven locations',
       possession: 'Weekend possession (Southwest corridor)',
       notifiedAt: t - 3 * DAY,

@@ -1,5 +1,5 @@
 import type { LocationId } from '@/lib/api/types';
-import { STORM_DAY } from '../clock';
+import { STORM_DAY, sydneyAt } from '../clock';
 import { THRESHOLDS } from './thresholds';
 
 /**
@@ -13,9 +13,7 @@ import { THRESHOLDS } from './thresholds';
  * while the radar had been silent since 10:58. Now there is one record.
  */
 
-const MIN = 60_000;
-const DAY = 24 * 60 * MIN;
-const at = (d: number, h: number, m: number) => STORM_DAY + d * DAY + (h * 60 + m) * MIN;
+const at = (d: number, h: number, m: number) => sydneyAt(STORM_DAY, d, h, m);
 
 export const CAMPSIE_RADAR = {
   /** The radar stops answering. */

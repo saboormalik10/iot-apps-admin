@@ -1,5 +1,5 @@
 import type { AlertEvent, LocationId, Severity, TrackDirection } from '@/lib/api/types';
-import { STORM_DAY } from '../clock';
+import { STORM_DAY, sydneyAt } from '../clock';
 import { valueAt, waterLevelMm, windGustKmh } from '../generate/profiles';
 import { TALLY_STEP, rainGrid, tallyAt } from '../generate/tallies';
 import { STATIONS_BY_ID } from './stations';
@@ -81,7 +81,7 @@ interface Seed {
 
 /** Local time on a given day, as an absolute instant. */
 function at(dayOffset: number, hour: number, minute: number): number {
-  return STORM_DAY + dayOffset * DAY + (hour * 60 + minute) * MIN;
+  return sydneyAt(STORM_DAY, dayOffset, hour, minute);
 }
 
 function stormSeeds(): Seed[] {

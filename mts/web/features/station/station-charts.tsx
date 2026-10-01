@@ -213,10 +213,7 @@ export function StationCharts({ station, now }: { station: StationLocation; now:
                 <SeriesChart
                   height={200}
                   syncId={sync}
-                  domain={[
-                    Math.floor(Math.min(...day.pres.map((p) => p.v ?? 1013)) - 2),
-                    Math.ceil(Math.max(...day.pres.map((p) => p.v ?? 1013)) + 2),
-                  ]}
+                  /* No domain: the chart gives a measure that lives near 1,000 hPa round ends of its own. */
                   series={[{ key: 'pres', label: 'Pressure', points: day.pres, parameter: 'pressure' }]}
                 />
               </ChartFrame>

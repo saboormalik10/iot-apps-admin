@@ -24,7 +24,7 @@ import type {
   Unit,
   User,
 } from '@/lib/api/types';
-import { STORM_DAY, now } from './clock';
+import { STORM_DAY, now, sydneyAt } from './clock';
 import { batteryPct, solarInputW, valueAt } from './generate/profiles';
 import { simulatePumps } from './generate/pump-sim';
 import { hash } from './generate/rng';
@@ -166,7 +166,7 @@ export function compass(deg: number): string {
 
 /** The line under a reading: what it is, and the context a controller reads it with. */
 function fmtSydneyTime(t: number): string {
-  return new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Australia/Sydney' });
+  return new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' });
 }
 
 function noteFor(parameter: ParameterId, sensorId: string, locationId: LocationId, t: number, value: number | null): string | undefined {
@@ -609,7 +609,7 @@ export async function restoreRuleVersion(version: number): Promise<void> {
 function versionTime(v: RuleVersion): number {
   if (typeof v.at === 'number') return v.at;
   const [d, h, m] = v.at;
-  return STORM_DAY + d * 86_400_000 + (h * 60 + m) * 60_000;
+  return sydneyAt(STORM_DAY, d, h, m);
 }
 
 function publishVersion(summary: string, changes: RuleVersion['changes']): void {
@@ -748,7 +748,7 @@ export async function listHealth(): Promise<HealthFinding[]> {
       loggerId: 'CAM-YGRD-01',
       condition: 'missing-sensor-data',
       since: faultAt,
-      detail: `Radar level sensor has not reported since ${new Date(faultAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Australia/Sydney' })}. Alerting has fallen back to the float switch, and the alert wording now states the additional section covered. Work order WO-0412.`,
+      detail: `Radar level sensor has not reported since ${new Date(faultAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' })}. Alerting has fallen back to the float switch, and the alert wording now states the additional section covered. Work order WO-0412.`,
       severity: 'warning',
     });
   }
@@ -846,7 +846,7 @@ export function recordAudit(action: string, detail: string, category: AuditEntry
 export async function listAudit(): Promise<AuditEntry[]> {
   const t = now();
   const store = getStore();
-  const day = (d: number, h: number, m = 0) => STORM_DAY + d * 86_400_000 + (h * 60 + m) * 60_000;
+  const day = (d: number, h: number, m = 0) => sydneyAt(STORM_DAY, d, h, m);
   const out: AuditEntry[] = [];
 
   // Acknowledgements, from the events themselves.

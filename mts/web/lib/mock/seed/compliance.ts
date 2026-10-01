@@ -16,7 +16,16 @@ export interface ComplianceRow {
   status: ComplianceStatus;
 }
 
-export const INSTRUMENT_COMPLIANCE: Record<'rainfall' | 'level' | 'temperature' | 'wind', { title: string; section: string; rows: ComplianceRow[] }> = {
+/** A datasheet table the proposal prints beside the compliance table (§5.2, Appendix A). */
+export interface SpecTable {
+  title: string;
+  rows: [string, string][];
+}
+
+export const INSTRUMENT_COMPLIANCE: Record<
+  'rainfall' | 'level' | 'temperature' | 'wind' | 'pumps',
+  { title: string; section: string; rows: ComplianceRow[]; specs?: SpecTable[] }
+> = {
   rainfall: {
     title: 'RIMCO 7499 tipping-bucket rain gauge',
     section: '§5.1',
@@ -45,6 +54,43 @@ export const INSTRUMENT_COMPLIANCE: Record<'rainfall' | 'level' | 'temperature' 
       { requirement: 'Rate-of-rise detection, independent of level', provided: 'Rate-of-rise alarm in addition to absolute thresholds', status: 'configurable' },
       { requirement: 'Lowest point; standing water / rail foot / falling wording', provided: 'Sited at the lowest point; three flood states with Annexure C wording', status: 'configurable' },
     ],
+    specs: [
+      {
+        title: 'YGRD-65-D radar — datasheet',
+        rows: [
+          ['Principle', '120 GHz terahertz FMCW, non-contact; 3° beam with false-echo learning'],
+          ['Range', '0.1–50 m (30 m model 0.1–30 m); blind zone ≈ 100 mm'],
+          ['Accuracy / resolution', '±1 mm / 0.1 mm'],
+          ['Output', 'RS-485 Modbus RTU (4–20 mA and SDI-12 options)'],
+          ['Power', '12–24 VDC, ≈ 40 mA'],
+          ['Ingress protection', 'IP67 (IP68 optional), cast-aluminium housing, lens antenna'],
+          ['Operating temperature', '−30 to +80 °C'],
+          ['Pedigree', 'Tested by China’s MWR hydrological instrument centre; proven on open channels'],
+        ],
+      },
+      {
+        title: 'RS PRO RSF80 float switch — datasheet',
+        rows: [
+          ['Type and mounting', 'External vertical float; ½ in. NPT through-wall — no chamber entry to fit or service'],
+          ['Body', 'PPS (or PVDF) for gritty, sediment-laden floodwater'],
+          ['Contact', 'Reversible N/O or N/C — wired fail-safe (a broken wire reads as water)'],
+          ['Switching rating', '240 V AC / 120 V DC, 0.6 A, 25 VA resistive'],
+          ['Actuation band (SG 1)', 'Must-close ≈ 7–9 mm, must-open ≈ 20–24 mm — built-in hysteresis'],
+          ['Minimum fluid SG', '0.85 (floodwater ≈ 1.0)'],
+          ['Temperature', '−20 to +75 °C (Nylon) up to −10 to +120 °C (PPS)'],
+          ['Connection', 'Sealed M12 (recommended) or 100 cm flying lead'],
+        ],
+      },
+      {
+        title: 'Manual staff gauge — construction',
+        rows: [
+          ['Plate', 'H34 5005 aluminium, 0.6 × 1000 × 130 mm, yellow-coated'],
+          ['Markings', 'Black alkyd enamel, screen-printed; read to 10 mm'],
+          ['Datum', 'Zero on the same survey datum as the radar; procedure in the O&M manual'],
+          ['Mounting', 'On the 2.5 m mast beside the radar; marine-grade, UV-stable, vandal-resistant'],
+        ],
+      },
+    ],
   },
   temperature: {
     title: 'Gill GMX300 temperature / RH',
@@ -71,6 +117,32 @@ export const INSTRUMENT_COMPLIANCE: Record<'rainfall' | 'level' | 'temperature' 
       { requirement: 'Ingress protection IP66 (min)', provided: 'To be confirmed', status: 'confirm' },
       { requirement: 'Mounting ≥ 10 m above rail (or per location)', provided: 'VM5F mast; bridge sites allow for wind channelling', status: 'comply' },
       { requirement: '≥ 75 / ≥ 85 km/h TSR and ≥ 120 km/h block-line wording', provided: 'Gust-or-mean thresholds and per-location wording in the alert engine', status: 'configurable' },
+    ],
+  },
+  pumps: {
+    title: 'Existing trackside pumps — integration',
+    section: '§5.5, Appendix A',
+    rows: [
+      { requirement: 'Pumps at the Marrickville flood site', provided: 'Existing on site; integrated to, not supplied', status: 'comply' },
+      { requirement: 'Auto on/off from flood sensors', provided: 'OMC-048 starts and stops them from the radar, float as independent backup; alarms on run, fail, no-flow', status: 'comply' },
+      { requirement: 'Duty / standby operation', provided: 'Lead/lag start levels, alternation, standby cut-in on a duty fault — matched to the existing pumps', status: 'confirm' },
+      { requirement: 'Pump status and leading-indicator alarms', provided: 'Run, fault and (where available) condition signals read and alerted', status: 'comply' },
+      { requirement: 'Clear of KE + 200 mm at all times', provided: 'Logger cabinet and cabling outside the kinematic envelope + 200 mm', status: 'comply' },
+      { requirement: 'Existing outfall and pipework', provided: 'Unchanged — as installed', status: 'comply' },
+      { requirement: 'Electrical supply', provided: 'Existing supply; the OMC-048 interface is low-voltage and never switches the motor supply', status: 'confirm' },
+    ],
+    specs: [
+      {
+        title: 'Integration interface (typical) — Appendix A',
+        rows: [
+          ['Start/stop — duty (lead)', 'OMC-048 volt-free relay (RO1) → panel remote-start / contactor input'],
+          ['Start/stop — standby / assist', 'Second relay (RO2); energised at high-high or on a duty-pump fault'],
+          ['Pump run confirmation', 'Digital input from the panel’s run / status auxiliary contacts, per pump'],
+          ['Pump fault / trip', 'Digital input from the common-fault / motor-protection auxiliary contacts'],
+          ['Pump condition (where available)', 'Existing condition outputs (e.g. Grundfos IO 113, temperature / seal alarms)'],
+          ['Level demand source', 'YGRD-65-D radar (primary) and RSF80 float (independent backup)'],
+        ],
+      },
     ],
   },
 };

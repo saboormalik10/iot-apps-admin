@@ -23,8 +23,12 @@ const ANCHOR_MINUTE = 32;
  * consistent, but nonsense to anyone reading it, and wrong again on a UTC host
  * like Vercel.
  *
- * (Day boundaries across the DST changeover are an hour out. For a demo whose
- * history is a month of ordinary weather that is not worth a timezone library.)
+ * Daylight saving is handled without a library: a wall-clock time is placed by
+ * reading the wall clock back and correcting by the difference, which is exactly
+ * the hour that went missing (first Sunday of October) or repeated (first Sunday
+ * of April). Sydney's changeover falls inside a month of history every spring and
+ * autumn, so "an hour out" would show on every day-binned chart and every
+ * seeded time on the far side of it.
  */
 const TZ = 'Australia/Sydney';
 
@@ -64,14 +68,37 @@ export function sydneyMinuteOfDay(t: number): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-/** The instant of midnight in Sydney on the day `t` falls in. */
+/** Wall-clock minutes of `t` minus `target`, folded into (−12 h, +12 h]. */
+function wallDiffMin(t: number, target: number): number {
+  let d = sydneyMinuteOfDay(t) - target;
+  if (d > 720) d -= 1440;
+  if (d <= -720) d += 1440;
+  return d;
+}
+
+/** The instant of midnight in Sydney on the day `t` falls in — DST-correct. */
 export function sydneyDayStart(t: number): number {
   const d = sydneyFields(t);
-  return t - (d.getHours() * 3_600_000 + d.getMinutes() * 60_000 + d.getSeconds() * 1_000 + d.getMilliseconds());
+  const guess = t - (d.getHours() * 3_600_000 + d.getMinutes() * 60_000 + d.getSeconds() * 1_000 + d.getMilliseconds());
+  /* On a changeover day the subtraction counts an hour that did not happen (or
+     misses one that happened twice); read the guess back and correct it. */
+  return guess - wallDiffMin(guess, 0) * 60_000;
+}
+
+/**
+ * The instant at Sydney wall-clock `hour:minute`, `dayOffset` days from the day
+ * of `base`. Every seeded time in the demo is written this way, so "02:29 five
+ * days ago" reads 02:29 even with a clock change in between.
+ */
+export function sydneyAt(base: number, dayOffset: number, hour: number, minute = 0): number {
+  // From noon: never near a changeover, so whole days can be added safely.
+  const noon = sydneyDayStart(base) + dayOffset * 86_400_000 + 12 * 3_600_000;
+  const t = sydneyDayStart(noon) + (hour * 60 + minute) * 60_000;
+  return t - wallDiffMin(t, hour * 60 + minute) * 60_000;
 }
 
 function anchorFor(realNow: number): number {
-  return sydneyDayStart(realNow) + (ANCHOR_HOUR * 60 + ANCHOR_MINUTE) * 60_000 + 4_000;
+  return sydneyAt(realNow, 0, ANCHOR_HOUR, ANCHOR_MINUTE) + 4_000;
 }
 
 let realStart = Date.now();

@@ -4,7 +4,7 @@ import { Clock, FastForward, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { demoJumpTo, demoPause, demoReset, demoSetSpeed, demoState, storyPoints } from '@/lib/api/endpoints';
 import { useDemoClock } from '@/lib/demo-clock';
-import { fmtClock, fmtTime } from '@/lib/format';
+import { fmtClock, fmtTime, sydneyZone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -53,7 +53,7 @@ export function DemoDock() {
           </header>
 
           <p className="tabular mb-2 text-2xl font-semibold">
-            {fmtClock(now)} <span className="text-xs font-normal text-muted-foreground">AEST {state.paused ? '· paused' : `· ×${state.speed}`}</span>
+            {fmtClock(now)} <span className="text-xs font-normal text-muted-foreground">{sydneyZone(now)} {state.paused ? '· paused' : `· ×${state.speed}`}</span>
           </p>
 
           <div className="mb-3 grid grid-cols-4 gap-1" role="group" aria-label="Speed">

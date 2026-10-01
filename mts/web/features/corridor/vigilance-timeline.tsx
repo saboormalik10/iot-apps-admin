@@ -1,7 +1,7 @@
 'use client';
 
 import type { VigilanceRule } from '@/lib/api/types';
-import { fmtDateTime, fmtDay, fmtTime, sydneyMidnight } from '@/lib/format';
+import { fmtDateTime, fmtDay, fmtTime, sydneyMidnight, wallClockTicks } from '@/lib/format';
 
 /**
  * §7.2 as a picture: each rule's breach, the moment it fell back under the line,
@@ -29,9 +29,8 @@ export function VigilanceTimeline({ rules, now }: { rules: VigilanceRule[]; now:
   const x = (t: number) => `${((Math.max(from, Math.min(to, t)) - from) / span) * 100}%`;
   const w = (a: number, b: number) => `${(Math.max(0, Math.min(to, b) - Math.max(from, a)) / span) * 100}%`;
   const step = span > 48 * H ? 12 * H : span > 20 * H ? 6 * H : 2 * H;
-  const ticks: number[] = [];
-  // Ticks on Sydney time — midnight, midday — with the date at midnight.
-  for (let t = sydneyMidnight(from); t < to; t += step) if (t > from) ticks.push(t);
+  // Ticks on the Sydney clock face — midnight, midday — with the date at midnight.
+  const ticks = wallClockTicks(from + 1, to - 1, step / 60_000);
 
   return (
     <div className="mt-3 border-t pt-3">

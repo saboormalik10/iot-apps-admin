@@ -26,6 +26,7 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
     id: '3',
     title: '§3 Delivery framework',
     items: [
+      { req: '§2 Solution at a glance — stations, sensors, pumps, telemetry, alerting, portal, service', where: [{ label: 'System & contract', href: '/admin/system' }], status: 'shown' },
       { req: '§3.1 Blue2Scan, Blue2Link, Blue2Cast, Blue2Care — mapped to this project', where: [{ label: 'Blue2 map', href: '/health/pipeline' }], status: 'shown' },
     ],
   },
@@ -35,7 +36,9 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
     items: [
       { req: 'Data and alert flow: sensors → OMC-048 → 4G/5G → server → screen / email / push, with a link back to the event', where: [{ label: 'Data pipeline', href: '/health/pipeline' }, { label: 'Event page', href: '/alerts/evt-rail-foot' }], status: 'shown' },
       { req: 'Local logic on the logger continues through loss of the link; store-and-forward on restoration', where: [{ label: 'Station telemetry', href: '/stations/lady-game-drive' }, { label: 'Data pipeline', href: '/health/pipeline' }], status: 'shown' },
-      { req: 'Per-location sensor mix and OMC-048 terminal assignment (§4.3)', where: [{ label: 'Equipment — any station', href: '/stations/belmore' }], status: 'shown' },
+      { req: 'Per-location sensor mix and OMC-048 terminal assignment (§4.3)', where: [{ label: 'Sensors by location', href: '/admin/system' }, { label: 'Equipment — any station', href: '/stations/belmore' }], status: 'shown', note: 'Terminal, interface, cable and cores from the §4.3 wiring schedule.' },
+      { req: 'Figure 1 — end-to-end architecture', where: [{ label: 'System & contract', href: '/admin/system' }, { label: 'Data pipeline', href: '/health/pipeline' }], status: 'shown' },
+      { req: 'Figure 3 / §6.1 — station wiring and OMC-048 connectivity, per location', where: [{ label: 'Marrickville wiring', href: '/stations/marrickville' }, { label: 'Campsie (cut cable)', href: '/stations/campsie' }, { label: 'Tunnel units', href: '/stations/lady-game-drive' }], status: 'shown', note: 'Live: values on each sensor, relays drawn closed while a pump runs, modem signal and last send, battery and regulator flags.' },
       { req: '1-minute logging; transmit every 5 min, immediately on a breach', where: [{ label: 'Station telemetry', href: '/stations/marrickville' }, { label: 'Message chart', href: '/health/pipeline' }], status: 'shown' },
     ],
   },
@@ -86,7 +89,7 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
       { req: '§7.3 Wind ≥ 75 / ≥ 85 km/h TSR at listed kilometrages; ≥ 120 km/h block line', where: [{ label: 'Rules', href: '/admin/rules' }], status: 'pending', note: 'The kilometrage list is MTS’s to supply.' },
       { req: '§7.3 One configurable threshold table: add, edit, enable, disable, schedule; validated, versioned and logged', where: [{ label: 'Rules', href: '/admin/rules' }, { label: 'Version history', href: '/admin/rules' }, { label: 'Audit trail', href: '/admin/audit' }], status: 'shown' },
       { req: '§7.3 Validation before a change takes effect', where: [{ label: 'Rule drawer → test against 24 h', href: '/admin/rules' }], status: 'shown', note: 'The draft is dry-run against stored readings at every location it covers; a warning set above its alert is flagged.' },
-      { req: '§7.4 Automatic fallback to the designated alternate source, with the wording rewritten', where: [{ label: 'Redundancy table', href: '/health' }], status: 'pending', note: 'Two pairings need MTS to confirm — flagged on the table.' },
+      { req: '§7.4 Automatic fallback to the designated alternate source, with the wording rewritten', where: [{ label: 'Redundancy table + wording', href: '/health' }], status: 'pending', note: 'Normal and fallback wording shown side by side. Two pairings need MTS to confirm — flagged on the table.' },
       { req: '§7.5 Standing water: pop-up, blinking camera on the map, one-click live PTZ feed', where: [{ label: 'Map camera', href: '/' }, { label: 'Station button', href: '/stations/canterbury' }, { label: 'Alerts', href: '/alerts' }], status: 'pending', note: 'The pop-up appears by itself when the alert is raised (try the demo clock → "PTZ check — Canterbury"). The feed is simulated; camera URLs come from MTS (§15).' },
       { req: '§7.6 Searchable history: filter by severity, acknowledgement, location, date; named acknowledgement; CSV', where: [{ label: 'Alerts', href: '/alerts' }], status: 'shown' },
     ],
@@ -95,7 +98,8 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
     id: '8',
     title: '§8 Portal, data transmission and power',
     items: [
-      { req: '§8.1 Every station over a map with readings against thresholds and system-health fields', where: [{ label: 'Corridor map', href: '/' }], status: 'shown' },
+      { req: '§8.1 Every station over a map with readings against thresholds and system-health fields', where: [{ label: 'Corridor map', href: '/' }, { label: 'Flood points now', href: '/' }], status: 'shown' },
+      { req: 'Figure 7 — trends: wind, rainfall, temperature, humidity (+ level, Rev B; + pressure, GMX300)', where: [{ label: 'Trends', href: '/trends' }], status: 'shown', note: 'Set points are each location\u2019s own: pump-start only where there are pumps.' },
       { req: '§8.1 Laptop and mobile HMI — 1 column phone, 2 tablet, 3–4 desktop', where: [{ label: 'Any screen', href: '/' }], status: 'shown' },
       { req: '§8.1 Interrogate, annotate and acknowledge alerts', where: [{ label: 'Event page notes', href: '/alerts/evt-rail-foot' }], status: 'shown' },
       { req: '§8.1 Health dashboard refreshed every 10 minutes', where: [{ label: 'Health', href: '/health' }], status: 'shown' },
@@ -131,11 +135,13 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
     id: '10',
     title: '§10–§13 Delivery, maintenance, safety and governance',
     items: [
-      { req: 'Implementation programme, site works and possessions (§10)', where: [], status: 'outside', note: 'Project delivery, not a portal function.' },
+      { req: '§10.1 / Figure 16 Implementation programme and milestones', where: [{ label: 'Programme', href: '/admin/system' }], status: 'shown', note: 'Indicative weeks from contract award; kept as the delivery record.' },
+      { req: '§10.2 Installation and site works — possessions, siting, height access, competency', where: [{ label: 'Site works', href: '/admin/system' }], status: 'shown' },
       { req: '§11.2 Response ≤ 6 h, on-site investigation ≤ 12 h, repair ≤ 24 h', where: [{ label: 'Work orders', href: '/health' }], status: 'shown', note: 'Each fault opens a Blue2Care work order tracked against the three clocks.' },
       { req: '§11.1 Preventive maintenance and annual calibration certificates', where: [{ label: 'Calibration', href: '/health' }], status: 'shown' },
       { req: '§13 Configuration management — CCB for portal and non-like-for-like changes', where: [{ label: 'Rules → version history', href: '/admin/rules' }], status: 'shown', note: 'Rule edits are configuration and take effect on save; the portal itself changes through the CCB.' },
-      { req: 'WHS, RSNL, environment, security (§12) and contract governance (§13)', where: [], status: 'outside', note: 'Covered in the proposal, not by the portal.' },
+      { req: '§12 WHS, RSNL, environment, Modern Slavery, physical and OT security', where: [{ label: 'Safety & compliance', href: '/admin/system' }], status: 'shown', note: 'Reference only — obligations of the contract, recorded beside the system.' },
+      { req: '§13 Governance — representatives, meetings, incidents, variations, audit; §14 summary of compliance', where: [{ label: 'Governance', href: '/admin/system' }], status: 'shown' },
     ],
   },
   {

@@ -7,6 +7,7 @@ import { staffGaugeChecks, telemetryFor } from '@/lib/api/endpoints';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { INSTRUMENT_COMPLIANCE, type ComplianceStatus } from '@/lib/mock/seed/compliance';
+import { TERMINALS } from '@/lib/mock/seed/wiring';
 
 /**
  * What is physically at this location, and how it is wired (§4.3, §5, §5.7).
@@ -53,7 +54,7 @@ const KIT: Record<string, Kit> = {
   gmx: {
     instrument: 'Gill GMX300 compact sensor',
     measures: 'Air temperature, humidity, barometric pressure',
-    interface: 'SDI-12',
+    interface: 'SDI-12 (RS-232 / RS-485 options)',
     terminal: 'SDI-12 / COM2',
     mounting: '1.5–2 m above rail, shaded, integrated radiation screen',
     spec: '±0.3 °C · 0.1 °C resolution',
@@ -61,7 +62,7 @@ const KIT: Record<string, Kit> = {
   wind: {
     instrument: 'Gill WindSonic 75 ultrasonic anemometer',
     measures: 'Wind speed and direction — 2-min mean, 3-s gust',
-    interface: 'RS-232 serial',
+    interface: 'RS-232 / RS-422 serial',
     terminal: 'COM1',
     mounting: '10 m on a VM5F telescopic mast (11.3 m), lowers to 2.7 m for service',
     spec: '0–75 m/s (270 km/h) · direction 0–360°',
@@ -119,6 +120,15 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
                 <td className="px-4 py-2">
                   <span className="tabular rounded bg-muted px-1.5 py-0.5 text-xs font-medium">{r.terminal}</span>
                   <span className="block text-xs text-muted-foreground">{r.interface}</span>
+                  {(() => {
+                    /* §4.3's cable and cores, from the one wiring schedule. */
+                    const t = TERMINALS.find((x) => r.terminal.startsWith(x.terminal.split(' ')[0]));
+                    return t ? (
+                      <span className="block text-[11px] text-muted-foreground">
+                        {t.cable} · {t.cores}
+                      </span>
+                    ) : null;
+                  })()}
                 </td>
                 <td className="px-4 py-2 text-muted-foreground">{r.mounting}</td>
                 <td className="px-4 py-2 text-muted-foreground">{r.spec}</td>
@@ -150,6 +160,7 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
               has('water_level') && 'level',
               has('temperature') && 'temperature',
               has('wind_mean') && 'wind',
+              station.pumpStation && 'pumps',
             ].filter(Boolean) as (keyof typeof INSTRUMENT_COMPLIANCE)[]
           ).map((k) => {
             const c = INSTRUMENT_COMPLIANCE[k];
@@ -186,6 +197,21 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
                       ))}
                     </tbody>
                   </table>
+                  {(c.specs ?? []).map((t) => (
+                    <div key={t.title} className="border-t">
+                      <p className="bg-muted/40 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t.title}</p>
+                      <table className="w-full min-w-[560px] text-xs">
+                        <tbody>
+                          {t.rows.map(([k, v]) => (
+                            <tr key={k} className="border-b align-top last:border-0">
+                              <td className="w-[38%] px-3 py-1.5 text-muted-foreground">{k}</td>
+                              <td className="px-3 py-1.5">{v}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
                 </div>
               </details>
             );

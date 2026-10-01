@@ -602,3 +602,79 @@ controller flags as PV under-yield, cleaned in the overnight possession.
 768, 1024 and 1440 in both themes: no horizontal scroll, no console errors. Journeys
 checked: dry run, save → v8, restore → v9, warning/alert advisory, PTZ pop-up from
 a jump, Campsie repair at 07:52.
+
+## Round 6 — preview password, and the last of the PDF
+
+### Private-preview gate (hosting, not design)
+Every route now asks for a password once per browser, then remembers it for 90 days.
+- `middleware.ts` runs before every route; without a valid cookie it redirects to
+  `/unlock?next=…` (deep links survive the detour).
+- The password is the `SITE_PASSWORD` environment variable — `.env.local` locally
+  (gitignored), Vercel → Settings → Environment Variables in production. `.env.example`
+  documents it. Fails closed: no variable, no access.
+- The cookie (`mts_preview`, httpOnly, secure in production, 90 days) holds an HMAC of a
+  fixed label keyed by the password — never the password — so it cannot be forged,
+  and changing the password locks every browser out.
+- Wrong guesses are slowed (≈0.9 s); redirects are relative and the `next` target is
+  checked, so it cannot bounce to another site. "Lock this browser" on Settings.
+- Styled apart from the portal's own sign-in (which is part of the design under review).
+
+### The PDF, closed out
+All 52 pages were rendered and compared with the screens again. What was still missing:
+- **Figure 3 / §4.3 / §6.1 — wiring and connectivity, live, per station:** each sensor on
+  its OMC-048 terminal with its interface; relays RO1/RO2 drawn closed while a pump
+  runs; DI3 run/trip; pump condition monitoring; modem with signal and last send;
+  solar → MPPT regulator → battery → PWR with live charge and flags; §6.1's "this
+  location" panel elsewhere; a toggle for the two tunnel units; Campsie's RS-485 drawn
+  cut. Wire colours follow signal type, never status. The §4.3 schedule (terminal,
+  interface, cable, cores) is one seed, also feeding the equipment table.
+- **System & contract** (Administration tab): §2 solution at a glance; Figure 1; the
+  §4.3/§6 sensor matrix computed from the station list; **Figure 16 as a Gantt** with
+  milestones (hover, table view, CSV); §10.2 site rules; §11 Blue2Care; §12 safety and
+  compliance; §13 governance; §14. The coverage page no longer has anything "outside
+  the portal".
+- **§7.4 wording** — normal and fallback alert wording side by side on Health.
+
+### Charts
+- **Flood points — now** (Map): every water-level point on one scale, a bar for the
+  level, a tick for the 24 h peak, standing water and rail foot drawn through all of
+  them, rate of rise beside each. Fills the empty column under the threshold timeline.
+- **Trends bug fixed:** the level chart drew Marrickville's pump set points for every
+  station and judged "now" against pump-start; it now uses each location's own lines
+  and status, and draws both tunnel sensors at Lady Game Drive.
+- **Barometric pressure** added to Trends (GMX300, §5.3), with the 3-hour tendency.
+- **Trends CSV** now exports only the sensors the station has, with units in the
+  headings — it had written invented columns (water level at Windsor Road).
+
+### Sydney time, done properly
+Sydney goes onto daylight time on 4 October 2026 — inside the demo's window. The
+helpers stepped fixed milliseconds from midnight, so:
+- the vigilance timeline's ticks read "13:00" after the change, and the threshold
+  timeline's ticks were UTC multiples (02:00/06:00, odd hours in AEDT);
+- the planned-maintenance banner read 23:00 → 11:00 for a window seeded 22:00 → 10:00;
+- "midnight" on a changeover day landed at 23:00 the night before;
+- the header and demo dock said "AEST" all year.
+Now: `sydneyAt(day, h, m)` places every seeded time on the wall clock;
+`sydneyDayStart` / `sydneyMidnight` correct themselves on changeover days;
+`wallClockTicks` generates every time axis on the Sydney clock face; the zone shows
+AEST or AEDT as appropriate; and every formatter uses a 23-hour cycle (`hour12:false`
+printed midnight as "24:00" under Node's ICU). Checked on both 2026 changeovers.
+
+### Charts, a second pass
+- **Round axes everywhere**, not only on thresholded charts: a measure that lives far
+  from zero (pressure, ≈1,000 hPa) gets round ends of its own (995–1020) instead of
+  "999 1004 1009 1016"; data that goes negative keeps both sides.
+- Health power table: the charge bar is coloured by charge; controller flags keep
+  their own column and the status pill.
+
+### §5 detail, completed
+- **§5.5 / Appendix A** pump integration on the Marrickville equipment panel —
+  compliance rows and the typical interface (RO1/RO2, run, trip, condition, demand).
+- **§5.2 datasheets** — YGRD-65-D and RSF80 attribute tables, and the staff-gauge plate.
+
+### Verification
+`tsc`, `eslint`, `yarn validate-palette`, `yarn build` clean. Gate tested over HTTP and in
+a browser: redirect with `next`, wrong password, right password, persistence across
+reloads and routes, a fresh browser asked again, forged cookie refused, open redirect
+refused, lock. 31 routes × 375/768/1024/1440 × both themes, unlocked: no horizontal
+scroll, no console errors.

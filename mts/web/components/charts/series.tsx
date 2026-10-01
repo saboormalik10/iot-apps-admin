@@ -15,7 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { ParameterId, Reading } from '@/lib/api/types';
-import { fmtDateTime, fmtDay, fmtTime, fmtValue, sydneyMidnight } from '@/lib/format';
+import { fmtDateTime, fmtDay, fmtTime, fmtValue, sydneyMidnight, wallClockTicks } from '@/lib/format';
 import { CHROME, PARAM_COLOR } from '@/lib/viz/roles';
 import { useCompact } from '@/lib/viz/use-compact';
 
@@ -93,15 +93,33 @@ interface Props {
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
-/** A 0-based axis to a round top, in four or five round steps. */
-function niceAxis(max: number): { top: number; ticks: number[] } {
-  const rough = Math.max(max, 1) / 5;
+/** A round step for a span, so there are four or five of them. */
+function niceStep(span: number): number {
+  const rough = Math.max(span, 1e-6) / 5;
   const mag = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= rough) ?? 10 * mag;
-  const top = Math.ceil(max / step) * step;
+  return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= rough) ?? 10 * mag;
+}
+
+function ticksBetween(bottom: number, top: number, step: number): number[] {
   const ticks: number[] = [];
-  for (let v = 0; v <= top + step / 1000; v += step) ticks.push(Math.round(v * 1000) / 1000);
-  return { top, ticks };
+  for (let v = bottom; v <= top + step / 1000; v += step) ticks.push(Math.round(v * 1000) / 1000);
+  return ticks;
+}
+
+/** A 0-based axis to a round top, in four or five round steps. */
+function niceAxis(max: number): { bottom: number; top: number; ticks: number[] } {
+  const step = niceStep(Math.max(max, 1));
+  const top = Math.ceil(Math.max(max, 1) / step) * step;
+  return { bottom: 0, top, ticks: ticksBetween(0, top, step) };
+}
+
+/** Round ends either side of the data, for measures that never go near zero. */
+function niceRange(min: number, max: number): { bottom: number; top: number; ticks: number[] } {
+  const pad = Math.max((max - min) * 0.08, Math.abs(max) * 0.002);
+  const step = niceStep(max - min + 2 * pad);
+  const bottom = Math.floor((min - pad) / step) * step;
+  const top = Math.ceil((max + pad) / step) * step;
+  return { bottom, top, ticks: ticksBetween(bottom, top, step) };
 }
 
 /**
@@ -113,10 +131,8 @@ function timeTicks(from: number, to: number, maxTicks: number): number[] {
   const span = to - from;
   const steps = [10 * MIN, 30 * MIN, HOUR, 2 * HOUR, 3 * HOUR, 4 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR, 2 * 24 * HOUR, 7 * 24 * HOUR];
   const step = steps.find((x) => span / x <= maxTicks) ?? steps[steps.length - 1];
-  const origin = sydneyMidnight(from);
-  const ticks: number[] = [];
-  for (let t = origin; t <= to; t += step) if (t >= from) ticks.push(t);
-  return ticks;
+  // On the Sydney clock face, so a daylight-saving change does not shift every later tick by an hour.
+  return wallClockTicks(from, to, step / MIN);
 }
 
 /**
@@ -223,9 +239,22 @@ export function SeriesChart({
   const thresholdMax = thresholds.length ? Math.max(...thresholds.map((t) => t.value)) : undefined;
   /* Round ends and round steps: an axis reading "0 60 120 230" makes the eye
      do arithmetic. The top clears both the rule and the data. */
-  const dataMax = Math.max(0, ...series.filter((s) => !s.stackId).flatMap((s) => s.points.map((p) => p.v ?? 0)));
-  const niceY = !domain && thresholdMax !== undefined ? niceAxis(Math.max(thresholdMax * 1.15, dataMax * 1.05)) : undefined;
-  const autoDomain: [number | 'auto', number | 'auto'] | undefined = domain ?? (niceY ? [0, niceY.top] : undefined);
+  const values = series.filter((s) => !s.stackId).flatMap((s) => s.points.flatMap((p) => (p.v === null ? [] : [p.v])));
+  const dataMax = Math.max(0, ...values);
+  const dataMin = values.length ? Math.min(...values) : 0;
+  /* Without a rule to clear, a measure that lives far from zero — pressure at
+     1,000 hPa — gets its own round ends; anything else starts at zero. */
+  const floating = !series.some((x) => x.kind === 'bar') && dataMin > 0 && dataMin > dataMax * 0.5;
+  const niceY = domain || !values.length
+    ? undefined
+    : thresholdMax !== undefined
+      ? niceAxis(Math.max(thresholdMax * 1.15, dataMax * 1.05))
+      : floating || dataMin < 0
+        ? niceRange(dataMin, dataMax)
+        : series.some((x) => x.stackId)
+          ? undefined
+          : niceAxis(dataMax * 1.05);
+  const autoDomain: [number | 'auto', number | 'auto'] | undefined = domain ?? (niceY ? [niceY.bottom, niceY.top] : undefined);
   const data = series[0]?.points.map((p, i) => {
     const row: Record<string, number | null> = { t: p.t };
     series.forEach((s) => {

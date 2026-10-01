@@ -20,7 +20,7 @@ import {
   stationCount,
   unacknowledgedCount,
 } from '@/lib/api/endpoints';
-import { fmtClock, fmtDateTime } from '@/lib/format';
+import { fmtClock, fmtDateTime, sydneyZone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -28,7 +28,7 @@ import { Button } from '@/components/ui/button';
  * The masthead, the navigation and the alert ticker.
  *
  * It follows the client's own Figure 6: a navy bar carrying the wordmark and the
- * portal's name, the time in AEST on the right with the live status chips beside
+ * portal's name, the time in Sydney (AEST / AEDT) on the right with the live status chips beside
  * it, and — when something is wrong — an amber ticker directly underneath holding
  * the operational instruction, because that sentence is the reason anyone opened
  * the portal at all.
@@ -119,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <time className="tabular hidden w-[92px] text-xs text-header-muted sm:block">
               {now ? (
                 <>
-                  {fmtClock(now)} <span className="opacity-90">AEST</span>
+                  {fmtClock(now)} <span className="opacity-90">{sydneyZone(now)}</span>
                 </>
               ) : null}
             </time>
