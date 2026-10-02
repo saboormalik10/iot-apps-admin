@@ -21,7 +21,8 @@ export default function Page() {
         </div>
         <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           <li>The lockout and every failed attempt are recorded in the audit trail.</li>
-          <li>If it was not you, tell an administrator — they can reset your password and review the attempts.</li>
+          <li>Reset your own password with an emailed link — no administrator needed.</li>
+          <li>If the attempts were not you, tell the OCC so the attempts can be reviewed.</li>
         </ul>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="flex-1">

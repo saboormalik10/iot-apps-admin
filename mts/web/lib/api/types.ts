@@ -291,6 +291,35 @@ export interface AlertRule {
   enabled: boolean;
 }
 
+/** One physical instrument in the asset register (Admin → Sensors). */
+export type InstrumentKind = 'rain' | 'level' | 'float' | 'gmx' | 'wind';
+
+export interface Instrument {
+  /** The sensor ID, as the history and alerts quote it: `MKV-RIMCO-01`. */
+  sensorId: string;
+  locationId: LocationId;
+  locationName: string;
+  loggerId: string;
+  kind: InstrumentKind;
+  model: string;
+  terminal: string;
+  serial: string;
+  mounting: string;
+  installedAt: number;
+  calibrationDueAt?: number;
+  certificate?: string;
+  /** Commissioning: installed, not yet trusted — no readings feed alerts until it is in service. */
+  status: 'in-service' | 'commissioning' | 'decommissioned';
+  /** Added in this session — simulated. */
+  added?: boolean;
+  note?: string;
+}
+
+export type InstrumentInput = Pick<Instrument, 'sensorId' | 'locationId' | 'loggerId' | 'kind' | 'serial' | 'mounting' | 'certificate'> & {
+  calibrationDueAt?: number;
+  note?: string;
+};
+
 /** §8.6: what the solar charge controller reports to the logger. */
 export interface ChargeController {
   loggerId: string;

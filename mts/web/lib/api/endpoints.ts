@@ -76,6 +76,11 @@ export {
   loggerStrips,
   workOrders,
   chargeController,
+  listInstruments,
+  instrumentsNow,
+  addInstrument,
+  updateInstrument,
+  INSTRUMENT_CATALOG,
 } from '@/lib/mock/insights';
 export type { PipelineStats } from '@/lib/mock/insights';
 export { compass } from '@/lib/mock/api';

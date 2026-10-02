@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8">
+<title>Weather Monitoring Portal — Sydney Metro M1 — User Manual</title>
+<style>
+@page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+@page :first { margin: 0; }
+
+:root {
+  --ink: #111827; --muted: #5b6472; --line: #e3e6ea;
+  --accent: #1b5fb4; --surface: #f7f8fa;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: var(--ink); font-size: 10.5pt; line-height: 1.55; margin: 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+/* ── cover ─────────────────────────────────────────────────────────────── */
+.cover {
+  height: 297mm; padding: 45mm 22mm 20mm; page-break-after: always;
+  display: flex; flex-direction: column;
+  background: linear-gradient(160deg, #0b2547 0%, #123a6e 60%, #1b5fb4 100%);
+  color: #fff;
+}
+.cover .mark {
+  width: 46px; height: 46px; border-radius: 10px; background: rgba(255,255,255,.16);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22pt; font-weight: 700; margin-bottom: 30mm;
+}
+.cover h1 { font-size: 34pt; line-height: 1.12; margin: 0 0 6mm; font-weight: 650; letter-spacing: -.5pt; }
+.cover .sub { font-size: 13pt; opacity: .92; margin: 0 0 3mm; }
+.cover .lede { font-size: 10.5pt; opacity: .8; max-width: 115mm; line-height: 1.6; }
+.cover .meta {
+  margin-top: auto; font-size: 9.5pt; opacity: .85;
+  border-top: 1px solid rgba(255,255,255,.28); padding-top: 5mm;
+  display: flex; justify-content: space-between;
+}
+
+/* ── document ──────────────────────────────────────────────────────────── */
+main { counter-reset: figure; }
+main h1 { display: none; }                 /* the markdown's H1; the cover has its own */
+h2 {
+  font-size: 16pt; margin: 0 0 4mm; padding-top: 2mm; font-weight: 640;
+  letter-spacing: -.2pt; page-break-after: avoid; page-break-before: always;
+}
+main > h2:first-of-type { page-break-before: avoid; }
+h3 { font-size: 11.5pt; margin: 7mm 0 2mm; font-weight: 640; page-break-after: avoid; }
+p { margin: 0 0 3.2mm; }
+a { color: var(--accent); text-decoration: none; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 3px; padding: .5mm 1.2mm;
+}
+hr { display: none; }
+
+ul, ol { margin: 0 0 3.5mm; padding-left: 6mm; }
+li { margin-bottom: 1.4mm; }
+
+table {
+  width: 100%; border-collapse: collapse; margin: 0 0 4.5mm;
+  font-size: 9.5pt; page-break-inside: avoid;
+}
+th {
+  text-align: left; font-weight: 640; background: var(--surface);
+  border-bottom: 1.5px solid #d2d7de; padding: 2mm 2.5mm;
+}
+td { border-bottom: 1px solid var(--line); padding: 2mm 2.5mm; vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+
+blockquote {
+  margin: 0 0 4mm; padding: 3mm 4mm; background: #fffbeb;
+  border-left: 3px solid #d9a441; border-radius: 0 4px 4px 0;
+  font-size: 10pt; page-break-inside: avoid;
+}
+
+figure {
+  margin: 0 0 5mm; page-break-inside: avoid; text-align: center;
+}
+figure img { display: inline-block; }
+figure img {
+  max-width: 100%; max-height: 232mm; object-fit: contain;
+  border: 1px solid var(--line); border-radius: 5px;
+}
+figcaption {
+  counter-increment: figure; font-size: 8.5pt; color: var(--muted);
+  margin-top: 1.8mm; text-align: left;
+}
+figcaption::before { content: "Figure " counter(figure) " — "; font-weight: 600; }
+
+/* The contents list the markdown already carries. */
+.toc { page-break-after: always; }
+.toc h2 { page-break-before: avoid; }
+.toc ol { list-style: none; padding: 0; counter-reset: toc; font-size: 10.5pt; }
+.toc li { counter-increment: toc; margin: 0; }
+.toc li a {
+  display: flex; align-items: baseline; gap: 2mm; color: var(--ink);
+  padding: 2.2mm 0; border-bottom: 1px solid var(--line);
+}
+.toc li a::before {
+  content: counter(toc); color: var(--muted); font-size: 9pt;
+  min-width: 7mm; font-variant-numeric: tabular-nums;
+}
+
+.cover .brand { font-size: 15pt; font-weight: 750; letter-spacing: 2.5pt; margin-bottom: 26mm; }
+.cover .brand span { display: block; font-size: 9.5pt; font-weight: 400; letter-spacing: .3pt; opacity: .8; margin-top: 1.5mm; }
+.cover .note {
+  margin-top: 10mm; max-width: 120mm; font-size: 9.5pt; line-height: 1.55;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22);
+  border-radius: 6px; padding: 4mm 5mm;
+}
+figure img { max-height: 200mm; }
+</style></head>
+<body>
+<section class="cover">
+  <div class="brand">OBSERVATOR<span>Weather Monitoring Portal — Sydney Metro M1</span></div>
+  <h1>User Manual</h1>
+  <p class="sub">How to use the portal, screen by screen</p>
+  <p class="lede">Signing in, reading the map and alerts, checking stations and pumps,
+  finding and exporting data, keeping an eye on system health, and administering users,
+  alert rules and sensors.</p>
+  <div class="note">This manual describes the design prototype. All readings shown are
+  demonstration data; no sensors are connected and no alerts, emails or pump commands
+  are sent.</div>
+  <div class="meta"><span>Design prototype · for review</span><span>{{DATE}}</span></div>
+</section>
+<main>
+{{BODY}}
+</main>
+</body></html>

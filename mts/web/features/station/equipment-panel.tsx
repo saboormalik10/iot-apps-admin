@@ -6,6 +6,10 @@ import type { LocationId, StaffGaugeCheck, StationLocation, Telemetry } from '@/
 import { staffGaugeChecks, telemetryFor } from '@/lib/api/endpoints';
 import { fmtDate, fmtDateTime, fmtRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
+import type { Instrument, InstrumentKind } from '@/lib/api/types';
+import { listInstruments } from '@/lib/api/endpoints';
+import { useDataRevision } from '@/lib/use-data';
 import { INSTRUMENT_COMPLIANCE, type ComplianceStatus } from '@/lib/mock/seed/compliance';
 import { TERMINALS } from '@/lib/mock/seed/wiring';
 
@@ -69,16 +73,21 @@ const KIT: Record<string, Kit> = {
   },
 };
 
+const KIT_FOR: Record<InstrumentKind, string> = { rain: 'rainfall', level: 'water_level', float: 'float_switch', gmx: 'gmx', wind: 'wind' };
+
 export function EquipmentPanel({ station }: { station: StationLocation }) {
   const has = (p: string) => station.sensors.some((s) => s.parameter === p);
   const units = station.loggers.length > 1 ? station.loggers : [station.loggers[0]];
-  const rows: (Kit & { count: number })[] = [];
-  const add = (k: Kit, count = 1) => rows.push({ ...k, count });
-  if (has('rainfall')) add(KIT.rainfall);
-  if (has('water_level')) add(KIT.water_level, station.sensors.filter((s) => s.parameter === 'water_level').length);
-  if (has('float_switch')) add(KIT.float_switch, station.sensors.filter((s) => s.parameter === 'float_switch').length);
-  if (has('temperature')) add(KIT.gmx);
-  if (has('wind_mean')) add(KIT.wind);
+  /* Read from the sensor register (Admin → Sensors), so a sensor added or
+     decommissioned there shows here at once. */
+  const revision = useDataRevision();
+  const [instruments, setInstruments] = useState<Instrument[] | null>(null);
+  useEffect(() => {
+    listInstruments().then((all) => setInstruments(all.filter((i) => i.locationId === station.id)));
+  }, [station.id, revision]);
+  const rows: (Kit & { count: number; item?: Instrument })[] = [];
+  const add = (k: Kit, count = 1, item?: Instrument) => rows.push({ ...k, count, item });
+  for (const i of instruments ?? []) add({ ...KIT[KIT_FOR[i.kind]], mounting: i.mounting }, 1, i);
   if (station.pumpStation) {
     add({
       instrument: 'Existing pump control panel (integration)',
@@ -92,17 +101,22 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
 
   return (
     <section className="min-w-0 rounded-lg border bg-card">
-      <header className="border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">Equipment at this location</h2>
-        <p className="text-xs text-muted-foreground">
-          Instruments, how each is wired to the OMC-048 (§4.3), and the station infrastructure (§5.7).
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold">Equipment at this location</h2>
+          <p className="text-xs text-muted-foreground">
+            From the sensor register — instruments, how each is wired to the OMC-048 (§4.3), and the station infrastructure (§5.7).
+          </p>
+        </div>
+        <Link href="/admin/sensors" className="text-xs font-medium text-primary-strong hover:underline">
+          Manage sensors →
+        </Link>
       </header>
       <div className="scroll-x-hint overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-muted/60 text-xs text-muted-foreground">
             <tr>
-              {['Instrument', 'Measures', 'Wiring', 'Mounting', 'Specification'].map((h) => (
+              {['Instrument', 'Measures', 'Wiring', 'Mounting', 'Specification', 'Status'].map((h) => (
                 <th key={h} className="whitespace-nowrap px-4 py-2 text-left font-medium">
                   {h}
                 </th>
@@ -111,10 +125,14 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.instrument} className="border-t align-top">
+              <tr key={r.item?.sensorId ?? r.instrument} className={cn('border-t align-top', r.item?.status === 'decommissioned' && 'text-muted-foreground opacity-70')}>
                 <td className="px-4 py-2 font-medium">
                   {r.instrument}
-                  {r.count > 1 ? <span className="ml-1 text-muted-foreground">× {r.count}</span> : null}
+                  {r.item ? (
+                    <span className="tabular block text-xs font-normal text-muted-foreground">
+                      {r.item.sensorId} · s/n {r.item.serial}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-2 text-muted-foreground">{r.measures}</td>
                 <td className="px-4 py-2">
@@ -132,6 +150,22 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
                 </td>
                 <td className="px-4 py-2 text-muted-foreground">{r.mounting}</td>
                 <td className="px-4 py-2 text-muted-foreground">{r.spec}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-xs">
+                  {r.item ? (
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 font-medium',
+                        r.item.status === 'in-service' && 'bg-sev-normal-tint text-sev-normal-strong',
+                        r.item.status === 'commissioning' && 'bg-sev-info-tint text-sev-info-strong',
+                        r.item.status === 'decommissioned' && 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {r.item.status === 'in-service' ? 'In service' : r.item.status === 'commissioning' ? 'Commissioning' : 'Decommissioned'}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Existing asset</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -150,9 +184,23 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
         <Fact label="Siting" value="Clear of KE + 200 mm, outside transit space" />
       </dl>
 
+    </section>
+  );
+}
+
+/**
+ * §5.1–5.5: what the Statement of Requirements asks of each fitted instrument,
+ * and the proposal's answer. Proposal material — it lives on the Installation
+ * page, beside the drawings, rather than in front of an operator.
+ */
+export function CompliancePanel({ station }: { station: StationLocation }) {
+  const has = (p: string) => station.sensors.some((s) => s.parameter === p);
+  return (
+    <section className="min-w-0 rounded-lg border bg-card">
       {/* §5.1–5.4: what the Statement of Requirements asks of each fitted instrument, and the answer. */}
-      <div className="border-t px-4 py-3">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Requirement vs provided</h3>
+      <div className="px-4 py-3">
+        <h2 className="text-sm font-semibold">Requirement vs provided</h2>
+        <p className="mb-2 text-xs text-muted-foreground">From the proposal (§5.1–5.5): each fitted instrument against the Statement of Requirements.</p>
         <div className="space-y-1.5">
           {(
             [

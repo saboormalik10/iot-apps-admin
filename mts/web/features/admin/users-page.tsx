@@ -81,6 +81,10 @@ export function UsersPage() {
       <p className="text-sm text-muted-foreground">
         Add, edit, suspend or remove users and assign their roles and station access. Administrator only.
       </p>
+      <p className="rounded-md border border-sev-info/40 bg-sev-info-tint px-3 py-2 text-xs text-sev-info-strong">
+        Forgotten passwords are self-service: people reset their own from the sign-in screen with an emailed link that
+        works once for 30 minutes. Administrators never see or set a password — resets appear in the audit trail.
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">

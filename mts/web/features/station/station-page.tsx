@@ -31,12 +31,11 @@ import { toast } from '@/lib/hooks/use-toast';
 import { fmtDuration, fmtSigned, fmtTime } from '@/lib/format';
 import { ROLES_BY_ID } from '@/lib/mock/seed/people';
 import { cn } from '@/lib/utils';
-import { EquipmentPanel, TelemetryPanel } from './equipment-panel';
+import { TelemetryPanel } from './equipment-panel';
+import { StationTabs } from './station-tabs';
 import { ReadingCard, pointLabel } from './reading-card';
 import { StationCharts } from './station-charts';
 import { PowerPanel, PumpHistoryPanel, PumpProtectionPanel } from './station-insights';
-import { SiteElevation } from './site-elevation';
-import { WiringDiagram } from './wiring-diagram';
 import { PtzDialog } from '@/features/alerts/ptz-dialog';
 
 /**
@@ -159,6 +158,8 @@ export function StationPage({ id }: { id: LocationId }) {
           ) : null}
         </div>
       </div>
+
+      <StationTabs id={id} active="live" />
 
       {/* §8.4: a Maintainer can put a location into maintenance mode. While it
           is on, everyone sees why — and that the float switch is still live. */}
@@ -389,20 +390,8 @@ export function StationPage({ id }: { id: LocationId }) {
         </div>
       </div>
 
-      <section className="rounded-lg border bg-card p-3">
-        <h2 className="mb-2 text-sm font-semibold">Site elevation — as installed</h2>
-        <SiteElevation station={station.location} readings={station.readings} pumps={pump?.pumps} />
-      </section>
-
-      <section className="rounded-lg border bg-card p-3">
-        <h2 className="mb-2 text-sm font-semibold">Wiring and connectivity — live</h2>
-        <WiringDiagram station={station.location} readings={station.readings} pump={station.location.pumpStation ? pump : null} />
-      </section>
-
-      <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <TelemetryPanel locationId={id} now={now} />
-        <EquipmentPanel station={station.location} />
-      </div>
+      {/* Drawings, wiring and the equipment list are on the Installation tab. */}
+      <TelemetryPanel locationId={id} now={now} />
 
       <PtzDialog event={ptz} onClose={() => setPtz(null)} onAcknowledge={(eid) => acknowledgeEvent(eid).then(load)} />
 

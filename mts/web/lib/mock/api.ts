@@ -885,6 +885,8 @@ export async function listAudit(): Promise<AuditEntry[]> {
 
   out.push(
     { id: 'm-campsie', t: day(0, 11, 41), actor: 'T. Reilly', action: 'Maintenance mode on', detail: 'Campsie — radar comms fault, technician on site; float switch remains live', category: 'maintenance' },
+    { id: 'pw-smith-req', t: day(-4, 7, 12), actor: 'D. Smith', action: 'Password reset requested', detail: 'Self-service from the sign-in screen · Cloudflare check passed · link emailed', category: 'auth' },
+    { id: 'pw-smith-done', t: day(-4, 7, 16), actor: 'D. Smith', action: 'Password changed', detail: 'Via the single-use reset link · other sessions signed out', category: 'auth' },
     { id: 'u-lee-fail', t: day(-12, 7, 52), actor: 'M. Lee', action: 'Sign-in failed', detail: 'Three attempts from 10.4.18.91 — account locked for 15 minutes', category: 'auth' },
     { id: 'u-lee', t: day(-11, 9, 15), actor: 'S. Chen', action: 'User suspended', detail: 'Mark Lee — access revoked, audit history retained', category: 'user' },
     { id: 'u-mensah', t: day(-2, 15, 20), actor: 'K. Fraser', action: 'User invited', detail: 'Kofi Mensah — Analyst / Reporting, all stations', category: 'user' },

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AlertTriangle, CalendarClock, Menu, Moon, Sun, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, LogOut, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DemoDock } from './demo-dock';
@@ -23,6 +23,14 @@ import {
 import { fmtClock, fmtDateTime, sydneyZone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 /**
  * The masthead, the navigation and the alert ticker.
@@ -166,13 +174,35 @@ export function AppShell({ children }: { children: ReactNode }) {
               ) : null}
             </Link>
 
-            <Link
-              href="/settings"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold"
-              aria-label={`Your profile — ${DEMO_USER.name}`}
-            >
-              {DEMO_USER.initials}
-            </Link>
+            {/* The user menu: who is signed in, their settings, and sign out. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label={`Account menu — ${DEMO_USER.name}`}
+              >
+                {DEMO_USER.initials}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="font-normal">
+                  <p className="text-sm font-semibold">{DEMO_USER.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{DEMO_USER.email}</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="cursor-pointer">
+                    <UserRound className="mr-2 h-4 w-4" aria-hidden /> Profile &amp; notifications
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <form method="post" action="/api/logout">
+                  <DropdownMenuItem asChild>
+                    <button type="submit" className="w-full cursor-pointer text-sev-alert-strong focus:text-sev-alert-strong">
+                      <LogOut className="mr-2 h-4 w-4" aria-hidden /> Sign out
+                    </button>
+                  </DropdownMenuItem>
+                </form>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -191,6 +221,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </li>
               ))}
             </ul>
+            <div className="mt-2 flex items-center justify-between gap-2 border-t border-header-border pt-2 text-sm">
+              <span className="truncate text-header-muted">{DEMO_USER.name}</span>
+              <form method="post" action="/api/logout">
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 rounded-md px-3 py-2 text-header-muted hover:bg-white/10 hover:text-white"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden /> Sign out
+                </button>
+              </form>
+            </div>
           </nav>
         ) : null}
       </header>

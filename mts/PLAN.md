@@ -678,3 +678,27 @@ a browser: redirect with `next`, wrong password, right password, persistence acr
 reloads and routes, a fresh browser asked again, forged cookie refused, open redirect
 refused, lock. 31 routes × 375/768/1024/1440 × both themes, unlocked: no horizontal
 scroll, no console errors.
+
+## Round 7 — client review feedback (2 Oct 2026)
+
+The client reviewed the deployed prototype ("Well done. Is good job") and asked for:
+
+| Feedback | Done |
+|---|---|
+| Users must reset their own forgotten passwords — "we don't want to be managing that" | `/forgot-password` → "if an account exists…" (never reveals which addresses exist) → single-use, 30-minute link → `/reset-password` with the policy shown live as you type → all other sessions signed out. Expired-link screen. Users admin states resets are self-service; seeded audit entries show one. The lockout screen points to the reset, not an administrator. |
+| Explore a Cloudflare security check at login | Cloudflare **Turnstile** on sign-in and on the reset request: the real widget, loaded from Cloudflare, on Cloudflare's always-pass test key until `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is set; an offline stand-in if Cloudflare is unreachable. Sign-in is disabled until it passes. In the real build the token is verified server-side (siteverify) before the password. |
+| Site elevation and wiring on a different page | New **Installation** tab per station (`/stations/[id]/installation`): site elevation, wiring, equipment, requirement-vs-provided. The Live tab keeps what an operator acts on. |
+| "Requirement vs provided — surely we don't need" | **Not removed** (instruction: remove nothing until told). Moved off the station page to the bottom of the Installation tab. |
+| "Equipment — if you have this, you must have the admin screen to manage it" / "a page for us to add sensors" | **Admin → Sensors**: the register of every instrument (22), with location, logger, terminal, serial, install date, calibration due and status. Add a sensor (starts in Commissioning; feeds no alerts until put in service; terminal clash and duplicate IDs refused; a new kind at a location flagged as a CCB change), edit, like-for-like replacement (new serial, same ID and history), decommission (kept, never deleted). Every change is audited. The station equipment list now reads from it. |
+
+### Round 7b — real sign-in replaces the preview password
+The separate "Private preview" password screen is gone. The portal's own **Sign in**
+screen is now the gate: every page needs a signed-in session, and only the email and
+password in `SITE_EMAIL` / `SITE_PASSWORD` (`.env.local`; Vercel environment variables
+when deployed) are accepted — email case-insensitive, constant-time comparison, a
+slowed reply on failure, the email kept in the form. "Keep me signed in" gives a
+30-day session, otherwise it ends with the browser. **Sign out** (avatar menu, or the
+phone menu) is a POST to `/api/logout` that ends the session; the next visit asks for
+the email and password again. Turnstile is verified server-side when
+`TURNSTILE_SECRET_KEY` is set. Public without a session: sign-in, forgot / reset
+password, lockout and invitation screens.

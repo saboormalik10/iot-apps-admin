@@ -15,6 +15,7 @@ const TABS = [
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/roles', label: 'Roles' },
   { href: '/admin/rules', label: 'Alert rules' },
+  { href: '/admin/sensors', label: 'Sensors' },
   { href: '/admin/recipients', label: 'Recipients' },
   { href: '/admin/audit', label: 'Audit trail' },
   { href: '/admin/system', label: 'System & contract' },
@@ -27,8 +28,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div>
         <h1 className="text-xl font-semibold">Administration</h1>
         <p className="text-sm text-muted-foreground">
-          MTS manages users, roles, thresholds, alert wording and recipients directly — no dependency on us for
-          day-to-day changes.
+          MTS manages users, roles, sensors, thresholds, alert wording and recipients directly — no dependency on us
+          for day-to-day changes.
         </p>
       </div>
       <nav aria-label="Administration" className="flex flex-wrap gap-1 border-b">

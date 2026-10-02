@@ -30,6 +30,10 @@ interface Store {
   ruleEdits: Map<string, Record<string, unknown>>;
   /** Rules added in this session, so "New rule" is a real control, not a stub. */
   addedRules: AlertRule[];
+  /** Instruments added from Admin → Sensors in this session. */
+  addedInstruments: import('@/lib/api/types').Instrument[];
+  /** Edits to any instrument — serial after a like-for-like swap, status, notes. */
+  instrumentEdits: Map<string, Partial<import('@/lib/api/types').Instrument>>;
   /** Rule-set versions published in this session (v8, v9, …), newest first. */
   ruleVersions: RuleVersion[];
   /** Roles created from the roles screen — §8.4 promises custom roles. */
@@ -61,6 +65,8 @@ function initial(): Store {
     ruleEdits: new Map(),
     addedRules: [],
     ruleVersions: [],
+    addedInstruments: [],
+    instrumentEdits: new Map(),
     addedRoles: [],
     annotations: [],
     maintenance: new Map(),

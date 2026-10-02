@@ -1,6 +1,9 @@
 import type {
   AlertRule,
   ChargeController,
+  Instrument,
+  InstrumentInput,
+  InstrumentKind,
   Annotation,
   AvailabilityBudget,
   CalibrationItem,
@@ -44,6 +47,7 @@ import { ALERT_RULES } from './seed/rules';
 import { STATIONS, STATIONS_BY_ID } from './seed/stations';
 import { THRESHOLDS } from './seed/thresholds';
 import { CAMPSIE_RADAR, LGD_PANEL, RESPONSE_OBLIGATIONS, WINDSOR_HANDOVER, WORK_ORDERS } from './seed/incidents';
+import { TERMINAL_FOR } from './seed/wiring';
 import { getStore, mutate } from './store';
 
 /**
@@ -683,6 +687,18 @@ const CAL_INTERVAL_MONTHS: Partial<Record<ParameterId, number>> = {
   wind_mean: 24,
 };
 
+/** One instrument's calibration — shared by the calibration list and the sensor register. */
+function calibrationFor(sensorId: string, parameter: ParameterId, t: number): { last: number; due: number; certificate: string } {
+  const months = CAL_INTERVAL_MONTHS[parameter] ?? 12;
+  const rng = rngFrom(hash(`cal:${sensorId}`));
+  // Seeded so that most are current, a few are coming due, and one is late —
+  // which is the situation a maintenance screen actually has to handle.
+  const ageDays =
+    sensorId === 'CAM-YGRD-01' ? months * 30.4 + 12 : sensorId === 'BEL-RIMCO-01' ? months * 30.4 - 20 : 30 + rng() * (months * 30.4 - 90);
+  const last = t - ageDays * DAY;
+  return { last, due: last + months * 30.4 * DAY, certificate: `CAL-${new Date(last).getFullYear()}-${String((hash(sensorId) % 9000) + 1000)}` };
+}
+
 export async function calibrationSchedule(): Promise<CalibrationItem[]> {
   const t = now();
   const seen = new Set<string>();
@@ -691,22 +707,15 @@ export async function calibrationSchedule(): Promise<CalibrationItem[]> {
     for (const s of station.sensors) {
       if (seen.has(s.sensorId) || s.parameter === 'wind_gust' || s.parameter === 'humidity') continue;
       seen.add(s.sensorId);
-      const months = CAL_INTERVAL_MONTHS[s.parameter] ?? 12;
-      const rng = rngFrom(hash(`cal:${s.sensorId}`));
-      // Seeded so that most are current, a few are coming due, and one is late —
-      // which is the situation a maintenance screen actually has to handle.
-      const ageDays =
-        s.sensorId === 'CAM-YGRD-01' ? months * 30.4 + 12 : s.sensorId === 'BEL-RIMCO-01' ? months * 30.4 - 20 : 30 + rng() * (months * 30.4 - 90);
-      const last = t - ageDays * DAY;
-      const due = last + months * 30.4 * DAY;
+      const c = calibrationFor(s.sensorId, s.parameter, t);
       items.push({
         sensorId: s.sensorId,
         locationId: station.id,
         instrument: s.model,
-        lastCalibrated: last,
-        dueAt: due,
-        certificate: `CAL-${new Date(last).getFullYear()}-${String(hash(s.sensorId) % 9000 + 1000)}`,
-        state: due < t ? 'overdue' : due - t < 45 * DAY ? 'due-soon' : 'current',
+        lastCalibrated: c.last,
+        dueAt: c.due,
+        certificate: c.certificate,
+        state: c.due < t ? 'overdue' : c.due - t < 45 * DAY ? 'due-soon' : 'current',
       });
     }
   }
@@ -1117,4 +1126,91 @@ export async function pipelineStats(): Promise<PipelineStats> {
     },
     180,
   );
+}
+
+
+// ── sensor register (Admin → Sensors) ────────────────────────────────────────
+
+/** What each kind of instrument is, where it is wired and how it is mounted (§4.3, §5). */
+export const INSTRUMENT_CATALOG: Record<InstrumentKind, { label: string; model: string; parameter: ParameterId; code: string; mounting: string }> = {
+  rain: { label: 'Rain gauge', model: 'RIMCO 7499 tipping bucket (0.2 mm/tip)', parameter: 'rainfall', code: 'RIMCO', mounting: 'Mast, 1.5–2 m, clear of splash' },
+  level: { label: 'Radar water level', model: 'YGRD-65-D radar (mm above datum)', parameter: 'water_level', code: 'YGRD', mounting: '2.5 m aluminium mast over the channel' },
+  float: { label: 'Float switch', model: 'RS PRO RSF80 high-level backup', parameter: 'float_switch', code: 'RSF80', mounting: 'Through-wall, beside the radar' },
+  gmx: { label: 'Temperature / RH / pressure', model: 'Gill GMX300', parameter: 'temperature', code: 'GMX', mounting: '1.5–2 m above rail, shaded' },
+  wind: { label: 'Anemometer', model: 'Gill WindSonic 75 (10 m)', parameter: 'wind_mean', code: 'WS', mounting: '10 m on the VM5F mast' },
+};
+
+function kindOf(p: ParameterId): InstrumentKind | undefined {
+  if (p === 'rainfall') return 'rain';
+  if (p === 'water_level') return 'level';
+  if (p === 'float_switch') return 'float';
+  if (p === 'temperature' || p === 'humidity' || p === 'pressure') return 'gmx';
+  if (p === 'wind_mean' || p === 'wind_gust' || p === 'wind_dir') return 'wind';
+  return undefined;
+}
+
+/**
+ * Every instrument on the line, one row per physical device — the GMX300 that
+ * reports three parameters is one instrument. Seeded from the station list,
+ * then this session's additions and edits applied on top.
+ */
+export function instrumentsNow(): Instrument[] {
+  const t = now();
+  const store = getStore();
+  const seen = new Set<string>();
+  const out: Instrument[] = [];
+  for (const station of STATIONS) {
+    for (const s of station.sensors) {
+      const kind = kindOf(s.parameter);
+      if (!kind || seen.has(s.sensorId)) continue;
+      seen.add(s.sensorId);
+      const logger = station.loggers.find((l) => s.sensorId.startsWith(l.id.replace(/-\d+$/, '-'))) ?? station.loggers[0];
+      const c = calibrationFor(s.sensorId, INSTRUMENT_CATALOG[kind].parameter, t);
+      out.push({
+        sensorId: s.sensorId,
+        locationId: station.id,
+        locationName: station.name,
+        loggerId: logger.id,
+        kind,
+        model: s.model,
+        terminal: TERMINAL_FOR[INSTRUMENT_CATALOG[kind].parameter]?.terminal ?? '—',
+        serial: `${INSTRUMENT_CATALOG[kind].code}-${String((hash(`serial:${s.sensorId}`) % 900000) + 100000)}`,
+        mounting: INSTRUMENT_CATALOG[kind].mounting,
+        // Installed in the site-installation stage, commissioned before rule set v1.
+        installedAt: sydneyAt(STORM_DAY, -40 + (hash(s.sensorId) % 9), 9 + (hash(s.sensorId) % 6)),
+        calibrationDueAt: c.due,
+        certificate: c.certificate,
+        status: 'in-service',
+      });
+    }
+  }
+  return [...out, ...store.addedInstruments].map((i) => ({ ...i, ...(store.instrumentEdits.get(i.sensorId) ?? {}) }));
+}
+
+export async function listInstruments(): Promise<Instrument[]> {
+  return settle(instrumentsNow(), 120);
+}
+
+export async function addInstrument(input: InstrumentInput): Promise<void> {
+  const station = STATIONS_BY_ID[input.locationId];
+  const kind = INSTRUMENT_CATALOG[input.kind];
+  mutate((s) =>
+    s.addedInstruments.push({
+      ...input,
+      locationName: station.name,
+      model: kind.model,
+      terminal: TERMINAL_FOR[kind.parameter]?.terminal ?? '—',
+      installedAt: now(),
+      status: 'commissioning',
+      added: true,
+    }),
+  );
+  recordAudit('Sensor added', `${input.sensorId} — ${kind.label} at ${station.name} (${input.loggerId}), serial ${input.serial}. Commissioning.`, 'maintenance');
+  return settle(undefined, 220);
+}
+
+export async function updateInstrument(sensorId: string, patch: Partial<Instrument>, action: string, detail: string): Promise<void> {
+  mutate((s) => s.instrumentEdits.set(sensorId, { ...(s.instrumentEdits.get(sensorId) ?? {}), ...patch }));
+  recordAudit(action, `${sensorId} — ${detail}`, 'maintenance');
+  return settle(undefined, 180);
 }
