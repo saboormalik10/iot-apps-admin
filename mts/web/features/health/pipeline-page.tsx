@@ -14,6 +14,7 @@ import { fmtDate, fmtDateTime, fmtTime, sydneyMidnight } from '@/lib/format';
 import { SERIES } from '@/lib/viz/roles';
 import { cn } from '@/lib/utils';
 import { HealthTabs } from './health-tabs';
+import { IngestFolders } from './ingest-folders';
 
 /**
  * The central software, as Figure 11 draws it — five modules in sequence, the
@@ -150,6 +151,8 @@ export function PipelinePage() {
           screen and the audit trail. {s.backfilledLast30d} buffered readings forwarded after outages in the last 30 days; none lost.
         </p>
       </section>
+
+      <IngestFolders minuteKey={tenMin} />
 
       <Blue2Map />
 

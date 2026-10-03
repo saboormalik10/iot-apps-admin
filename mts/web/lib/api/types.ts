@@ -308,6 +308,8 @@ export interface Instrument {
   installedAt: number;
   calibrationDueAt?: number;
   certificate?: string;
+  /** Rain gauges only: rain per tip of the bucket, mm. Every tip count is multiplied by it. */
+  bucketMm?: BucketMm;
   /** Commissioning: installed, not yet trusted — no readings feed alerts until it is in service. */
   status: 'in-service' | 'commissioning' | 'decommissioned';
   /** Added in this session — simulated. */
@@ -315,7 +317,11 @@ export interface Instrument {
   note?: string;
 }
 
-export type InstrumentInput = Pick<Instrument, 'sensorId' | 'locationId' | 'loggerId' | 'kind' | 'serial' | 'mounting' | 'certificate'> & {
+/** The tipping-bucket sizes a rain gauge can have. */
+export const BUCKET_SIZES = [0.1, 0.2, 0.5, 1.0] as const;
+export type BucketMm = (typeof BUCKET_SIZES)[number];
+
+export type InstrumentInput = Pick<Instrument, 'sensorId' | 'locationId' | 'loggerId' | 'kind' | 'serial' | 'mounting' | 'certificate' | 'bucketMm'> & {
   calibrationDueAt?: number;
   note?: string;
 };

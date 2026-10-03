@@ -165,6 +165,16 @@ export function compass(deg: number): string {
 }
 
 /** The line under a reading: what it is, and the context a controller reads it with. */
+/** The bucket size set for a rain gauge in Admin → Sensors (0.2 mm as supplied). */
+function bucketFor(sensorId: string): number {
+  const store = getStore();
+  return (
+    (store.instrumentEdits.get(sensorId)?.bucketMm as number | undefined) ??
+    store.addedInstruments.find((i) => i.sensorId === sensorId)?.bucketMm ??
+    0.2
+  );
+}
+
 function fmtSydneyTime(t: number): string {
   return new Date(t).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Australia/Sydney' });
 }
@@ -176,8 +186,9 @@ function noteFor(parameter: ParameterId, sensorId: string, locationId: LocationI
   switch (parameter) {
     case 'rainfall': {
       /* §5.1: the gauge counts 0.2 mm tips; the hour's tally is that many tips. */
-      const tips = Math.round((value ?? 0) / 0.2);
-      return `${tips} tips this hour (0.2 mm) · 10 min ${valueAt('rain_10m', locationId, t)} · 6 h ${valueAt('rain_6h', locationId, t)} · 24 h ${valueAt('rain_24h', locationId, t)} mm`;
+      const bucket = bucketFor(sensorId);
+      const tips = Math.round((value ?? 0) / bucket);
+      return `${tips} tips this hour (${bucket} mm bucket) · 10 min ${valueAt('rain_10m', locationId, t)} · 6 h ${valueAt('rain_6h', locationId, t)} · 24 h ${valueAt('rain_24h', locationId, t)} mm`;
     }
     case 'float_switch': {
       // The float's own radar is the YGRD on the same mast.

@@ -41,7 +41,7 @@ function logger(
 const rain = (id: string): SensorFit => ({
   parameter: 'rainfall',
   sensorId: id,
-  model: 'RIMCO 7499 tipping bucket (0.2 mm/tip)',
+  model: 'RIMCO 7499 tipping bucket',
   unit: 'mm/hr',
 });
 const level = (id: string): SensorFit => ({

@@ -87,7 +87,12 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
   }, [station.id, revision]);
   const rows: (Kit & { count: number; item?: Instrument })[] = [];
   const add = (k: Kit, count = 1, item?: Instrument) => rows.push({ ...k, count, item });
-  for (const i of instruments ?? []) add({ ...KIT[KIT_FOR[i.kind]], mounting: i.mounting }, 1, i);
+  for (const i of instruments ?? []) {
+    const kit = KIT[KIT_FOR[i.kind]];
+    // A rain gauge's spec quotes the bucket set in Admin → Sensors.
+    const spec = i.bucketMm ? kit.spec.replace(/^[\d.]+ mm per tip/, `${i.bucketMm} mm per tip`) : kit.spec;
+    add({ ...kit, spec, mounting: i.mounting }, 1, i);
+  }
   if (station.pumpStation) {
     add({
       instrument: 'Existing pump control panel (integration)',

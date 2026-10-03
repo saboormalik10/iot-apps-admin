@@ -1133,7 +1133,7 @@ export async function pipelineStats(): Promise<PipelineStats> {
 
 /** What each kind of instrument is, where it is wired and how it is mounted (§4.3, §5). */
 export const INSTRUMENT_CATALOG: Record<InstrumentKind, { label: string; model: string; parameter: ParameterId; code: string; mounting: string }> = {
-  rain: { label: 'Rain gauge', model: 'RIMCO 7499 tipping bucket (0.2 mm/tip)', parameter: 'rainfall', code: 'RIMCO', mounting: 'Mast, 1.5–2 m, clear of splash' },
+  rain: { label: 'Rain gauge', model: 'RIMCO 7499 tipping bucket', parameter: 'rainfall', code: 'RIMCO', mounting: 'Mast, 1.5–2 m, clear of splash' },
   level: { label: 'Radar water level', model: 'YGRD-65-D radar (mm above datum)', parameter: 'water_level', code: 'YGRD', mounting: '2.5 m aluminium mast over the channel' },
   float: { label: 'Float switch', model: 'RS PRO RSF80 high-level backup', parameter: 'float_switch', code: 'RSF80', mounting: 'Through-wall, beside the radar' },
   gmx: { label: 'Temperature / RH / pressure', model: 'Gill GMX300', parameter: 'temperature', code: 'GMX', mounting: '1.5–2 m above rail, shaded' },
@@ -1180,6 +1180,8 @@ export function instrumentsNow(): Instrument[] {
         installedAt: sydneyAt(STORM_DAY, -40 + (hash(s.sensorId) % 9), 9 + (hash(s.sensorId) % 6)),
         calibrationDueAt: c.due,
         certificate: c.certificate,
+        // §5.1: the RIMCO 7499 as supplied tips at 0.2 mm (0.1 mm option).
+        bucketMm: kind === 'rain' ? 0.2 : undefined,
         status: 'in-service',
       });
     }

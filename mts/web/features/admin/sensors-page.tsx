@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
-import type { Instrument, InstrumentKind, LocationId } from '@/lib/api/types';
+import { BUCKET_SIZES, type BucketMm, type Instrument, type InstrumentKind, type LocationId } from '@/lib/api/types';
 import { INSTRUMENT_CATALOG, addInstrument, listInstruments, updateInstrument } from '@/lib/api/endpoints';
 import { LoadingState } from '@/components/screen-states';
 import { Button } from '@/components/ui/button';
@@ -122,7 +122,8 @@ export function SensorsPage() {
                 <div className="min-w-0">
                   <p className="tabular font-medium">{i.sensorId}</p>
                   <p className="text-xs text-muted-foreground">
-                    {INSTRUMENT_CATALOG[i.kind].label} · {i.locationName} · {i.loggerId} {i.terminal}
+                    {INSTRUMENT_CATALOG[i.kind].label}
+                    {i.bucketMm ? ` (${i.bucketMm} mm bucket)` : ''} · {i.locationName} · {i.loggerId} {i.terminal}
                   </p>
                 </div>
                 <StatusChip status={i.status} />
@@ -155,7 +156,10 @@ export function SensorsPage() {
                     <td className="tabular whitespace-nowrap px-3 py-2 font-medium">{i.sensorId}</td>
                     <td className="px-3 py-2">
                       <p>{INSTRUMENT_CATALOG[i.kind].label}</p>
-                      <p className="text-xs text-muted-foreground">{i.model}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {i.model}
+                        {i.bucketMm ? ` · ${i.bucketMm} mm bucket` : ''}
+                      </p>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
                       <Link href={`/stations/${i.locationId}/installation`} className="hover:text-primary hover:underline">
@@ -265,6 +269,24 @@ function Field({ label, error, hint, children }: { label: string; error?: string
 
 const sel = 'h-9 w-full rounded-md border bg-background px-2 text-sm';
 
+/**
+ * A rain gauge's bucket size: the rain per tip. The logger counts tips; the
+ * rainfall is tips × this, so it must match the gauge as fitted.
+ */
+function BucketField({ value, onChange }: { value: BucketMm; onChange: (v: BucketMm) => void }) {
+  return (
+    <Field label="Bucket size (rain per tip)" hint="Must match the gauge as fitted — every tip is counted as this much rain.">
+      <select className={sel} value={value} onChange={(e) => onChange(Number(e.target.value) as BucketMm)}>
+        {BUCKET_SIZES.map((b) => (
+          <option key={b} value={b}>
+            {b.toFixed(1)} mm{b === 0.2 ? ' (RIMCO 7499 standard)' : ''}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
 function AddDialog({ items, onClose }: { items: Instrument[]; onClose: () => void }) {
   const [locationId, setLocationId] = useState<LocationId>('canterbury');
   const station = STATIONS_BY_ID[locationId];
@@ -281,6 +303,7 @@ function AddDialog({ items, onClose }: { items: Instrument[]; onClose: () => voi
   }, [items, prefix, kind]);
   const [sensorId, setSensorId] = useState('');
   const [serial, setSerial] = useState('');
+  const [bucket, setBucket] = useState<BucketMm>(0.2);
   const [mounting, setMounting] = useState('');
   const [certificate, setCertificate] = useState('');
   const [calDue, setCalDue] = useState('');
@@ -348,6 +371,7 @@ function AddDialog({ items, onClose }: { items: Instrument[]; onClose: () => voi
           <Field label="Serial number" error={touched ? errors.serial : undefined}>
             <Input value={serial} onChange={(e) => setSerial(e.target.value)} className="tabular h-9" />
           </Field>
+          {kind === 'rain' ? <BucketField value={bucket} onChange={setBucket} /> : null}
           <Field label="Mounting">
             <Input value={mounting} placeholder={INSTRUMENT_CATALOG[kind].mounting} onChange={(e) => setMounting(e.target.value)} className="h-9" />
           </Field>
@@ -383,6 +407,7 @@ function AddDialog({ items, onClose }: { items: Instrument[]; onClose: () => voi
                 loggerId,
                 kind,
                 serial: serial.trim(),
+                bucketMm: kind === 'rain' ? bucket : undefined,
                 mounting: mounting.trim() || INSTRUMENT_CATALOG[kind].mounting,
                 certificate: certificate.trim() || undefined,
                 calibrationDueAt: calDue ? new Date(`${calDue}T00:00:00`).getTime() : undefined,
@@ -402,6 +427,7 @@ function AddDialog({ items, onClose }: { items: Instrument[]; onClose: () => voi
 function ChangeDialog({ mode, item, onClose }: { mode: 'edit' | 'replace' | 'decommission'; item: Instrument; onClose: () => void }) {
   const now = useDemoClock();
   const [serial, setSerial] = useState(mode === 'edit' ? item.serial : '');
+  const [bucket, setBucket] = useState<BucketMm>(item.bucketMm ?? 0.2);
   const [mounting, setMounting] = useState(item.mounting);
   const [certificate, setCertificate] = useState(mode === 'edit' ? item.certificate ?? '' : '');
   const [reason, setReason] = useState('');
@@ -422,11 +448,17 @@ function ChangeDialog({ mode, item, onClose }: { mode: 'edit' | 'replace' | 'dec
     setTouched(true);
     if (error) return;
     if (mode === 'edit') {
-      await updateInstrument(item.sensorId, { serial: serial.trim(), mounting, certificate: certificate || undefined }, 'Sensor details edited', 'serial, mounting or certificate corrected');
+      const bucketNote = item.kind === 'rain' && bucket !== item.bucketMm ? `; bucket ${item.bucketMm} → ${bucket} mm` : '';
+      await updateInstrument(
+        item.sensorId,
+        { serial: serial.trim(), mounting, certificate: certificate || undefined, ...(item.kind === 'rain' ? { bucketMm: bucket } : {}) },
+        'Sensor details edited',
+        `serial, mounting or certificate corrected${bucketNote}`,
+      );
     } else if (mode === 'replace') {
       await updateInstrument(
         item.sensorId,
-        { serial: serial.trim(), certificate: certificate || undefined, status: 'commissioning', installedAt: now },
+        { serial: serial.trim(), certificate: certificate || undefined, status: 'commissioning', installedAt: now, ...(item.kind === 'rain' ? { bucketMm: bucket } : {}) },
         'Sensor replaced (like-for-like)',
         `${item.serial} → ${serial.trim()}; same sensor ID and terminal, maintenance not CCB. Commissioning.`,
       );
@@ -455,6 +487,7 @@ function ChangeDialog({ mode, item, onClose }: { mode: 'edit' | 'replace' | 'dec
             <Field label={mode === 'replace' ? 'New serial number' : 'Serial number'} error={touched ? error : undefined}>
               <Input value={serial} onChange={(e) => setSerial(e.target.value)} className="tabular h-9" />
             </Field>
+            {item.kind === 'rain' ? <BucketField value={bucket} onChange={setBucket} /> : null}
             {mode === 'edit' ? (
               <Field label="Mounting">
                 <Input value={mounting} onChange={(e) => setMounting(e.target.value)} className="h-9" />
