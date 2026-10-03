@@ -177,7 +177,8 @@ export function UsersPage() {
                 {u.stationAccess === 'all' ? 'All stations' : u.stationAccess.map((x) => STATIONS_BY_ID[x].name).join(', ')} ·{' '}
                 {u.lastLogin ? `last login ${fmtRelative(u.lastLogin, now)}` : 'never signed in'}
               </p>
-              <div className="flex gap-2">
+              {!can('addUsers') ? <p className="text-xs text-muted-foreground">View only</p> : null}
+              <div className={cn('flex gap-2', !can('addUsers') && 'hidden')}>
                 <Button size="sm" variant="outline" onClick={() => setEditing(u)}>
                   Edit
                 </Button>
@@ -264,7 +265,8 @@ export function UsersPage() {
                     {u.lastLogin ? fmtRelative(u.lastLogin, now) : '–'}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs">
+                    {!can('addUsers') ? <span className="text-xs text-muted-foreground">View only</span> : null}
+                    <div className={cn('flex items-center gap-2 text-xs', !can('addUsers') && 'hidden')}>
                       <button className="text-primary hover:underline" onClick={() => setEditing(u)}>
                         Edit
                       </button>

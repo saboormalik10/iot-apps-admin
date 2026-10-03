@@ -233,7 +233,10 @@ function StatusChip({ status }: { status: Instrument['status'] }) {
 }
 
 function Actions({ item, onPick }: { item: Instrument; onPick: (d: Dlg) => void }) {
+  const { can } = useActing();
   if (item.status === 'decommissioned') return <span className="text-xs text-muted-foreground">Kept for history</span>;
+  // The sensors right covers changing them too, not only adding (Super User grants it).
+  if (!can('addSensors')) return <span className="text-xs text-muted-foreground">View only</span>;
   return (
     <div className="flex flex-wrap justify-end gap-1">
       {item.status === 'commissioning' ? (
