@@ -1,4 +1,4 @@
-import type { AlertEvent, AlertRule, Annotation, AuditEntry, ControlMode, PumpState, Role, RoleId, RuleVersion, User } from '@/lib/api/types';
+import type { AlertEvent, AlertRule, Annotation, AuditEntry, ControlMode, Organization, OrgRight, OrgRightState, PumpState, Role, RoleId, RuleVersion, StationRecord, User } from '@/lib/api/types';
 
 /**
  * The prototype's entire mutable surface.
@@ -30,6 +30,14 @@ interface Store {
   ruleEdits: Map<string, Record<string, unknown>>;
   /** Rules added in this session, so "New rule" is a real control, not a stub. */
   addedRules: AlertRule[];
+  /** Who the prototype is signed in as — the demo dock's "view as". */
+  actingAs: 'org-admin' | 'super-user';
+  /** Organisations the Super User created in this session. */
+  addedOrgs: Organization[];
+  /** Rights the Super User granted or withdrew in this session, by organisation. */
+  orgRightEdits: Map<string, Partial<Record<OrgRight, OrgRightState>>>;
+  /** Stations registered in this session. */
+  addedStations: StationRecord[];
   /** Instruments added from Admin → Sensors in this session. */
   addedInstruments: import('@/lib/api/types').Instrument[];
   /** Edits to any instrument — serial after a like-for-like swap, status, notes. */
@@ -65,6 +73,10 @@ function initial(): Store {
     ruleEdits: new Map(),
     addedRules: [],
     ruleVersions: [],
+    actingAs: 'org-admin',
+    addedOrgs: [],
+    orgRightEdits: new Map(),
+    addedStations: [],
     addedInstruments: [],
     instrumentEdits: new Map(),
     addedRoles: [],

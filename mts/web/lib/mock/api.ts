@@ -29,7 +29,7 @@ import { batteryPct, solarInputW, valueAt } from './generate/profiles';
 import { simulatePumps } from './generate/pump-sim';
 import { hash } from './generate/rng';
 import { seededEvents } from './seed/events';
-import { DEMO_USER, ROLES, USERS } from './seed/people';
+import { DEMO_USER, OTHER_ORG_USERS, ROLES, SUPER_USER, USERS } from './seed/people';
 
 /** Who the prototype is signed in as — the shell and every attribution read this. */
 export { DEMO_USER };
@@ -690,12 +690,22 @@ const FICTIONAL_MOBILES = [
 /** A sensible default: every channel in scope, alerts and warnings, no quiet hours. */
 const DEFAULT_NOTIFY: NonNullable<User['notify']> = { channels: ['screen', 'push', 'email'], severities: ['alert', 'warning'] };
 
-export async function listUsers(): Promise<User[]> {
+/** Who the prototype is signed in as: the MTS Administrator, or — via the demo dock — the Super User. */
+export function actingUser(): User {
+  return getStore().actingAs === 'super-user' ? SUPER_USER : DEMO_USER;
+}
+
+/**
+ * The people in one organisation (MTS unless said otherwise), or — `'all'` — in
+ * every organisation, as only the Super User sees them.
+ */
+export async function listUsers(scope: string | 'all' = 'mts'): Promise<User[]> {
   const store = getStore();
   const t = now();
   return settle(
-    [...USERS, ...store.addedUsers]
-      .filter((u) => !store.removedUsers.has(u.id))
+    [...USERS, ...OTHER_ORG_USERS, ...store.addedUsers]
+      .map((u) => ({ ...u, orgId: u.orgId ?? 'mts' }))
+      .filter((u) => !store.removedUsers.has(u.id) && (scope === 'all' || u.orgId === scope))
       .map((u, i) => ({
         ...u,
         mobile: u.mobile ?? (u.status === 'invited' ? undefined : FICTIONAL_MOBILES[i % FICTIONAL_MOBILES.length]),
@@ -709,7 +719,7 @@ export async function listUsers(): Promise<User[]> {
 }
 
 export async function createUser(user: Omit<User, 'id'>): Promise<void> {
-  recordAudit('User invited', `${user.name} — ${user.roles.join(', ')}`, 'user');
+  recordAudit('User invited', `${user.name} — ${user.roles.join(', ')}${user.orgId && user.orgId !== 'mts' ? ` · organisation ${user.orgId}` : ''}`, 'user');
   mutate((s) => s.addedUsers.push({ ...user, id: `u-added-${s.addedUsers.length + 1}` }));
   return settle(undefined, 250);
 }
@@ -842,7 +852,7 @@ function shortName(name: string): string {
 /** Record an action taken in this session against the signed-in user. */
 export function recordAudit(action: string, detail: string, category: AuditEntry['category']): void {
   const store = getStore();
-  store.audit.push({ id: `s-${store.audit.length + 1}`, t: now(), actor: shortName(DEMO_USER.name), action, detail, category });
+  store.audit.push({ id: `s-${store.audit.length + 1}`, t: now(), actor: shortName(actingUser().name), action, detail, category });
 }
 
 /**

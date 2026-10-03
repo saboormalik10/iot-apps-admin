@@ -1,7 +1,8 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { getRevision, subscribeToData } from '@/lib/api/endpoints';
+import type { OrgRight } from '@/lib/api/types';
+import { actingAs, actingUser, can, getRevision, subscribeToData } from '@/lib/api/endpoints';
 
 /**
  * Re-render when the demo's data changes.
@@ -13,4 +14,20 @@ import { getRevision, subscribeToData } from '@/lib/api/endpoints';
  */
 export function useDataRevision(): number {
   return useSyncExternalStore(subscribeToData, getRevision, () => 0);
+}
+
+/**
+ * Who is signed in, and what they may add — re-read on every data change, so
+ * granting a right or switching "view as" updates every screen on the same frame.
+ */
+export function useActing() {
+  const revision = useDataRevision();
+  const who = actingAs();
+  return {
+    revision,
+    who,
+    user: actingUser(),
+    isSuperUser: who === 'super-user',
+    can: (right: OrgRight, orgId = 'mts') => can(right, orgId),
+  };
 }

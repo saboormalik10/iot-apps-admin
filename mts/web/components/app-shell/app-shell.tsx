@@ -10,10 +10,9 @@ import { InactivityWarning } from './inactivity-warning';
 import { PtzWatcher } from './ptz-watcher';
 import { NAV_ITEMS } from './nav-config';
 import { useDemoClock } from '@/lib/demo-clock';
-import { useDataRevision } from '@/lib/use-data';
+import { useActing, useDataRevision } from '@/lib/use-data';
 import type { MaintenanceWindow } from '@/lib/api/types';
 import {
-  DEMO_USER,
   activeAlertCount,
   leadAlert,
   maintenanceWindows,
@@ -46,6 +45,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const now = useDemoClock();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user: me, isSuperUser } = useActing();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -178,14 +178,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenu>
               <DropdownMenuTrigger
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-semibold hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                aria-label={`Account menu — ${DEMO_USER.name}`}
+                aria-label={`Account menu — ${me.name}`}
               >
-                {DEMO_USER.initials}
+                {me.initials}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuLabel className="font-normal">
-                  <p className="text-sm font-semibold">{DEMO_USER.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{DEMO_USER.email}</p>
+                  <p className="text-sm font-semibold">{me.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{me.email}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{isSuperUser ? 'Super User — every organisation' : 'Administrator — Metro Trains Sydney'}</p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
@@ -222,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
             </ul>
             <div className="mt-2 flex items-center justify-between gap-2 border-t border-header-border pt-2 text-sm">
-              <span className="truncate text-header-muted">{DEMO_USER.name}</span>
+              <span className="truncate text-header-muted">{me.name}</span>
               <form method="post" action="/api/logout">
                 <button
                   type="submit"

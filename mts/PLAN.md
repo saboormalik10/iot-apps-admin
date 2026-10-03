@@ -702,3 +702,16 @@ phone menu) is a POST to `/api/logout` that ends the session; the next visit ask
 the email and password again. Turnstile is verified server-side when
 `TURNSTILE_SECRET_KEY` is set. Public without a session: sign-in, forgot / reset
 password, lockout and invitation screens.
+
+## Round 8 — client requests, 3 Oct 2026
+
+- **Rain gauge bucket size** (0.1 / 0.2 / 0.5 / 1.0 mm) on add/edit in Admin → Sensors; tip counts and the equipment spec read it.
+- **Incoming data folders** panel (Health → Data pipeline): `/MTS/Sydney/Site-N/` with `Processed/`, files moved never deleted.
+- **Super User and organisation rights.** A Super User above every organisation creates organisations
+  (with an invited Administrator), adds users to any organisation, and adds stations. Each organisation has
+  three rights for its own Administrator — add users, add stations, add sensors — **off by default**, granted
+  or withdrawn per organisation on Admin → Organisations, every change audited. Add buttons on Users,
+  Stations and Sensors ask `can()` (lib/mock/orgs.ts) and show why they are missing when off. New Admin →
+  Stations register with Add station (Commissioning, not on the map until positioned). MTS is seeded with
+  users and sensors granted, stations not; a Trial Organisation shows the all-off start. The demo dock's
+  **View as** switches between the MTS Administrator and the Super User.

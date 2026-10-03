@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from '@/lib/hooks/use-toast';
+import { SUPER_USER_ROLE } from '@/lib/mock/seed/people';
 
 /**
  * The permission matrix.
@@ -58,6 +59,14 @@ export function RolesPage() {
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus className="h-4 w-4" /> New role
         </Button>
+      </div>
+
+      {/* Client requirement (3 Oct): one role above every organisation. */}
+      <div className="rounded-lg border-l-4 border-l-header bg-card p-3 ring-1 ring-border">
+        <p className="text-sm font-semibold">Above these: the Super User</p>
+        <p className="text-xs text-muted-foreground">
+          {SUPER_USER_ROLE.summary} It belongs to no organisation and cannot be given by an organisation&apos;s Administrator.
+        </p>
       </div>
 
       <section className="rounded-lg border bg-card">

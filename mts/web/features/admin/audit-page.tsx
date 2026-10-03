@@ -24,6 +24,8 @@ const CATEGORY_STYLE: Record<AuditEntry['category'], string> = {
   alert: 'bg-sev-alert-tint text-sev-alert-strong',
   pump: 'bg-op-running-tint text-op-running',
   auth: 'bg-muted text-muted-foreground',
+  organisation: 'bg-header text-header-foreground',
+  station: 'bg-primary/10 text-primary-strong',
 };
 
 export function AuditPage() {

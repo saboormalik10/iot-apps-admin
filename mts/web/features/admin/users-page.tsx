@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Trash2, UserPlus } from 'lucide-react';
-import type { ChannelId, NotifyPrefs, RoleId, Severity, User } from '@/lib/api/types';
+import type { ChannelId, NotifyPrefs, Organization, RoleId, Severity, User } from '@/lib/api/types';
 import {
   DEMO_USER,
   createUser,
+  listOrganisations,
   listUsers,
   removeUser,
   setUserStatus,
@@ -29,6 +30,8 @@ import {
 import { toast } from '@/lib/hooks/use-toast';
 import { STATIONS } from '@/lib/mock/seed/stations';
 import { cn } from '@/lib/utils';
+import { useActing } from '@/lib/use-data';
+import { RightNotice } from '@/components/admin/right-notice';
 
 /**
  * User management.
@@ -41,6 +44,7 @@ import { cn } from '@/lib/utils';
  */
 
 const ROLE_STYLE: Record<RoleId, string> = {
+  'super-user': 'bg-header text-header-foreground ring-header/40',
   administrator: 'bg-primary/10 text-primary-strong ring-primary/25',
   operator: 'bg-sev-normal-tint text-sev-normal-strong ring-sev-normal/25',
   'pump-controller': 'bg-sev-alert-tint text-sev-alert-strong ring-sev-alert/25',
@@ -56,11 +60,17 @@ export function UsersPage() {
   const [role, setRole] = useState<RoleId | 'all'>('all');
   const [editing, setEditing] = useState<User | 'new' | null>(null);
   const [confirming, setConfirming] = useState<{ user: User; action: 'suspend' | 'reinstate' | 'remove' } | null>(null);
+  const { isSuperUser, can, revision } = useActing();
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [orgFilter, setOrgFilter] = useState('all');
 
+  /* An organisation's Administrator sees their own people; the Super User sees everyone. */
   const load = useCallback(() => {
-    listUsers().then(setUsers);
-  }, []);
-  useEffect(load, [load]);
+    listUsers(isSuperUser ? 'all' : 'mts').then(setUsers);
+    listOrganisations().then(setOrgs);
+  }, [isSuperUser]);
+  useEffect(load, [load, revision]);
+  const orgName = (id?: string) => orgs.find((o) => o.id === (id ?? 'mts'))?.name ?? 'Platform';
 
   if (!users) return <LoadingState label="Loading users…" />;
 
@@ -70,7 +80,7 @@ export function UsersPage() {
       u.name.toLowerCase().includes(q.toLowerCase()) ||
       u.email.toLowerCase().includes(q.toLowerCase()) ||
       u.roles.some((r) => ROLES_BY_ID[r].name.toLowerCase().includes(q.toLowerCase()));
-    return matchesQ && (role === 'all' || u.roles.includes(role));
+    return matchesQ && (role === 'all' || u.roles.includes(role)) && (orgFilter === 'all' || (u.orgId ?? 'mts') === orgFilter);
   });
 
   const active = users.filter((u) => u.status === 'active').length;
@@ -113,10 +123,23 @@ export function UsersPage() {
         <span className="tabular text-xs text-muted-foreground">
           {users.length} users · {active} active · {suspended} suspended
         </span>
-        <Button size="sm" className="ml-auto" onClick={() => setEditing('new')}>
-          <UserPlus className="h-4 w-4" /> Add user
-        </Button>
+        {isSuperUser ? (
+          <select value={orgFilter} onChange={(e) => setOrgFilter(e.target.value)} aria-label="Organisation" className="h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="all">All organisations</option>
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {can('addUsers') ? (
+          <Button size="sm" className="ml-auto" onClick={() => setEditing('new')}>
+            <UserPlus className="h-4 w-4" /> Add user
+          </Button>
+        ) : null}
       </div>
+      {!can('addUsers') ? <RightNotice right="addUsers" /> : null}
 
       <section className="min-w-0 rounded-lg border bg-card">
         {/* On a phone each person is a card, with status and actions visible —
@@ -150,6 +173,7 @@ export function UsersPage() {
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
+                {isSuperUser ? `${orgName(u.orgId)} · ` : ''}
                 {u.stationAccess === 'all' ? 'All stations' : u.stationAccess.map((x) => STATIONS_BY_ID[x].name).join(', ')} ·{' '}
                 {u.lastLogin ? `last login ${fmtRelative(u.lastLogin, now)}` : 'never signed in'}
               </p>
@@ -176,7 +200,7 @@ export function UsersPage() {
           <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-header text-header-foreground">
               <tr>
-                {['User', 'Role(s)', 'Station access', 'Status', 'Last login', 'Actions'].map((h) => (
+                {['User', ...(isSuperUser ? ['Organisation'] : []), 'Role(s)', 'Station access', 'Status', 'Last login', 'Actions'].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium">
                     {h}
                   </th>
@@ -198,6 +222,7 @@ export function UsersPage() {
                       </div>
                     </div>
                   </td>
+                  {isSuperUser ? <td className="whitespace-nowrap px-3 py-2 text-xs">{orgName(u.orgId)}</td> : null}
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {u.roles.map((r) => (
@@ -290,6 +315,7 @@ export function UsersPage() {
       </section>
 
       <UserDialog
+        orgs={isSuperUser ? orgs : []}
         subject={editing}
         onClose={() => setEditing(null)}
         onSaved={() => {
@@ -311,10 +337,13 @@ export function UsersPage() {
 
 /** Add and edit are the same form; only the verbs and the defaults differ. */
 function UserDialog({
+  orgs,
   subject,
   onClose,
   onSaved,
 }: {
+  /** Only for the Super User, who chooses which organisation the person joins. */
+  orgs: Organization[];
   subject: User | 'new' | null;
   onClose: () => void;
   onSaved: () => void;
@@ -322,6 +351,7 @@ function UserDialog({
   const isNew = subject === 'new';
   const existing = subject === 'new' ? null : subject;
   const [name, setName] = useState('');
+  const [orgId, setOrgId] = useState('mts');
   const [email, setEmail] = useState('');
   const [roles, setRoles] = useState<RoleId[]>([]);
   const [allStations, setAllStations] = useState(true);
@@ -370,6 +400,17 @@ function UserDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {isNew && orgs.length ? (
+            <Field label="Organisation">
+              <select value={orgId} onChange={(e) => setOrgId(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           <Field label="Full name" error={touched ? errors.name : undefined}>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
           </Field>
@@ -544,6 +585,7 @@ function UserDialog({
                   roles,
                   stationAccess: access,
                   status: 'invited',
+                  orgId,
                   mobile: mobile.trim() || undefined,
                   notify,
                 });

@@ -412,7 +412,69 @@ export interface Channel {
 
 // ── people ──────────────────────────────────────────────────────────────────
 
-export type RoleId = 'administrator' | 'operator' | 'pump-controller' | 'maintainer' | 'analyst' | 'viewer';
+export type RoleId = 'super-user' | 'administrator' | 'operator' | 'pump-controller' | 'maintainer' | 'analyst' | 'viewer';
+
+// ── organisations ───────────────────────────────────────────────────────────
+
+/**
+ * The three things an organisation's own Administrator may do only when the
+ * Super User has granted it. Every new organisation starts with all three off.
+ */
+export type OrgRight = 'addUsers' | 'addStations' | 'addSensors';
+
+export interface OrgRightState {
+  on: boolean;
+  /** Who last changed it, and when. */
+  by?: string;
+  at?: number;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  /** Short code, used in folder paths and IDs: `MTS`. */
+  code: string;
+  region: string;
+  createdAt: number;
+  createdBy: string;
+  rights: Record<OrgRight, OrgRightState>;
+  /** Filled in by the API: how many users and stations it has. */
+  userCount?: number;
+  stationCount?: number;
+  /** Created in this session — simulated. */
+  added?: boolean;
+}
+
+export type StationMeasure = 'rain' | 'flood' | 'temp' | 'wind' | 'pump';
+
+/** A station as the Super User / an organisation registers it. */
+export interface StationRecord {
+  id: string;
+  orgId: string;
+  orgName: string;
+  name: string;
+  ordinal: number;
+  chainage: string;
+  gps?: { lat: number; lng: number };
+  loggerId: string;
+  track: TrackDirection;
+  measures: StationMeasure[];
+  /** Live: reporting. Commissioning: registered, no data yet — not on the map until positioned. */
+  status: 'live' | 'commissioning';
+  createdAt: number;
+  createdBy: string;
+  added?: boolean;
+}
+
+export interface StationInput {
+  orgId: string;
+  name: string;
+  chainage: string;
+  gps?: { lat: number; lng: number };
+  loggerId: string;
+  track: TrackDirection;
+  measures: StationMeasure[];
+}
 
 export interface Role {
   id: RoleId;
@@ -432,6 +494,8 @@ export interface User {
   roles: RoleId[];
   /** `'all'` or specific locations. */
   stationAccess: 'all' | LocationId[];
+  /** The organisation the person belongs to. Absent = MTS; `platform` = the Super User. */
+  orgId?: string;
   status: UserStatus;
   lastLogin?: number;
   /** §8.4: taken on the add-user form. Used for SMS in the client's PDF. */
@@ -453,7 +517,7 @@ export interface AuditEntry {
   actor: string;
   action: string;
   detail: string;
-  category: 'user' | 'role' | 'rule' | 'alert' | 'pump' | 'auth' | 'maintenance';
+  category: 'user' | 'role' | 'rule' | 'alert' | 'pump' | 'auth' | 'maintenance' | 'organisation' | 'station';
 }
 
 // ── health ──────────────────────────────────────────────────────────────────

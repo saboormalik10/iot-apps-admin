@@ -2,7 +2,8 @@
 
 import { Clock, FastForward, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { demoJumpTo, demoPause, demoReset, demoSetSpeed, demoState, storyPoints } from '@/lib/api/endpoints';
+import { demoJumpTo, demoPause, demoReset, demoSetSpeed, demoState, setActingAs, storyPoints } from '@/lib/api/endpoints';
+import { useActing } from '@/lib/use-data';
 import { useDemoClock } from '@/lib/demo-clock';
 import { fmtClock, fmtTime, sydneyZone } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ import { cn } from '@/lib/utils';
  */
 export function DemoDock() {
   const now = useDemoClock();
+  const { who } = useActing();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState(() => ({ speed: 1, paused: false }));
   const [points, setPoints] = useState<{ t: number; label: string; id: string }[]>([]);
@@ -68,6 +70,29 @@ export function DemoDock() {
             ))}
           </div>
 
+          {/* Client requirement (3 Oct): see the system as the Super User or as an organisation's Administrator. */}
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">View as</p>
+          <div className="mb-3 grid grid-cols-2 gap-1" role="group" aria-label="View as">
+            {(
+              [
+                ['org-admin', 'MTS Administrator'],
+                ['super-user', 'Super User'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setActingAs(k)}
+                aria-pressed={who === k}
+                className={cn(
+                  'h-8 rounded border text-xs transition-colors',
+                  who === k ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Jump to</p>
           <ol className="max-h-56 space-y-0.5 overflow-y-auto">
             {points.map((p) => (
@@ -102,6 +127,7 @@ export function DemoDock() {
           <Clock className="h-3.5 w-3.5" aria-hidden />
           <span className="tabular">{fmtTime(now)}</span>
           <span className="text-muted-foreground">{state.paused ? 'paused' : state.speed === 1 ? 'demo time' : `×${state.speed}`}</span>
+          {who === 'super-user' ? <span className="rounded bg-header px-1.5 py-0.5 text-[10px] font-semibold text-header-foreground">Super User</span> : null}
         </button>
       )}
     </div>

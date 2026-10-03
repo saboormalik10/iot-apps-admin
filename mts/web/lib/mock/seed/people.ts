@@ -85,7 +85,27 @@ export const ROLES: Role[] = [
   },
 ];
 
-export const ROLES_BY_ID = Object.fromEntries(ROLES.map((r) => [r.id, r])) as Record<Role['id'], Role>;
+/**
+ * Above every organisation: creates organisations, their users and their
+ * stations, and decides what each organisation's own Administrator may add.
+ * Kept out of ROLES, because no organisation can hand it out.
+ */
+export const SUPER_USER_ROLE: Role = {
+  id: 'super-user',
+  name: 'Super User',
+  typicalUser: 'Platform owner (Observator)',
+  summary:
+    'Everything in the system: creates organisations, the users in them and their stations, and grants or withdraws each organisation Administrator’s right to add users, stations and sensors.',
+  permissions: [
+    'Create and manage organisations',
+    'Add users to any organisation',
+    'Add stations and sensors',
+    'Grant or withdraw organisation rights',
+    'Everything an Administrator may do',
+  ],
+};
+
+export const ROLES_BY_ID = Object.fromEntries([...ROLES, SUPER_USER_ROLE].map((r) => [r.id, r])) as Record<Role['id'], Role>;
 
 /** Minutes ago, so "last login" moves with the demo clock rather than a fixed date. */
 const MIN = 60_000;
@@ -201,6 +221,24 @@ export const USERS: User[] = [
  * shown.
  */
 export const DEMO_USER = USERS.find((u) => u.id === 'u-chen')!;
+
+/** The Super User — the demo dock's "view as" switches to this person. */
+export const SUPER_USER: User = {
+  id: 'u-super',
+  name: 'Platform Super User',
+  email: 'superuser@platform.example',
+  initials: 'SU',
+  roles: ['super-user'],
+  stationAccess: 'all',
+  orgId: 'platform',
+  status: 'active',
+  lastLogin: -20 * MIN,
+};
+
+/** The other organisation's people — so the Super User's view has more than MTS in it. */
+export const OTHER_ORG_USERS: User[] = [
+  { id: 'u-trial-admin', name: 'Trial Administrator', email: 'admin@trial.example', initials: 'TA', roles: ['administrator'], stationAccess: 'all', orgId: 'trial', status: 'invited' },
+];
 
 /** Named recipient groups, as the rule drawer's chips refer to them. */
 export const RECIPIENT_GROUPS = [

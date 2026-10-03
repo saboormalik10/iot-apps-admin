@@ -88,5 +88,20 @@ export { compass } from '@/lib/mock/api';
 /** Change notification. In the real build this is the realtime channel. */
 export { subscribeToData, getRevision } from '@/lib/mock/store';
 
+/** Organisations, their rights and the station register. */
+export {
+  actingAs,
+  setActingAs,
+  can,
+  organisationNow,
+  listOrganisations,
+  createOrganisation,
+  setOrgRight,
+  listStationRecords,
+  addStation,
+} from '@/lib/mock/orgs';
+export { actingUser } from '@/lib/mock/api';
+export { RIGHT_LABELS } from '@/lib/mock/seed/orgs';
+
 /** Prototype-only time controls (the demo dock). Not part of the product API. */
 export { storyPoints, demoJumpTo, demoSetSpeed, demoPause, demoReset, demoState } from '@/lib/mock/demo';

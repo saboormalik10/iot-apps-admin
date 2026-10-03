@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useDemoClock } from '@/lib/demo-clock';
-import { useDataRevision } from '@/lib/use-data';
+import { useActing, useDataRevision } from '@/lib/use-data';
+import { RightNotice } from '@/components/admin/right-notice';
 import { fmtDate } from '@/lib/format';
 import { toast } from '@/lib/hooks/use-toast';
 import { STATIONS, STATIONS_BY_ID } from '@/lib/mock/seed/stations';
@@ -32,6 +33,7 @@ type Dlg = { mode: 'add' } | { mode: 'edit' | 'replace' | 'decommission'; item: 
 export function SensorsPage() {
   const now = useDemoClock();
   const revision = useDataRevision();
+  const { can } = useActing();
   const [items, setItems] = useState<Instrument[] | null>(null);
   const [loc, setLoc] = useState<LocationId | 'all'>('all');
   const [kind, setKind] = useState<InstrumentKind | 'all'>('all');
@@ -76,9 +78,11 @@ export function SensorsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => setDlg({ mode: 'add' })}>
-          <Plus className="h-4 w-4" /> Add sensor
-        </Button>
+        {can('addSensors') ? (
+          <Button size="sm" onClick={() => setDlg({ mode: 'add' })}>
+            <Plus className="h-4 w-4" /> Add sensor
+          </Button>
+        ) : null}
         <select value={loc} onChange={(e) => setLoc(e.target.value as LocationId | 'all')} aria-label="Location" className="h-9 rounded-md border bg-background px-2 text-sm">
           <option value="all">All locations</option>
           {STATIONS.map((s) => (
@@ -112,6 +116,8 @@ export function SensorsPage() {
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sensor ID or serial…" aria-label="Search sensors" className="h-9 w-full pl-8 sm:w-56" />
         </div>
       </div>
+
+      {!can('addSensors') ? <RightNotice right="addSensors" /> : null}
 
       <section className="min-w-0 rounded-lg border bg-card">
         {/* phone: one card per instrument */}
