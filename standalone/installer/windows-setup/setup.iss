@@ -323,6 +323,11 @@ begin
   else if WizardSilent then
     Show := SW_HIDE;
 
+  { A visible window keeps itself open after an error, so the reason can be read
+    (it closed instantly before, leaving only "code 1"). Unattended runs never wait. }
+  if not WizardSilent then
+    Params := Params + ' -PauseOnError';
+
   if not Exec('powershell.exe', Params, '', Show, ewWaitUntilTerminated, ResultCode) then
   begin
     MsgBox('Windows PowerShell could not be started, so the setup could not finish.' + #13#10 +
@@ -333,7 +338,7 @@ begin
   else if ResultCode <> 0 then
   begin
     MsgBox('The setup did not finish (code ' + IntToStr(ResultCode) + ').' + #13#10 + #13#10 +
-      'The window that just closed says what went wrong, and the whole run is in' + #13#10 +
+      'The PowerShell window shows what went wrong in red, and the whole run is in' + #13#10 +
       GetDataDir('') + '\logs. Fix what it reports, then run install.cmd in' + #13#10 +
       ExpandConstant('{app}') + ' as an administrator - it carries on where it stopped.',
       mbCriticalError, MB_OK);
@@ -341,6 +346,22 @@ begin
   end
   else
     Result := True;
+end;
+
+{ Setup run again over an earlier install or attempt: its services may be running,
+  and Windows will not let a running program be replaced ("DeleteFile failed;
+  code 5. Access is denied" on mongod.exe, client PC 7 Oct 2026). Stop them before
+  any file is copied; install.ps1 starts them again at the end. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  Exec('powershell.exe',
+    '-NoProfile -ExecutionPolicy Bypass -Command "foreach ($n in ''ObservatorWeb'',''ObservatorAPI'',''ObservatorDB'') { ' +
+    '$s = Get-Service -Name $n -ErrorAction SilentlyContinue; ' +
+    'if ($s -and $s.Status -ne ''Stopped'') { Stop-Service -Name $n -Force; $s.WaitForStatus(''Stopped'', [TimeSpan]::FromSeconds(180)) } }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

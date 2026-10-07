@@ -51,7 +51,11 @@ param(
     [string]$ConverterHost = '',
     # Who may reach the portal and the sensor port: LocalSubnet, Any, or addresses/ranges.
     [string[]]$AllowFrom = @('LocalSubnet'),
-    [string]$BackupAt = '02:30'
+    [string]$BackupAt = '02:30',
+    # The setup program runs this in its own window, which would close the moment
+    # an error is thrown - taking the only explanation with it. With this switch the
+    # window waits for Enter after an error.
+    [switch]$PauseOnError
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +65,29 @@ $ReleaseDir = Split-Path -Parent $PSScriptRoot
 $Version = Get-ReleaseVersion $ReleaseDir
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $DataDir = [IO.Path]::GetFullPath($DataDir)
+
+# The log starts here, before any check, so a failure in the very first step is
+# written down too. (It used to start after the program was copied: a password
+# typed differently twice, a busy port or a missing runtime left no log at all.)
+$InstallLog = Join-Path $DataDir ("logs\install-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Path (Split-Path $InstallLog) -Force | Out-Null
+Start-Transcript -Path $InstallLog | Out-Null
+
+# Any error from here on: say it plainly, say where the log is, and - when the
+# setup program's window would otherwise vanish - wait for the person to read it.
+trap {
+    Write-Host ''
+    Write-Host '================================================================' -ForegroundColor Red
+    Write-Host ' SETUP STOPPED' -ForegroundColor Red
+    Write-Host " $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host '================================================================' -ForegroundColor Red
+    Write-Host " The full log is in: $InstallLog"
+    Write-Host " Fix what is reported above, then run install.cmd in $InstallDir as an"
+    Write-Host ' administrator - it carries on where it stopped.'
+    try { Stop-Transcript | Out-Null } catch { }
+    if ($PauseOnError) { Write-Host ''; Read-Host 'Press Enter to close this window' | Out-Null }
+    exit 1
+}
 
 Write-Host "Observator Weather Station $Version - installation" -ForegroundColor White
 
@@ -103,7 +130,14 @@ if ($alreadySetUp -and -not $AdminEmail) {
     Write-Note 'This PC is already set up; its existing accounts are kept.'
 } else {
     Write-Step 'The first administrator'
-    if (-not $AdminEmail -and -not $AdminPasswordFromEnvironment) { $AdminEmail = Read-Host 'Administrator email' }
+    if (-not $AdminEmail -and -not $AdminPasswordFromEnvironment) {
+        # Asked at the PC: a typo is asked again, not a reason to start over.
+        while ($true) {
+            $AdminEmail = (Read-Host 'Administrator email').Trim()
+            if ($AdminEmail -match '^[^@\s]+@[^@\s]+$') { break }
+            Write-Host "  '$AdminEmail' is not an email address - try again." -ForegroundColor Yellow
+        }
+    }
     $AdminEmail = $AdminEmail.Trim()
     if ($AdminEmail -notmatch '^[^@\s]+@[^@\s]+$') { throw "'$AdminEmail' is not an email address." }
     if ($null -eq $AdminPassword -and $AdminPasswordFromEnvironment) {
@@ -114,9 +148,17 @@ if ($alreadySetUp -and -not $AdminEmail) {
         $env:OBSERVATOR_ADMIN_PASSWORD = $null
 }
 if ($null -eq $AdminPassword) {
-    $AdminPassword = Read-Host 'Administrator password (at least 8 characters)' -AsSecureString
-    $again = Read-Host 'Type it again' -AsSecureString
-    if ((ConvertFrom-SecureText $AdminPassword) -cne (ConvertFrom-SecureText $again)) { throw 'The two passwords differ.' }
+    # Asked at the PC: a mistake asks for the password again, not the whole setup.
+    while ($true) {
+        $AdminPassword = Read-Host 'Administrator password (at least 8 characters)' -AsSecureString
+        if ((ConvertFrom-SecureText $AdminPassword).Length -lt 8) {
+            Write-Host '  The password must be at least 8 characters - try again.' -ForegroundColor Yellow
+            continue
+        }
+        $again = Read-Host 'Type it again' -AsSecureString
+        if ((ConvertFrom-SecureText $AdminPassword) -ceq (ConvertFrom-SecureText $again)) { break }
+        Write-Host '  The two passwords differ - try again.' -ForegroundColor Yellow
+    }
 }
 if ((ConvertFrom-SecureText $AdminPassword).Length -lt 8) { throw 'The password must be at least 8 characters.' }
 Write-Ok $AdminEmail
@@ -143,7 +185,8 @@ Write-Ok 'program copied'
 foreach ($d in @($L.DataDir, $L.ConfigDir, $L.DbDir, $L.LogDir, $L.BackupDir, $L.UploadsDir)) {
     New-Item -ItemType Directory -Path $d -Force | Out-Null
 }
-Start-Transcript -Path (Join-Path $L.LogDir ("install-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))) | Out-Null
+# A rerun after a failed attempt: make its settings writable again.
+Repair-DataAccess $L
 
 # ---------------------------------------------------------------------------
 Write-Step 'Settings'

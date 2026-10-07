@@ -299,8 +299,25 @@ function buildSetupExe() {
     `/DOutputDir=${toWin(path.join(HERE, 'dist'))}`,
     toWin(path.join(HERE, 'windows-setup/setup.iss')),
   ];
-  if (isWin) run(iscc, argv, HERE);
-  else run(process.env.WINE || 'wine', [iscc, ...argv], HERE, { WINEDEBUG: process.env.WINEDEBUG || '-all' });
+  let out;
+  if (isWin) {
+    out = execFileSync(iscc, argv, { cwd: HERE, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, shell: true });
+  } else {
+    const wine = process.env.WINE || 'wine';
+    const env = { ...process.env, WINEDEBUG: process.env.WINEDEBUG || '-all' };
+    // Wine shows every file whose name starts with a dot as HIDDEN, and Inno Setup
+    // leaves hidden files out - so the setup program shipped without app\web\.next
+    // (the portal's whole build) and the portal never started on a client PC
+    // (7 Oct 2026). The zip, built without Wine, always had it.
+    execFileSync(wine, ['reg', 'add', 'HKCU\\Software\\Wine', '/v', 'ShowDotFiles', '/t', 'REG_SZ', '/d', 'Y', '/f'],
+      { cwd: HERE, env, stdio: 'ignore' });
+    out = execFileSync(wine, [iscc, ...argv], { cwd: HERE, env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  }
+  // Prove the files that start with a dot went in: the portal cannot start without these.
+  for (const must of ['app\\web\\.next\\BUILD_ID', 'mongodb-connection-string-url\\.esm-wrapper.mjs']) {
+    if (!out.includes(must)) throw new Error(`The setup program is missing ${must} - Inno Setup skipped it.`);
+  }
+  log(`   setup program includes app\\web\\.next (${out.split('\n').filter((l) => l.includes('\\.next\\')).length} files)`);
   const exe = path.join(HERE, 'dist', `${NAME.replace('-win-x64', '')}-setup.exe`);
   if (!fs.existsSync(exe)) throw new Error(`Inno Setup reported success but ${exe} is missing.`);
   log(`   ${path.relative(ROOT, exe)}  (${(fs.statSync(exe).size / 1048576).toFixed(0)} MB)`);
@@ -418,7 +435,8 @@ function checkScripts(dir) {
     if (bad !== -1) throw new Error(`${path.relative(dir, f)}: non-ASCII byte at offset ${bad} - Windows PowerShell 5.1 would misread it.`);
   }
   log(`   ${scripts.length} scripts are plain ASCII`);
-  const pwsh = process.env.PWSH || (isWin ? 'powershell' : 'pwsh');
+  checkCalledFunctions(scripts.filter((f) => /\.ps(m?)1$/i.test(f)));
+  const pwsh =process.env.PWSH || (isWin ? 'powershell' : 'pwsh');
   const ps = scripts.filter((f) => /\.ps(m?)1$/i.test(f));
   const check = ps.map((f) => `$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile('${f.replace(/'/g, "''")}',[ref]$null,[ref]$e); if ($e) { $e | % { Write-Output ('${path.basename(f)}: ' + $_.Extent.StartLineNumber + ': ' + $_.Message) } }`).join('; ');
   try {
@@ -429,6 +447,37 @@ function checkScripts(dir) {
     if (err.code === 'ENOENT') log('   (PowerShell not found - syntax not checked; set PWSH=<path>)');
     else throw err;
   }
+}
+
+// Every Verb-Noun the scripts call is either defined in them or a cmdlet Windows
+// PowerShell 5.1 ships. An edit once deleted five helpers from Observator.psm1 and
+// the release still built - a client's install then stopped at "The term
+// 'Assert-MongoCanRun' is not recognized" (7 Oct 2026). Without pwsh here, this is
+// the only check that sees it. A new built-in cmdlet goes in the list below.
+const BUILTIN_CMDLETS = new Set(`Add-Content Copy-Item Export-ModuleMember Get-ChildItem Get-CimInstance
+  Get-Content Get-Date Get-Item Get-ItemProperty Get-NetIPAddress Get-NetTCPConnection Get-Process
+  Get-ScheduledTask Get-Service Import-Module Invoke-RestMethod Invoke-WebRequest Join-Path Measure-Object
+  Move-Item New-Item New-NetFirewallRule New-Object New-ScheduledTaskAction New-ScheduledTaskPrincipal
+  New-ScheduledTaskSettingsSet New-ScheduledTaskTrigger New-TimeSpan Out-Null Out-String Read-Host
+  Register-ScheduledTask Remove-Item Remove-NetFirewallRule Select-Object Set-Content Set-ItemProperty
+  Set-StrictMode Sort-Object Split-Path Start-Process Start-Service Start-Sleep Start-Transcript Stop-Service
+  Stop-Transcript Test-Path Unblock-File Unregister-ScheduledTask Where-Object Write-Host`.split(/\s+/));
+
+function checkCalledFunctions(files) {
+  const defined = new Set();
+  const used = new Map();
+  for (const f of files) {
+    const t = fs.readFileSync(f, 'utf8');
+    for (const m of t.matchAll(/^function\s+([A-Za-z]+-[A-Za-z0-9]+)/gm)) defined.add(m[1]);
+    for (const m of t.matchAll(/(?<![\w$.-])([A-Z][a-z]+-[A-Z][A-Za-z0-9]+)\b/g)) {
+      if (!used.has(m[1])) used.set(m[1], path.basename(f));
+    }
+  }
+  const missing = [...used].filter(([name]) => !defined.has(name) && !BUILTIN_CMDLETS.has(name));
+  if (missing.length) {
+    throw new Error(`Scripts call functions that do not exist: ${missing.map(([n, f]) => `${n} (${f})`).join(', ')}`);
+  }
+  log(`   every function the scripts call exists (${defined.size} defined)`);
 }
 
 function checkNoForeignBinaries(dir) {

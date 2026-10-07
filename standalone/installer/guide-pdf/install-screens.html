@@ -1,0 +1,319 @@
+<!doctype html>
+<!--
+  The installation guide's pictures, drawn rather than photographed: each .shot is
+  rendered to docs/site/img/<id>.png by install-screens.cjs. The wording on every
+  screen is copied from setup.iss and install.ps1 - change it there first.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --win-face: #f0f0f0; --win-white: #ffffff; --win-line: #d9d9d9; --win-text: #1b1b1b;
+    --win-muted: #4d4d4d; --win-accent: #0067c0; --win-edit: #7a7a7a;
+    --ps-bg: #012456; --ps-text: #eeedf0; --ps-green: #16c60c; --ps-cyan: #61d6d6;
+    --ps-red: #e74856; --ps-yellow: #f9f1a5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #dfe5ec; font-family: 'Noto Sans', 'Segoe UI', sans-serif; }
+  .shot { display: inline-block; padding: 18px; background: #dfe5ec; margin: 0 24px 24px 0; vertical-align: top; }
+
+  /* ---- Inno Setup "modern" wizard ---- */
+  .win { width: 640px; background: var(--win-face); border: 1px solid #8f9aa6;
+         box-shadow: 0 10px 28px rgba(16, 32, 56, .28); color: var(--win-text); font-size: 13px; }
+  .title { height: 32px; display: flex; align-items: center; gap: 8px; padding-left: 10px;
+           background: var(--win-white); font-size: 12.5px; }
+  .title .ctl { margin-left: auto; display: flex; }
+  .title .ctl span { width: 44px; height: 32px; display: grid; place-items: center; color: #222; font-size: 13px; }
+  .title .ctl span.off { color: #b4b4b4; }
+  .head { background: var(--win-white); display: flex; align-items: center; padding: 14px 18px 14px 26px;
+          border-bottom: 1px solid var(--win-line); min-height: 70px; }
+  .head b { display: block; font-size: 13.5px; }
+  .head .sub { padding-left: 16px; margin-top: 3px; color: var(--win-text); }
+  .head .logo { margin-left: auto; }
+  .body { padding: 22px 40px 10px 42px; min-height: 300px; }
+  .body p { margin: 0 0 12px; line-height: 1.45; }
+  .row { display: flex; gap: 8px; margin: 6px 0 14px; }
+  .edit { flex: 1; height: 25px; border: 1px solid var(--win-edit); background: var(--win-white);
+          padding: 3px 6px; font-size: 13px; line-height: 17px; white-space: nowrap; overflow: hidden; }
+  .edit.caret::after { content: ''; display: inline-block; width: 1px; height: 15px; background: #000;
+          vertical-align: -3px; margin-left: 1px; }
+  .lbl { margin-top: 10px; }
+  .btn { height: 25px; min-width: 82px; padding: 0 12px; border: 1px solid #adadad; background: #e1e1e1;
+         font: inherit; font-size: 13px; display: inline-grid; place-items: center; }
+  .btn.def { border: 2px solid var(--win-accent); }
+  .btn.dim { color: #9a9a9a; }
+  .foot { border-top: 1px solid var(--win-line); padding: 12px 14px 13px; display: flex; justify-content: flex-end; gap: 8px; }
+  .foot .gap { width: 6px; }
+  .radio { display: flex; align-items: center; gap: 7px; margin: 5px 0; }
+  .radio i { width: 13px; height: 13px; border-radius: 50%; border: 1px solid #333; display: grid; place-items: center; background: #fff; }
+  .radio i.on::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #000; }
+  .memo { border: 1px solid var(--win-edit); background: #fff; height: 190px; padding: 6px 8px; line-height: 1.5; }
+  .memo div:nth-child(even) { padding-left: 18px; }
+  .bar { height: 18px; border: 1px solid #bcbcbc; background: #e6e6e6; margin-top: 6px; }
+  .bar span { display: block; height: 100%; width: 58%; background: #06b025; }
+  .side { display: flex; min-height: 382px; background: var(--win-white); border-bottom: 1px solid var(--win-line); }
+  .side .art { width: 168px; flex: none; background: linear-gradient(170deg, #0b3a6e 0%, #1565c0 55%, #3d8fd8 100%);
+               display: grid; place-items: center; }
+  .side .txt { padding: 22px 26px; }
+  .side h1 { font-size: 19px; font-weight: 600; margin: 0 0 16px; line-height: 1.3; }
+  .side p { margin: 0 0 12px; line-height: 1.45; }
+  .folder { display: flex; gap: 12px; align-items: flex-start; }
+
+  /* ---- Windows PowerShell console ---- */
+  .ps { width: 760px; border: 1px solid #5d6b7a; box-shadow: 0 10px 28px rgba(16, 32, 56, .28); }
+  .ps .title { background: #fff; }
+  .ps pre { margin: 0; background: var(--ps-bg); color: var(--ps-text); padding: 10px 12px 16px;
+            font: 13.5px/1.42 'DejaVu Sans Mono', 'Liberation Mono', Consolas, monospace; min-height: 330px; white-space: pre; }
+  .g { color: var(--ps-green); } .c { color: var(--ps-cyan); } .r { color: var(--ps-red); } .y { color: var(--ps-yellow); }
+  .cur { display: inline-block; width: 8px; height: 3px; background: var(--ps-text); vertical-align: -2px; }
+
+  /* ---- Windows message box ---- */
+  .msg { width: 560px; background: #fff; border: 1px solid #8f9aa6; box-shadow: 0 10px 28px rgba(16, 32, 56, .28); font-size: 13px; }
+  .msg .in { display: flex; gap: 14px; padding: 22px 22px 26px; line-height: 1.45; }
+  .msg .x { width: 32px; height: 32px; border-radius: 50%; background: #e81123; color: #fff; display: grid;
+            place-items: center; font-size: 19px; flex: none; }
+  .msg .foot { background: var(--win-face); border: 0; }
+</style>
+</head>
+<body>
+<!-- the small box icon in the wizard's header -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="box" viewBox="0 0 48 48">
+      <path d="M6 15 24 7l18 8v20L24 43 6 35z" fill="#eaf3fc" stroke="#1f6fb8" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M6 15l18 8 18-8M24 23v20" fill="none" stroke="#1f6fb8" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="15" cy="30" r="5.5" fill="#fff" stroke="#1f6fb8" stroke-width="1.6"/>
+      <circle cx="15" cy="30" r="1.6" fill="#1f6fb8"/>
+    </symbol>
+    <symbol id="setup" viewBox="0 0 16 16">
+      <rect x="1.5" y="6" width="13" height="8" fill="#fff" stroke="#3a6ea5"/>
+      <path d="M8 1.5v7M5 6l3 3 3-3" fill="none" stroke="#1f8f3a" stroke-width="1.6"/>
+    </symbol>
+    <symbol id="ps" viewBox="0 0 16 16">
+      <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#2671be"/>
+      <path d="M4 5.5 7.5 8 4 10.5M8.5 11H12" fill="none" stroke="#fff" stroke-width="1.4"/>
+    </symbol>
+    <symbol id="station" viewBox="0 0 96 96">
+      <path d="M48 18v62" stroke="#fff" stroke-width="3"/>
+      <path d="M48 24h22M48 24 34 14" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="72" cy="24" r="5" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="31" cy="12" r="4" fill="#fff"/>
+      <rect x="36" y="44" width="24" height="16" rx="2" fill="none" stroke="#fff" stroke-width="3"/>
+      <path d="M30 80h36" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- Title bars -->
+<template id="tb-setup">
+  <div class="title"><svg width="16" height="16"><use href="#setup"/></svg>Setup - Observator Weather Station
+    <div class="ctl"><span>&#8212;</span><span class="off">&#9744;</span><span>&#10005;</span></div></div>
+</template>
+
+<!-- 1. Welcome -->
+<div class="shot" id="install-01-welcome"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="side">
+    <div class="art"><svg width="96" height="96"><use href="#station"/></svg></div>
+    <div class="txt">
+      <h1>Welcome to the Observator Weather Station Setup Wizard</h1>
+      <p>Setup will install Observator Weather Station 1.0.0 on your computer.</p>
+      <p>It is recommended that you close all other applications before continuing.</p>
+      <p>Click Next to continue, or Cancel to exit Setup.</p>
+    </div>
+  </div>
+  <div class="foot" style="border:0"><span class="btn def">Next &gt;</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 2. Program folder -->
+<div class="shot" id="install-02-program-folder"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>Select Destination Location</b><div class="sub">Where should Observator Weather Station be installed?</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <div class="folder">
+      <svg width="34" height="28" viewBox="0 0 34 28"><path d="M1 4h12l3 3h17v20H1z" fill="#f5c542" stroke="#c99a1a"/></svg>
+      <p style="margin-top:5px">Setup will install Observator Weather Station into the following folder.</p>
+    </div>
+    <p>To continue, click Next. If you would like to select a different folder, click Browse.</p>
+    <div class="row"><div class="edit">C:\Observator</div><span class="btn">Browse...</span></div>
+  </div>
+  <div class="foot"><span class="btn">&lt; Back</span><span class="btn def">Next &gt;</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 3. Data folder -->
+<div class="shot" id="install-03-data-folder"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>Where should the weather data be kept?</b><div class="sub">Readings, settings, logs and backups go here.</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <p>This folder is NOT touched by upgrades or by uninstalling, and it grows by about<br>
+       0.5 GB a year because readings are never deleted. Keep it outside the program folder.</p>
+    <div class="row"><div class="edit">C:\ObservatorData</div><span class="btn">Browse...</span></div>
+  </div>
+  <div class="foot"><span class="btn">&lt; Back</span><span class="btn def">Next &gt;</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 4. First administrator -->
+<div class="shot" id="install-04-administrator"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>The first administrator</b><div class="sub">Who signs in to the portal first?</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <p>Enter the email address of the first administrator. The password is asked for at<br>
+       the end, in its own window, so that it is never stored on this PC.</p>
+    <div class="lbl">Email address:</div>
+    <div class="row"><div class="edit caret">admin@site.local</div></div>
+  </div>
+  <div class="foot"><span class="btn">&lt; Back</span><span class="btn def">Next &gt;</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 5. Sensor and network -->
+<div class="shot" id="install-05-sensor"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>The sensor and the network</b><div class="sub">How does the GMX551 reach this PC?</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <p>Leave these as they are unless the site says otherwise.</p>
+    <div class="lbl">Sensor port (TCP):</div>
+    <div class="row"><div class="edit">4000</div></div>
+    <div class="lbl">Converter address (only if this PC must dial the converter):</div>
+    <div class="row"><div class="edit"></div></div>
+    <div class="lbl">Portal port (what people open in a browser):</div>
+    <div class="row"><div class="edit">3201</div></div>
+    <div class="radio" style="margin-top:14px"><i class="on"></i>The converter connects to this PC (usual)</div>
+    <div class="radio"><i></i>This PC connects to the converter (fill in its address above)</div>
+  </div>
+  <div class="foot"><span class="btn">&lt; Back</span><span class="btn def">Next &gt;</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 6. Ready -->
+<div class="shot" id="install-06-ready"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>Ready to Install</b><div class="sub">Setup is now ready to begin installing Observator Weather Station on your computer.</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <p>Click Install to continue with the installation, or click Back if you want to review or change any settings.</p>
+    <div class="memo"><div>Destination location:</div><div>C:\Observator</div></div>
+  </div>
+  <div class="foot"><span class="btn">&lt; Back</span><span class="btn def">Install</span><span class="gap"></span><span class="btn">Cancel</span></div>
+</div></div>
+
+<!-- 7. Installing -->
+<div class="shot" id="install-07-copying"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="head"><div><b>Installing</b><div class="sub">Please wait while Setup installs Observator Weather Station on your computer.</div></div>
+    <svg class="logo" width="48" height="48"><use href="#box"/></svg></div>
+  <div class="body">
+    <p style="margin:0">Extracting files...</p>
+    <p style="margin:0">C:\Observator\app\api\node_modules\...</p>
+    <div class="bar"><span></span></div>
+  </div>
+  <div class="foot"><span class="btn">Cancel</span></div>
+</div></div>
+
+<template id="tb-ps">
+  <div class="title"><svg width="16" height="16"><use href="#ps"/></svg>Administrator: Windows PowerShell
+    <div class="ctl"><span>&#8212;</span><span>&#9744;</span><span>&#10005;</span></div></div>
+</template>
+
+<!-- 8. Password -->
+<div class="shot" id="install-08-password"><div class="ps">
+  <div data-tb="ps"></div>
+<pre>Observator Weather Station 1.0.0 - installation
+
+<span class="c">==&gt; Checking this PC</span>
+<span class="g">    database program: db version v7.0.43</span>
+<span class="g">    ports are free</span>
+
+<span class="c">==&gt; The first administrator</span>
+Administrator password (at least 8 characters): **********
+Type it again: *********
+<span class="y">  The two passwords differ - try again.</span>
+Administrator password (at least 8 characters): **********
+Type it again: **********
+<span class="g">    admin@site.local</span>
+
+<span class="c">==&gt; Copying the program to C:\Observator</span>
+<span class="cur"></span></pre>
+</div></div>
+
+<!-- 9. Working -->
+<div class="shot" id="install-09-working"><div class="ps">
+  <div data-tb="ps"></div>
+<pre><span class="c">==&gt; Copying the program to C:\Observator</span>
+<span class="g">    program copied</span>
+
+<span class="c">==&gt; Settings</span>
+<span class="g">    written: C:\ObservatorData\config\observator.env</span>
+<span class="g">    written: C:\ObservatorData\config\mongod.cfg</span>
+<span class="g">    folder permissions set (settings: administrators and the services only)</span>
+
+<span class="c">==&gt; Windows services</span>
+<span class="g">    service ObservatorDB registered</span>
+<span class="g">    service ObservatorAPI registered</span>
+<span class="g">    service ObservatorWeb registered</span>
+
+<span class="c">==&gt; Database</span>
+<span class="g">    database running</span>
+
+<span class="c">==&gt; Starting the API and the portal</span>
+<span class="g">    database running</span>
+<span class="g">    API running</span>
+<span class="g">    portal running</span>
+
+<span class="c">==&gt; Firewall and daily backup</span>
+<span class="cur"></span></pre>
+</div></div>
+
+<!-- 10. Finished -->
+<div class="shot" id="install-10-finished"><div class="win">
+  <div data-tb="setup"></div>
+  <div class="side">
+    <div class="art"><svg width="96" height="96"><use href="#station"/></svg></div>
+    <div class="txt">
+      <h1>The weather station is installed</h1>
+      <p>Open the portal in a browser from any PC on the site network - the address was printed in the window
+         that just closed, and the Start menu has a shortcut. The guides are in the "docs" folder.</p>
+      <p>Click Finish to exit Setup.</p>
+    </div>
+  </div>
+  <div class="foot" style="border:0"><span class="btn def">Finish</span></div>
+</div></div>
+
+<!-- 11. Stopped (troubleshooting) -->
+<div class="shot" id="install-11-stopped"><div class="ps">
+  <div data-tb="ps"></div>
+<pre><span class="c">==&gt; Checking this PC</span>
+<span class="g">    database program: db version v7.0.43</span>
+
+<span class="r">================================================================</span>
+<span class="r"> SETUP STOPPED</span>
+<span class="r"> Port 3201 (for the portal) is in use by 'httpd'. Free it, or choose another port.</span>
+<span class="r">================================================================</span>
+ The full log is in: C:\ObservatorData\logs\install-20261007-124100.log
+ Fix what is reported above, then run install.cmd in C:\Observator as an
+ administrator - it carries on where it stopped.
+
+Press Enter to close this window: <span class="cur"></span></pre>
+</div></div>
+
+<!-- 12. The message that follows -->
+<div class="shot" id="install-12-not-finished"><div class="msg">
+  <div class="title">Setup<div class="ctl"><span>&#10005;</span></div></div>
+  <div class="in"><div class="x">&#10005;</div><div>
+    The setup did not finish (code 1).<br><br>
+    The PowerShell window shows what went wrong in red, and the whole run is in
+    C:\ObservatorData\logs. Fix what it reports, then run install.cmd in
+    C:\Observator as an administrator - it carries on where it stopped.</div></div>
+  <div class="foot"><span class="btn def">OK</span></div>
+</div></div>
+
+<script>
+  for (const el of document.querySelectorAll('[data-tb]')) {
+    el.replaceWith(document.getElementById('tb-' + el.dataset.tb).content.cloneNode(true));
+  }
+</script>
+</body>
+</html>

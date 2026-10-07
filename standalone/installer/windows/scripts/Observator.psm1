@@ -211,13 +211,91 @@ function Invoke-Icacls([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "icacls failed ($LASTEXITCODE): $($Arguments -join ' ')" }
 }
 
+# What Windows says about the settings, written to the install log for support:
+# who owns them and who may use them, whether this window really runs as an
+# administrator, and which security software is installed - the usual reason an
+# administrator is refused a file whose permissions allow it.
+function Write-AccessReport($Layout) {
+    Write-Host '    --- access report (for support) ---'
+    foreach ($p in @($Layout.DataDir, $Layout.ConfigDir, $Layout.ConfigFile, $Layout.MongodCfg)) {
+        if (Test-Path $p) { Write-Host ((& cmd.exe /c "icacls `"$p`" 2>&1") | Out-String).TrimEnd() }
+    }
+    Write-Host ((& cmd.exe /c "whoami /groups 2>&1 | findstr /i `"S-1-5-32-544 Label`"") | Out-String).TrimEnd()
+    try {
+        $av = @(Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName AntivirusProduct -ErrorAction Stop |
+            ForEach-Object { $_.displayName })
+        Write-Host "    security software: $($av -join ', ')"
+    } catch { Write-Host '    security software: (Windows did not say)' }
+    Write-Host '    ---'
+}
+
+# True when this process (an administrator) can read and write the settings.
+function Test-SettingsAccess($Layout) {
+    foreach ($f in @($Layout.ConfigFile, $Layout.MongodCfg)) {
+        if (-not (Test-Path $f)) { continue }
+        try {
+            $s = [IO.File]::Open($f, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::ReadWrite)
+            $s.Dispose()
+        } catch { return $false }
+    }
+    return $true
+}
+
+# Clear read-only, hidden and system on the settings. Best effort: a file Windows
+# will not let us touch is reported by the access check that follows.
+function Clear-SettingsAttributes($Layout) {
+    foreach ($f in @(Get-ChildItem -Path $Layout.ConfigDir -File -Force -ErrorAction SilentlyContinue)) {
+        try { $f.Attributes = 'Normal' } catch { }
+    }
+}
+
+function Stop-AccessRefused($Layout) {
+    throw ("Windows will not let setup open its own settings in $($Layout.ConfigDir), even as an " +
+        "administrator. The install log lists the permissions Windows reported - send it to support.")
+}
+
+# Undo what an earlier, broken lock-down left behind (installers before 8 Oct 2026
+# gave every FILE an empty permission list - see Set-LockedFolder): stop what may
+# hold the files, give administrators ownership back and let the program and data
+# folders take the drive's ordinary permissions. Set-FolderSecurity locks them down
+# again, correctly, a few steps later.
+function Repair-DataAccess($Layout) {
+    if (-not (Test-Path $Layout.DataDir)) { return }
+    Stop-ObservatorServices
+    if (Test-SettingsAccess $Layout) { return }
+    Write-Caution 'files left by an earlier attempt cannot be opened - repairing their permissions'
+    Write-AccessReport $Layout
+    foreach ($dir in @($Layout.InstallDir, $Layout.DataDir)) {
+        if (-not (Test-Path $dir)) { continue }
+        # Through cmd, so icacls complaining on stderr cannot stop the install.
+        & cmd.exe /c "icacls `"$dir`" /setowner $($script:SidAdmins) /T /C /Q >nul 2>&1"
+        & cmd.exe /c "icacls `"$dir`" /reset /T /C /Q >nul 2>&1"
+    }
+    Clear-SettingsAttributes $Layout
+    if (-not (Test-SettingsAccess $Layout)) { Write-AccessReport $Layout; Stop-AccessRefused $Layout }
+    Write-Ok 'permissions repaired'
+}
+
+# Lock a folder to exactly these grants: the folder holds them as inheritable
+# entries with inheritance from above cut, and everything inside is reset to
+# inherit them. NOT "icacls <dir> /inheritance:r /grant:r ...(OI)(CI)... /T": on a
+# FILE icacls cuts inheritance but drops an (OI)(CI) grant, so every file ended up
+# with an EMPTY permission list that not even an administrator could open - on a
+# client PC setup could not read its own settings straight after (7 Oct 2026).
+function Set-LockedFolder([string]$Dir, [string[]]$Grants) {
+    Invoke-Icacls (@($Dir, '/inheritance:r', '/grant:r') + $Grants + @('/C', '/Q'))
+    $out = & cmd.exe /c "icacls `"$Dir\*`" /reset /T /C /Q 2>&1"
+    if ($LASTEXITCODE -ne 0) { Write-Caution "some files in $Dir kept their own permissions: $(($out | Out-String).Trim())" }
+}
+
 function Set-FolderSecurity($Layout) {
-    Invoke-Icacls @($Layout.InstallDir, '/inheritance:r', '/grant:r',
-        "$($script:SidAdmins):(OI)(CI)F", "$($script:SidSystem):(OI)(CI)F", "$($script:SidUsers):(OI)(CI)RX", '/T', '/C', '/Q')
-    Invoke-Icacls @($Layout.DataDir, '/inheritance:r', '/grant:r',
-        "$($script:SidAdmins):(OI)(CI)F", "$($script:SidSystem):(OI)(CI)F", "$($script:SidLocalService):(OI)(CI)M", '/T', '/C', '/Q')
-    Invoke-Icacls @($Layout.ConfigDir, '/inheritance:r', '/grant:r',
-        "$($script:SidAdmins):(OI)(CI)F", "$($script:SidSystem):(OI)(CI)F", "$($script:SidLocalService):(OI)(CI)RX", '/T', '/C', '/Q')
+    $a = "$($script:SidAdmins):(OI)(CI)F"; $s = "$($script:SidSystem):(OI)(CI)F"
+    Set-LockedFolder $Layout.InstallDir @($a, $s, "$($script:SidUsers):(OI)(CI)RX")
+    # The data folder first: resetting what is inside it resets config\ as well.
+    Set-LockedFolder $Layout.DataDir @($a, $s, "$($script:SidLocalService):(OI)(CI)M")
+    Set-LockedFolder $Layout.ConfigDir @($a, $s, "$($script:SidLocalService):(OI)(CI)RX")
+    # Prove it: setup must still be able to open its own settings.
+    if (-not (Test-SettingsAccess $Layout)) { Write-AccessReport $Layout; Stop-AccessRefused $Layout }
 }
 
 # ---------------------------------------------------------------------------
