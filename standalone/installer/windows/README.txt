@@ -23,5 +23,6 @@ Guides (open in any text editor or browser):
 
 After installing, the tools are in C:\Observator:
   status.cmd  backup-now.cmd  restore.cmd  reset-password.cmd  uninstall.cmd
+  simulate-sensor.cmd   test readings on port 4000, for trying it without a sensor
 
 Versions of the bundled programs: versions.txt

@@ -12,12 +12,14 @@ Plain Node 18+, no install step.
 node gmx551-sim.mjs                                   # normal weather → localhost:4000
 node gmx551-sim.mjs --scenario all                    # every awkward case together
 node gmx551-sim.mjs --host 192.168.1.20 --port 4000   # the site PC, from another machine
+node gmx551-sim.mjs --listen                          # the PC dials the "converter" (connect mode)
 ```
 
 | Option | Default | |
 |---|---|---|
 | `--host` | `127.0.0.1` | The PC running the software |
 | `--port` | `4000` | `STREAM_TCP_PORT` on that PC |
+| `--listen` | off | Wait on `--port` for the PC to connect (an install set to *this PC connects to the converter*) instead of connecting to it |
 | `--interval` | `1000` | Milliseconds between readings |
 | `--count` | forever | Stop after this many readings |
 | `--scenario` | `normal` | Comma-separated, see below |
@@ -48,3 +50,6 @@ Signed in to the portal, `GET /api/stream/status` — or the API directly at
 `http://<pc>:3200/v1/stream/status` with a token — shows whether the sensor is
 connected, readings in the last minute (about 60 when healthy) and every error
 counter.
+
+On an installed site PC it ships as `C:\Observator\tools\gmx551-sim.mjs`; double-click
+`C:\Observator\simulate-sensor.cmd` to run it with the bundled Node (options pass through).

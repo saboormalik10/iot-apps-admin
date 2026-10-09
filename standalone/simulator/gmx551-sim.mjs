@@ -14,6 +14,12 @@
  *   node gmx551-sim.mjs                          normal weather to localhost:4000
  *   node gmx551-sim.mjs --scenario all           every awkward case at once
  *   node gmx551-sim.mjs --host 192.168.1.20 --port 4000 --scenario gust,rain
+ *   node gmx551-sim.mjs --listen                 wait on port 4000 for the PC to connect
+ *
+ * Which way round: the usual install ("the converter connects to this PC") listens
+ * on port 4000, so the simulator CONNECTS to it - the default. An install set to
+ * "this PC connects to the converter" dials out instead; then run with --listen
+ * and give the PC this machine's address as the converter's.
  *
  * Scenarios (comma-separated):
  *   normal    steady breeze with noise, a daily temperature cycle
@@ -38,11 +44,12 @@ const args = Object.fromEntries(
   }, []),
 );
 if (args.help) {
-  console.log('usage: node gmx551-sim.mjs [--host 127.0.0.1] [--port 4000] [--interval 1000] [--scenario normal] [--count N]');
+  console.log('usage: node gmx551-sim.mjs [--host 127.0.0.1] [--port 4000] [--listen] [--interval 1000] [--scenario normal] [--count N]');
   process.exit(0);
 }
 const HOST = args.host ?? '127.0.0.1';
 const PORT = Number(args.port ?? 4000);
+const LISTEN = args.listen === 'true';
 const INTERVAL_MS = Number(args.interval ?? 1000);
 const COUNT = args.count ? Number(args.count) : Infinity;
 const SHOWER_MS = Number(args.shower ?? 600) * 1000;
@@ -166,41 +173,73 @@ function send(line) {
   pieces.forEach((p, i) => setTimeout(() => socket && !socket.destroyed && socket.write(p), i * 30));
 }
 
-function connect() {
-  log(`connecting to ${HOST}:${PORT} — scenarios: ${[...scenarios].join(', ')}`);
-  socket = net.connect({ host: HOST, port: PORT });
+/** Header and units, then one reading a second, for as long as the socket lasts. */
+function stream(sock, onDone) {
+  socket = sock;
   socket.setNoDelay(true);
-
-  socket.on('connect', () => {
-    connectedAt = Date.now();
-    log('connected');
-    if (!on('noheader')) {
-      socket.write(`${HEADER}\r\n`);
-      socket.write(`${UNITS}\r\n`);
+  connectedAt = Date.now();
+  log('connected');
+  if (!on('noheader')) {
+    socket.write(`${HEADER}\r\n`);
+    socket.write(`${UNITS}\r\n`);
+  }
+  timer = setInterval(() => {
+    if (state.sent >= COUNT) {
+      log(`sent ${COUNT} readings - done`);
+      socket.end();
+      clearInterval(timer);
+      process.exit(0);
     }
-    timer = setInterval(() => {
-      if (state.sent >= COUNT) {
-        log(`sent ${COUNT} readings — done`);
-        socket.end();
-        clearInterval(timer);
-        process.exit(0);
-      }
-      send(reading(Date.now()));
-      if (state.sent % 60 === 0) log(`${state.sent} readings sent (rain counter ${state.rainTotal.toFixed(1)} mm)`);
-      if (on('drop') && Date.now() - connectedAt > 180_000) {
-        log('dropping the connection for 10 s');
-        socket.destroy();
-      }
-    }, INTERVAL_MS);
-  });
-
+    send(reading(Date.now()));
+    if (state.sent % 60 === 0) log(`${state.sent} readings sent (rain counter ${state.rainTotal.toFixed(1)} mm)`);
+    if (on('drop') && Date.now() - connectedAt > 180_000) {
+      log('dropping the connection for 10 s');
+      socket.destroy();
+    }
+  }, INTERVAL_MS);
   socket.on('error', (err) => log(`connection error: ${err.message}`));
   socket.on('close', () => {
     clearInterval(timer);
-    const wait = on('drop') ? 10_000 : 3_000;
-    log(`disconnected — retrying in ${wait / 1000} s`);
-    setTimeout(connect, wait);
+    onDone();
   });
+}
+
+// The converter as a TCP client (the usual install): dial the PC, redial when dropped.
+function connect() {
+  log(`connecting to ${HOST}:${PORT} - scenarios: ${[...scenarios].join(', ')}`);
+  const sock = net.connect({ host: HOST, port: PORT });
+  let up = false;
+  sock.on('connect', () => {
+    up = true;
+    stream(sock, () => {
+      const wait = on('drop') ? 10_000 : 3_000;
+      log(`disconnected - retrying in ${wait / 1000} s`);
+      setTimeout(connect, wait);
+    });
+  });
+  sock.on('error', (err) => {
+    if (up) return;
+    log(`cannot reach ${HOST}:${PORT} (${err.message}) - is the weather station software running? Retrying in 3 s`);
+    setTimeout(connect, 3_000);
+  });
+}
+
+// The converter as a TCP server: wait for the PC to dial in, one PC at a time.
+function listen() {
+  const server = net.createServer((sock) => {
+    if (socket && !socket.destroyed) {
+      log(`refusing ${sock.remoteAddress}: a PC is already connected`);
+      sock.destroy();
+      return;
+    }
+    log(`PC connected from ${sock.remoteAddress}`);
+    stream(sock, () => log('PC disconnected - waiting for it to connect again'));
+  });
+  server.on('error', (err) => {
+    log(`cannot listen on port ${PORT}: ${err.message}`);
+    process.exit(1);
+  });
+  server.listen(PORT, '0.0.0.0', () => log(`waiting on port ${PORT} for the PC to connect - scenarios: ${[...scenarios].join(', ')}`));
 }
 
 process.on('SIGINT', () => {
@@ -208,4 +247,5 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-connect();
+if (LISTEN) listen();
+else connect();

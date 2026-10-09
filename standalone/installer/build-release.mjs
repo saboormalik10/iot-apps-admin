@@ -248,6 +248,9 @@ async function main() {
   fs.writeFileSync(path.join(OUT, 'VERSION'), `${VERSION}\r\n`);
   const docs = path.join(ROOT, 'docs/site');
   if (fs.existsSync(docs)) copy(docs, path.join(OUT, 'docs'));
+  // Test readings without a sensor (simulate-sensor.cmd runs it with the bundled Node).
+  fs.mkdirSync(path.join(OUT, 'tools'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'simulator/gmx551-sim.mjs'), path.join(OUT, 'tools/gmx551-sim.mjs'));
   fs.writeFileSync(
     path.join(OUT, 'versions.txt'),
     [
