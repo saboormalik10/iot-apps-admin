@@ -19,6 +19,7 @@ node gmx551-sim.mjs --listen                          # the PC dials the "conver
 |---|---|---|
 | `--host` | `127.0.0.1` | The PC running the software |
 | `--port` | `4000` | `STREAM_TCP_PORT` on that PC |
+| `--nmea` | off | Send NMEA 0183 (`$WIMWV`, `$WIXDR`, `$PGILT`) as a MaxiMet set to *Report Format NMEA* does, instead of Gill ASCII |
 | `--listen` | off | Wait on `--port` for the PC to connect (an install set to *this PC connects to the converter*) instead of connecting to it |
 | `--interval` | `1000` | Milliseconds between readings |
 | `--count` | forever | Stop after this many readings |

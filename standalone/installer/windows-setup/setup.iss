@@ -94,6 +94,7 @@ var
   SensorPage: TInputQueryWizardPage;
   SensorMode: TNewRadioButton;
   SensorModeConnect: TNewRadioButton;
+  SensorPageShown: Boolean;
 
 { Where an existing install keeps its data - so reinstalling over it never points
   the PC at an empty new folder and makes the site look like it lost its readings. }
@@ -201,6 +202,56 @@ begin
   end;
 end;
 
+{ KEY=value from a settings file's lines, or '' . }
+function EnvValue(Lines: TArrayOfString; const Key: String): String;
+var
+  I: Integer;
+  S: String;
+begin
+  Result := '';
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    S := Trim(Lines[I]);
+    if CompareText(Copy(S, 1, Length(Key) + 1), Key + '=') = 0 then
+      Result := Trim(Copy(S, Length(Key) + 2, MaxInt));
+  end;
+end;
+
+{ Run again over an install: the sensor page starts from what this PC uses now,
+  so Next without a change changes nothing - and a change IS applied (install.ps1
+  updates the kept settings file). It used to start from the defaults and be
+  ignored: a client chose "This PC connects to the converter" on a reinstall and
+  the PC went on listening (9 Oct 2026). }
+procedure CurPageChanged(CurPageID: Integer);
+var
+  Lines: TArrayOfString;
+  Mode, Host, Port, Web: String;
+begin
+  if (CurPageID <> SensorPage.ID) or SensorPageShown then
+    Exit;
+  SensorPageShown := True;
+  if not LoadStringsFromFile(AddBackslash(Trim(DataPage.Values[0])) + 'config\observator.env', Lines) then
+    Exit;
+  Mode := EnvValue(Lines, 'STREAM_MODE');
+  Host := EnvValue(Lines, 'STREAM_REMOTE_HOST');
+  if CompareText(Mode, 'connect') = 0 then
+    Port := EnvValue(Lines, 'STREAM_REMOTE_PORT')
+  else
+    Port := EnvValue(Lines, 'STREAM_TCP_PORT');
+  Web := EnvValue(Lines, 'WEB_PORT');
+  if (CmdLineParam('StreamMode') = '') and (Mode <> '') then
+  begin
+    SensorModeConnect.Checked := CompareText(Mode, 'connect') = 0;
+    SensorMode.Checked := not SensorModeConnect.Checked;
+  end;
+  if (CmdLineParam('ConverterHost') = '') and (Host <> '') then
+    SensorPage.Values[1] := Host;
+  if (CmdLineParam('StreamPort') = '') and (Port <> '') then
+    SensorPage.Values[0] := Port;
+  if (CmdLineParam('WebPort') = '') and (Web <> '') then
+    SensorPage.Values[2] := Web;
+end;
+
 function GetDataDir(Param: String): String;
 begin
   Result := DataPage.Values[0];
@@ -302,10 +353,15 @@ begin
     password in its own window. }
   if not IsUpgrade then
     Params := Params + ' -AdminEmail "' + GetAdminEmail('') + '"';
-  if SensorModeConnect.Checked then
-    Params := Params + ' -StreamMode connect -ConverterHost "' + Trim(SensorPage.Values[1]) + '"'
-  else
-    Params := Params + ' -StreamMode listen';
+  { The sensor choice goes over only when someone saw the page (or gave it on the
+    command line): an unattended rerun must not reset a PC to the defaults. }
+  if SensorPageShown or (CmdLineParam('StreamMode') <> '') then
+  begin
+    if SensorModeConnect.Checked then
+      Params := Params + ' -StreamMode connect -ConverterHost "' + Trim(SensorPage.Values[1]) + '"'
+    else
+      Params := Params + ' -StreamMode listen';
+  end;
 
   { Unattended: hand the password over in the environment (never on the command
     line, where any program on the PC could read it), and run without a window. }

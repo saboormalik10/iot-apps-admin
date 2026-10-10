@@ -60,8 +60,15 @@ connecting.
 2. Is the PC's IP address the one the converter was given (fixed address)?
 3. From another PC: `Test-NetConnection <station PC> -Port 4000` in PowerShell should
    succeed. If it fails, the firewall is blocking it — see `-AllowFrom` above.
-4. Some converters are servers only: switch to connect mode (`STREAM_MODE=connect`,
-   `STREAM_REMOTE_HOST=<converter IP>` in the settings, restart the API service).
+4. Some converters are servers only: in the portal, **System → Sensor stream → Change
+   connection → This PC connects to the converter**, with the converter's IP address
+   and port. It applies at once and shows whether the converter answered.
+
+**Connected, but no readings.** On **System**, look at *Data received*: "nothing yet"
+means the converter sends nothing (serial settings, wiring, or the sensor not set to
+send continuously); lines that arrive but are refused are counted, and the warning at
+the top says why. **Recent lines** shows the last 100 lines and what became of each —
+**Download as text file** and send it to support. Gill ASCII and NMEA 0183 are both read.
 
 **Connected, but no readings / "Rejected: bad checksum" climbing.** Serial settings on
 the converter do not match the sensor (baud rate, parity), or the line is noisy.

@@ -134,9 +134,10 @@ settings choose *TCP client* (sometimes called *active* or *connect* mode), with
 - destination IP: this PC's address
 - destination port: **4000** (or `-StreamPort`)
 
-**Connect mode** — the PC connects to the converter. Install with
-`-StreamMode connect -ConverterHost <converter IP>`, and set the converter to *TCP
-server* mode on port 4000.
+**Connect mode** — the PC connects to the converter. Set the converter to *TCP
+server* mode on port 4000, and either install with `-StreamMode connect -ConverterHost
+<converter IP>`, or switch afterwards in the portal: **System → Sensor stream → Change
+connection**. Either way can be changed there later, with no reinstall.
 
 Serial settings on the converter must match the GMX551 (Gill's default is 19200 baud,
 8 data bits, no parity, 1 stop bit — check the sensor's configuration sheet).

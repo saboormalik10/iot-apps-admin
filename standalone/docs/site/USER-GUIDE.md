@@ -220,7 +220,10 @@ For administrators and operators. The first screen to open when something looks 
 
 - **Sensor stream** — connected or not, where from, the last reading, readings in the
   last minute (about 60 when healthy), and anything rejected for a bad checksum or an
-  impossible rain value.
+  impossible rain value. Administrators can **Change connection** here: either the
+  converter connects to this PC (converter set to *TCP Client*), or this PC connects to
+  the converter at its IP address and port (converter set to *TCP Server*). The change
+  applies at once, and the window shows whether the converter answered.
 - **Backup** — when the nightly backup last ran and whether it worked.
 - **Disk** — free space. Readings are never deleted, so the disk is the limit.
 - **This PC** — the station's time, this PC's own time zone, the newest stored minute,
@@ -318,6 +321,6 @@ sensor stream is not connected, the converter or the network is the place to sta
 
 ---
 
-*Observator Weather Station 1.0.0 — the install and day-to-day care of the PC itself
+*Observator Weather Station 1.0.2 — the install and day-to-day care of the PC itself
 are covered in [INSTALL.md](INSTALL.md), [OPERATIONS.md](OPERATIONS.md) and
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md).*

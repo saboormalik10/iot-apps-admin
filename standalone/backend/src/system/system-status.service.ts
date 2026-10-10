@@ -30,6 +30,31 @@ export interface SystemWarning {
 }
 
 /**
+ * Why a CONNECTED sensor gives no readings, from what actually arrived — the
+ * question a technician cannot answer from "Connected, 0 readings" (client, 9 Oct
+ * 2026). Null when it is not connected (that has its own message) or when there
+ * is nothing useful to add yet.
+ */
+export function whyNoReadings(stream: ReturnType<StreamService['getStatus']>, nowMs: number): string | null {
+  if (!stream.connected) return null;
+  const c = stream.counts;
+  const since = stream.connectedAt ? nowMs - Date.parse(stream.connectedAt) : 0;
+  const recentReadings = stream.readingsLastMinute > 0;
+  if (recentReadings) return null;
+  if (c.bytes === 0)
+    return since < 20_000
+      ? null
+      : 'The converter is connected but sends nothing. Check its serial settings (the GMX551 default is 19200 baud, 8 data bits, no parity, 1 stop bit), the RS-422 wiring, and that the sensor is set to send continuously.';
+  if (c.lines === 0)
+    return 'Data arrives but never ends a line - usually the converter\'s baud rate or serial settings do not match the sensor\'s.';
+  if (c.columnMismatches > 0 && c.columnMismatches >= c.checksumErrors)
+    return `Lines arrive, but with a different number of columns than expected (${stream.fields.filter((f) => f !== 'CHECK').length}). The sensor names its columns only when it powers up: switch the sensor off and on while this PC is connected, so it sends them.`;
+  if (c.checksumErrors > 0) return 'Lines arrive, but fail their checksum - check the converter\'s serial settings and the wiring.';
+  if (c.unframed > 0) return 'Lines arrive without the <STX>...<ETX> framing the GMX551 normally uses - check the sensor\'s output format.';
+  return null;
+}
+
+/**
  * The site PC's health, for the portal's System page and status.cmd: is the
  * sensor talking, is the disk filling, did last night's backup work, is the
  * clock plausible. Everything a technician would otherwise log in to find out.
@@ -109,9 +134,11 @@ export class SystemStatusService {
     if (stream.enabled) {
       if (stream.error) warnings.push({ code: 'STREAM_ERROR', message: `The sensor stream cannot run: ${stream.error}` });
       const last = stream.lastReadingAt ? Date.parse(stream.lastReadingAt) : null;
-      if (last === null) warnings.push({ code: 'SENSOR_NEVER', message: 'No reading from the sensor since the service started.' });
+      const why = whyNoReadings(stream, nowMs);
+      if (last === null)
+        warnings.push({ code: 'SENSOR_NEVER', message: `No reading from the sensor since the service started.${why ? ` ${why}` : ''}` });
       else if (nowMs - last > SENSOR_QUIET_MS)
-        warnings.push({ code: 'SENSOR_QUIET', message: `No reading from the sensor for ${Math.round((nowMs - last) / 60_000)} minutes.` });
+        warnings.push({ code: 'SENSOR_QUIET', message: `No reading from the sensor for ${Math.round((nowMs - last) / 60_000)} minutes.${why ? ` ${why}` : ''}` });
     }
     if (disk && disk.freeBytes < LOW_DISK_BYTES)
       warnings.push({ code: 'DISK_LOW', message: `Only ${(disk.freeBytes / 1024 ** 3).toFixed(1)} GB free on the data drive. Readings are never deleted, so the disk is the limit.` });
@@ -152,6 +179,20 @@ export class SystemStatusService {
         checksumErrors: stream.counts.checksumErrors,
         rainAnomalies: stream.counts.rainAnomalies,
         error: stream.error,
+        connection: stream.connection,
+        // What actually arrives — to tell "nothing comes" from "something comes
+        // that is not understood" (client, 9 Oct 2026: connected, no data).
+        bytesReceived: stream.counts.bytes,
+        linesReceived: stream.counts.lines,
+        lastByteAt: stream.lastByteAt,
+        columnMismatches: stream.counts.columnMismatches,
+        unframed: stream.counts.unframed,
+        overflows: stream.counts.overflows,
+        headers: stream.counts.headers,
+        fields: stream.fields,
+        lastLine: stream.lastLine,
+        lastRejected: stream.lastRejected,
+        format: stream.format,
       },
       disk,
       backup,

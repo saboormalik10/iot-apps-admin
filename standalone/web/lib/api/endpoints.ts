@@ -7,6 +7,8 @@ import type {
   QueryResult,
   RainSummary,
   SystemStatus,
+  UpdateStreamConnectionInput,
+  RecentStreamLine,
   AlertTimeline,
   AppNotification,
   AuditEntry,
@@ -500,6 +502,12 @@ export const queryCsvHref = (p: QueryParams) => `/api/query/measures.csv?${query
 // ── Rain (standalone Phase 4) ───────────────────────────────────────────────
 /** The site PC's health — the System page. */
 export const getSystemStatus = (signal?: AbortSignal) => http.get<SystemStatus>('/system/status', signal);
+
+/** The last 100 lines the sensor sent, oldest first, each with what became of it. */
+export const getRecentStreamLines = (signal?: AbortSignal) => http.get<RecentStreamLine[]>('/stream/recent-lines', signal);
+
+/** Change how this PC reaches the sensor's converter; applied at once. Admins (`device:write`). */
+export const updateStreamConnection = (input: UpdateStreamConnectionInput) => http.put<unknown>('/stream/connection', input);
 
 export const getMetRain = (deviceId: string, signal?: AbortSignal) =>
   http.get<RainSummary>(`/dashboard/met/rain?deviceId=${encodeURIComponent(deviceId)}`, signal);

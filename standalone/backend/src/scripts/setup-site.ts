@@ -14,12 +14,18 @@
  * (STANDALONE_ADMIN_EMAIL / STANDALONE_ADMIN_PASSWORD), which the installer sets
  * for this one run only — it is never written to the settings file on disk.
  *
+ * THE SENSOR CONNECTION: when the installer was just told a different one (its
+ * wizard, run again), STANDALONE_RESET_SENSOR_CONNECTION=1 clears the one chosen
+ * earlier in the portal, so the newest choice wins rather than the older one
+ * still kept on the station.
+ *
  * Exit code 0 = ready. Anything else is printed plainly for the technician.
  */
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
 import { FirstRunService } from '../setup/first-run.service';
+import { Device } from '../models/Device';
 import { User } from '../models/User';
 
 const READY_TIMEOUT_MS = 60_000;
@@ -78,6 +84,11 @@ async function main(): Promise<void> {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 20_000 });
   const setup = new FirstRunService();
   await setup.onApplicationBootstrap();
+
+  if (process.env.STANDALONE_RESET_SENSOR_CONNECTION === '1') {
+    const r = await Device.updateMany({ type: 'MET-LINK', sensorConnection: { $ne: null } }, { $set: { sensorConnection: null } });
+    if (r.modifiedCount) console.log("• Sensor connection: the installer's choice replaces the one set in the portal.");
+  }
 
   const admins = await User.countDocuments({ role: 'admin', isActive: true, deletedAt: null });
   console.log(`• Site ready: ${admins} active administrator(s).`);

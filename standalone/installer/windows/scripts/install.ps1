@@ -190,8 +190,29 @@ Repair-DataAccess $L
 
 # ---------------------------------------------------------------------------
 Write-Step 'Settings'
+$sensorChanged = $false
 if (Test-Path $L.ConfigFile) {
     Write-Note "keeping the existing $($L.ConfigFile)"
+    # Run again WITH a sensor connection (the setup wizard gives one, starting from
+    # what this file says): apply it where it differs. The kept file used to win
+    # silently - a client chose "this PC connects to the converter" on a reinstall
+    # and the PC went on listening (9 Oct 2026).
+    if ($PSBoundParameters.ContainsKey('StreamMode')) {
+        $want = @{ STREAM_MODE = $StreamMode; STREAM_TCP_PORT = "$StreamPort"; STREAM_REMOTE_PORT = "$StreamPort" }
+        if ($StreamMode -eq 'connect') { $want['STREAM_REMOTE_HOST'] = $ConverterHost }
+        $have = Read-EnvFile $L.ConfigFile
+        $diff = @{}
+        foreach ($k in $want.Keys) {
+            $old = if ($have.Contains($k)) { [string]$have[$k] } else { '' }
+            if ($old -ne [string]$want[$k]) { $diff[$k] = $want[$k] }
+        }
+        if ($diff.Count -gt 0) {
+            Write-TextFile $L.ConfigFile (Set-EnvValues ([IO.File]::ReadAllText($L.ConfigFile)) $diff)
+            $sensorChanged = $true
+            if ($StreamMode -eq 'connect') { Write-Ok "sensor: this PC now connects to the converter at ${ConverterHost}:$StreamPort" }
+            else { Write-Ok "sensor: the converter now connects to this PC on port $StreamPort" }
+        }
+    }
 } else {
     $values = @{
         PORT = '3200'; API_HOST = '127.0.0.1'; NODE_ENV = 'production'
@@ -231,14 +252,19 @@ Write-Ok 'database running'
 # never the settings file, never a command line. Nothing is passed when the site
 # already has its accounts.
 $plain = $null
+# A sensor connection changed just above replaces one chosen earlier in the
+# portal (which is kept on the station and would otherwise still win).
+$siteEnv = @{}
+if ($sensorChanged) { $siteEnv['STANDALONE_RESET_SENSOR_CONNECTION'] = '1' }
 try {
     if ($AdminEmail) {
         $plain = ConvertFrom-SecureText $AdminPassword
-        $code = Invoke-NodeScript $L 'dist\scripts\setup-site.js' @() @{ STANDALONE_ADMIN_EMAIL = $AdminEmail; STANDALONE_ADMIN_PASSWORD = $plain }
-    } else {
-        $code = Invoke-NodeScript $L 'dist\scripts\setup-site.js'
+        $siteEnv['STANDALONE_ADMIN_EMAIL'] = $AdminEmail
+        $siteEnv['STANDALONE_ADMIN_PASSWORD'] = $plain
     }
+    $code = Invoke-NodeScript $L 'dist\scripts\setup-site.js' @() $siteEnv
 } finally {
+    $siteEnv = $null
     $plain = $null
 }
 if ($code -ne 0) { throw "Preparing the database failed (exit code $code) - see the messages above." }
@@ -247,7 +273,11 @@ Write-Step 'Starting the API and the portal'
 Start-ObservatorServices $L
 
 Write-Step 'Firewall and daily backup'
-Set-FirewallRules $WebPort $StreamPort ($StreamMode -eq 'listen') $AllowFrom
+# The sensor port is opened even when this PC dials the converter: the portal can
+# switch it to listening later (System > Sensor stream > Change connection), and
+# the service, running as LocalService, cannot open the firewall itself. Only the
+# local subnet by default, and nothing answers on it unless it is listening.
+Set-FirewallRules $WebPort $StreamPort $true $AllowFrom
 Register-MaintenanceTask $L $BackupAt
 
 Set-InstallRecord $InstallDir $DataDir $Version

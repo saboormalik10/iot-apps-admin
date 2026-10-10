@@ -2,6 +2,15 @@ import { Schema, model, Document, Types } from 'mongoose';
 
 export type DeviceType = 'MET-LINK' | 'NEP-LINK';
 
+export interface SensorConnectionSetting {
+  /** `listen`: the converter connects to this PC. `connect`: this PC dials the converter. */
+  mode: 'listen' | 'connect';
+  remoteHost: string | null;
+  remotePort: number;
+  changedAt: Date;
+  changedBy: string;
+}
+
 export interface IDevice extends Document {
   organizationId: Types.ObjectId;
   bleId: string;
@@ -73,6 +82,15 @@ export interface IDevice extends Document {
    * 2026). Decides "rain today" on the dashboard and the daily rows of the query.
    */
   rainDayStartHour: number;
+  /**
+   * How this PC reaches the station's sensor converter, when it was changed in the
+   * portal (System -> Sensor stream). Null = the settings file's STREAM_MODE,
+   * STREAM_REMOTE_HOST and STREAM_REMOTE_PORT, which the installer wrote. Kept on
+   * the station so a change survives a restart and travels with a backup. The
+   * client's converter is a TCP server and he found nowhere to type its address
+   * (9 Oct 2026).
+   */
+  sensorConnection: SensorConnectionSetting | null;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -108,6 +126,19 @@ const deviceSchema = new Schema<IDevice>(
       default: null,
     },
     rainDayStartHour: { type: Number, default: 0, min: 0, max: 23 },
+    sensorConnection: {
+      type: new Schema(
+        {
+          mode: { type: String, enum: ['listen', 'connect'], required: true },
+          remoteHost: { type: String, default: null },
+          remotePort: { type: Number, default: 4000, min: 1, max: 65_535 },
+          changedAt: { type: Date, required: true },
+          changedBy: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true },

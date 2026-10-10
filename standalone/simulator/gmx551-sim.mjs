@@ -15,6 +15,7 @@
  *   node gmx551-sim.mjs --scenario all           every awkward case at once
  *   node gmx551-sim.mjs --host 192.168.1.20 --port 4000 --scenario gust,rain
  *   node gmx551-sim.mjs --listen                 wait on port 4000 for the PC to connect
+ *   node gmx551-sim.mjs --nmea                   NMEA 0183 output instead of Gill ASCII
  *
  * Which way round: the usual install ("the converter connects to this PC") listens
  * on port 4000, so the simulator CONNECTS to it - the default. An install set to
@@ -44,12 +45,15 @@ const args = Object.fromEntries(
   }, []),
 );
 if (args.help) {
-  console.log('usage: node gmx551-sim.mjs [--host 127.0.0.1] [--port 4000] [--listen] [--interval 1000] [--scenario normal] [--count N]');
+  console.log('usage: node gmx551-sim.mjs [--host 127.0.0.1] [--port 4000] [--listen] [--nmea] [--interval 1000] [--scenario normal] [--count N]');
   process.exit(0);
 }
 const HOST = args.host ?? '127.0.0.1';
 const PORT = Number(args.port ?? 4000);
 const LISTEN = args.listen === 'true';
+// NMEA 0183, as a MaxiMet set to Report Format NMEA sends it (manual issue 11,
+// appendix G) — the client's sensor was set this way (9 Oct 2026).
+const NMEA = args.nmea === 'true';
 const INTERVAL_MS = Number(args.interval ?? 1000);
 const COUNT = args.count ? Number(args.count) : Infinity;
 const SHOWER_MS = Number(args.shower ?? 600) * 1000;
@@ -131,6 +135,25 @@ function reading(nowMs) {
   const intensity = raining ? 12 : 0;
 
   const dir = Math.round(state.dir) % 360;
+  if (NMEA) {
+    state.sent += 1;
+    // Dew point (Magnus), for the transducer sentence.
+    const g = Math.log(rh / 100) + (17.62 * temp) / (243.12 + temp);
+    const dew = (243.12 * g) / (17.62 - g);
+    const sentence = (body) => {
+      const cs = on('badsum') && state.sent % 30 === 0 ? '00' : checksum(body);
+      return `$${body}*${cs}\r\n`;
+    };
+    return [
+      sentence(`WIMWV,${pad(dir, 3, 0)},R,${pad(speed / 0.514444, 6, 2)},N,A`),
+      sentence(`WIMWV,${pad(dir, 3, 0)},T,,N,A`),
+      sentence(
+        `WIXDR,C,${pad(temp, 5, 1, true)},C,TEMP,C,${pad(dew, 5, 1, true)},C,DEWP,P,${(state.pressure / 1000).toFixed(4)},B,PRESS,` +
+          `H,${pad(rh, 5, 1)},P,RH,Z,${pad(Math.max(0, 800 * diurnal), 4, 0)},W,SOLAR,Y,${pad(intensity, 7, 3)},M,PRECIP`,
+      ),
+      sentence('PGILT,A,+00,D,+00,D,+1,TILT'),
+    ].join('');
+  }
   const payload = [
     'Q',
     pad(dir, 3, 0),
@@ -179,7 +202,7 @@ function stream(sock, onDone) {
   socket.setNoDelay(true);
   connectedAt = Date.now();
   log('connected');
-  if (!on('noheader')) {
+  if (!on('noheader') && !NMEA) {
     socket.write(`${HEADER}\r\n`);
     socket.write(`${UNITS}\r\n`);
   }

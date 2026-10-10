@@ -113,6 +113,19 @@ export class RainAccumulator {
     return this.current;
   }
 
+  /**
+   * Rain since the previous reading, given directly — whatever the mode. An NMEA
+   * unit reports only intensity, so its rain arrives this way (stream/nmea.ts).
+   * The same plausibility limit applies as to any other reading.
+   */
+  addInterval(mm: number, atMs: number = Date.now()): number {
+    if (!Number.isFinite(mm) || mm < 0) return this.current;
+    if (mm > this.allowance(atMs)) this.anomaly(`${mm} mm in one reading is not rain; ignored`);
+    else this.totalMm += mm;
+    this.lastAtMs = atMs;
+    return this.current;
+  }
+
   /** The site total, to three decimals — the gauge reports no finer. */
   get current(): number {
     return Math.round(this.totalMm * 1000) / 1000;

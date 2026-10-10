@@ -7,6 +7,7 @@ rem
 rem   simulate-sensor.cmd                         normal weather
 rem   simulate-sensor.cmd --scenario gust,rain    gusts and showers
 rem   simulate-sensor.cmd --scenario all          every awkward case at once
+rem   simulate-sensor.cmd --nmea                  NMEA 0183 sentences instead of Gill ASCII
 rem   simulate-sensor.cmd --listen                PC set to connect to the converter:
 rem                                               wait on port 4000 for it instead
 rem   simulate-sensor.cmd --port 4001             another sensor port

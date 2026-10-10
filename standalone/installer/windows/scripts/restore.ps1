@@ -39,10 +39,12 @@ foreach ($id in @('ObservatorWeb', 'ObservatorAPI')) {
 }
 
 Write-Step 'Restoring'
-$out = & $L.Mongorestore '--uri=mongodb://127.0.0.1:27017/?directConnection=true' '--gzip' "--archive=$archive" '--drop' '--nsInclude=observator_standalone.*' 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Caution ($out | Select-Object -Last 5 | Out-String)
-    throw "The restore failed ($LASTEXITCODE). The safety backup is $safety."
+# Through Invoke-Native: mongorestore reports progress on stderr, which Windows
+# PowerShell would otherwise take for a failure at the first line.
+$r = Invoke-Native $L.Mongorestore @('--uri=mongodb://127.0.0.1:27017/?directConnection=true', '--gzip', "--archive=$archive", '--drop', '--nsInclude=observator_standalone.*')
+if ($r.ExitCode -ne 0) {
+    Write-Caution ($r.Output | Select-Object -Last 5 | Out-String)
+    throw "The restore failed ($($r.ExitCode)). The safety backup is $safety."
 }
 Write-Ok 'database restored'
 $uploads = Join-Path $From 'uploads'

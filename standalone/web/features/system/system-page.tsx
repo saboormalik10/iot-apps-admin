@@ -1,8 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Database, HardDrive, Radio, Save, Server, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, HardDrive, ListTree, Pencil, Radio, Save, Server, XCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/screen-states';
@@ -12,6 +12,9 @@ import { queryKeys } from '@/lib/query/keys';
 import { formatDateTime, formatRelative } from '@/lib/time';
 import { useSiteTimeZone, zoneLabel } from '@/lib/hooks/use-site-timezone';
 import type { SystemStatus } from '@/lib/api/types';
+import { Can } from '@/lib/rbac/guard';
+import { SensorConnectionDialog } from './sensor-connection-dialog';
+import { RecentLinesDialog } from './recent-lines-dialog';
 
 /**
  * The site PC's health (Phase 7): is the sensor talking, is the disk filling, did
@@ -47,7 +50,19 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Section({ icon: Icon, title, state, children }: { icon: typeof Server; title: string; state: ReactNode; children: ReactNode }) {
+function Section({
+  icon: Icon,
+  title,
+  state,
+  children,
+  footer,
+}: {
+  icon: typeof Server;
+  title: string;
+  state: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -57,6 +72,7 @@ function Section({ icon: Icon, title, state, children }: { icon: typeof Server; 
         {state}
       </div>
       <dl className="divide-y">{children}</dl>
+      {footer}
     </Card>
   );
 }
@@ -81,6 +97,9 @@ export function SystemView({ s }: { s: SystemStatus }) {
   const at = (v: string | number) => formatDateTime(v, { mode: 'device', tz });
   const diskUsed = s.disk ? 1 - s.disk.freeBytes / s.disk.totalBytes : null;
   const has = (code: string) => s.warnings.some((w) => w.code === code);
+  const [editConnection, setEditConnection] = useState(false);
+  const [showLines, setShowLines] = useState(false);
+  const conn = st.connection;
 
   return (
     <div className="space-y-4">
@@ -107,17 +126,57 @@ export function SystemView({ s }: { s: SystemStatus }) {
           icon={Radio}
           title="Sensor stream"
           state={!st.enabled ? bad('Switched off', 'warn') : st.connected ? good('Connected') : bad('Not connected')}
+          footer={
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+              <p className="text-xs text-muted-foreground">
+                {conn.source === 'portal' && conn.changedAt
+                  ? `Set in the portal by ${conn.changedBy ?? 'an administrator'}, ${at(conn.changedAt)}`
+                  : 'As set when the software was installed'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {st.linesReceived > 0 ? (
+                  <Button variant="outline" size="sm" onClick={() => setShowLines(true)}>
+                    <ListTree className="h-4 w-4" aria-hidden /> Recent lines
+                  </Button>
+                ) : null}
+                <Can permission="device:write">
+                  <Button variant="outline" size="sm" onClick={() => setEditConnection(true)}>
+                    <Pencil className="h-4 w-4" aria-hidden /> Change connection
+                  </Button>
+                </Can>
+              </div>
+            </div>
+          }
         >
           <Row label="How it connects">
-            {st.mode === 'listen' ? `Converter connects to this PC, port ${st.port ?? '–'}` : `This PC dials ${st.remote ?? '–'}`}
+            {st.mode === 'listen'
+              ? `Converter connects to this PC, port ${st.port ?? conn.listenPort}`
+              : `This PC connects to the converter at ${st.remote ?? '–'}`}
           </Row>
           {st.remoteAddress ? <Row label="Connected from">{st.remoteAddress}</Row> : null}
+          {st.format ? <Row label="Data format">{st.format === 'nmea' ? 'NMEA 0183' : 'Gill ASCII'}</Row> : null}
           <Row label="Last reading">{st.lastReadingAt ? `${formatRelative(st.lastReadingAt)} (${at(st.lastReadingAt)})` : 'none since the service started'}</Row>
           <Row label="Readings in the last minute">{st.readingsLastMinute} (about 60 when healthy)</Row>
+          {st.connected || st.bytesReceived > 0 ? (
+            <Row label="Data received">
+              {st.bytesReceived > 0
+                ? `${formatBytes(st.bytesReceived)} in ${st.linesReceived.toLocaleString()} ${st.linesReceived === 1 ? 'line' : 'lines'}`
+                : 'nothing yet'}
+            </Row>
+          ) : null}
+          {st.columnMismatches > 0 ? (
+            <Row label="Not understood: wrong number of columns">{st.columnMismatches.toLocaleString()}</Row>
+          ) : null}
           <Row label="Minutes stored since start">{st.minutesWritten.toLocaleString()}</Row>
           <Row label="Rejected: bad checksum">{st.checksumErrors.toLocaleString()}</Row>
           <Row label="Rejected: implausible rain">{st.rainAnomalies.toLocaleString()}</Row>
           {st.error ? <Row label="Problem">{st.error}</Row> : null}
+          {st.lastLine ? (
+            <div className="space-y-1 py-1 text-sm">
+              <dt className="text-muted-foreground">Last line received</dt>
+              <dd className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">{st.lastLine}</dd>
+            </div>
+          ) : null}
         </Section>
 
         <Section icon={Save} title="Backup" state={!s.backup ? bad('None yet', 'warn') : !s.backup.ok ? bad('Failed') : has('BACKUP_STALE') ? bad('Late', 'warn') : good('OK')}>
@@ -163,6 +222,8 @@ export function SystemView({ s }: { s: SystemStatus }) {
           <Row label="Database">{s.db.connected ? 'connected' : 'NOT connected'}</Row>
         </Section>
       </div>
+      {editConnection ? <SensorConnectionDialog current={conn} open onOpenChange={setEditConnection} /> : null}
+      {showLines ? <RecentLinesDialog open onOpenChange={setShowLines} /> : null}
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
         <Database className="h-3 w-3" aria-hidden /> Readings are time-stamped with the PC&apos;s clock — keep Windows time
         synchronisation on.

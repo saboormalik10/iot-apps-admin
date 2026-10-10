@@ -3,13 +3,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as net from 'net';
 import { Types } from 'mongoose';
 
-import { Device } from '../models/Device';
+import { AuditLog } from '../models/AuditLog';
+import { Device, type SensorConnectionSetting } from '../models/Device';
 import type { ParsedMetRow } from '../ingest/met-row';
 import { IngestService } from '../ingest/ingest.service';
 import { isStatusOk, withinGrossRange } from '../ingest/qc';
 import { DomainEvent, type MetLiveEvent } from '../realtime/realtime.events';
 import { LineFramer } from './framing';
-import { GmxParser } from './gmx';
+import { GmxParser, type GmxRejectReason } from './gmx';
+import { isNmeaSentence, NmeaAssembler, type NmeaReading } from './nmea';
 import { MinuteBuffer } from './minute-buffer';
 import { RainAccumulator } from './rain';
 import { readStreamConfig, type StreamConfig } from './stream.config';
@@ -25,6 +27,9 @@ import { lastStoredRainTotal } from '../query/rain-totals';
  *
  * WE LISTEN; THE CONVERTER CONNECTS IN (client, 10 Sep) — or, with
  * `STREAM_MODE=connect`, we dial the converter and redial when the link drops.
+ * Which of the two, and the converter's address, can also be changed in the
+ * portal (`setConnection`): saved on the station, it wins over the settings file
+ * and takes effect at once, with no restart.
  * One connection at a time — there is one sensor. A new connection REPLACES the
  * old one rather than being refused: when a converter loses power it cannot
  * close its socket, so the old one lingers half-open, and refusing the reconnect
@@ -56,11 +61,26 @@ export interface StreamStatus {
   remoteAddress: string | null;
   connectedAt: string | null;
   lastLineAt: string | null;
+  /** When any byte last arrived — data that never forms a line still counts. */
+  lastByteAt: string | null;
+  /**
+   * The last line received, whatever it was, made printable (`<STX>`, `<ETX>`,
+   * `\xNN`) and cut to 160 characters. "Connected but no readings" (client, 9 Oct
+   * 2026) could not be told apart from "readings in a layout we do not expect"
+   * without seeing what actually arrives.
+   */
+  lastLine: string | null;
+  /** The last line refused, why, and when. */
+  lastRejected: { reason: GmxRejectReason; line: string; at: string } | null;
+  /** What the sensor speaks, from the last line understood: Gill ASCII or NMEA 0183. */
+  format: 'gill-ascii' | 'nmea' | null;
   lastReadingAt: string | null;
   /** Readings received in the last 60 seconds — about 60 when healthy. */
   readingsLastMinute: number;
   counts: {
     connections: number;
+    /** Bytes received over every connection. */
+    bytes: number;
     lines: number;
     readings: number;
     headers: number;
@@ -81,6 +101,31 @@ export interface StreamStatus {
   checksum: StreamConfig['checksum'];
   configWarnings: string[];
   stationId: string | null;
+  /** The connection settings in use, and where they came from. */
+  connection: StreamConnection;
+}
+
+export interface StreamConnection {
+  mode: StreamConfig['mode'];
+  remoteHost: string | null;
+  remotePort: number;
+  /** The port this PC listens on in `listen` mode. Set by the installer, which opens it in the firewall. */
+  listenPort: number;
+  /** `file`: the settings file the installer wrote. `portal`: changed in the portal since. */
+  source: 'file' | 'portal';
+  changedAt: string | null;
+  changedBy: string | null;
+}
+
+export interface ConnectionInput {
+  mode: StreamConfig['mode'];
+  remoteHost?: string | null;
+  remotePort?: number | null;
+}
+
+/** The converter's address as typed: an IP address, or a host name the PC can look up. */
+export function isConverterHost(host: string): boolean {
+  return net.isIP(host) !== 0 || /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(host);
 }
 
 interface Station {
@@ -101,6 +146,8 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
   private socket: net.Socket | null = null;
   private framer = new LineFramer(this.config.maxLineBytes);
   private readonly parser = new GmxParser(this.config.fields, this.config.checksum);
+  private readonly nmea = new NmeaAssembler();
+  private readonly recentLines: { at: string; line: string; outcome: string }[] = [];
   private readonly buffer = new MinuteBuffer<ParsedMetRow>(this.config.flushGraceMs);
   private rain = new RainAccumulator(this.config.rainMode);
   /** What the latest reading's direction was measured from (compass or mast). */
@@ -112,8 +159,17 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
   private redialTimer: NodeJS.Timeout | null = null;
   private redialDelayMs = this.config.redialMs;
   private stopping = false;
+  /**
+   * Bumped whenever the link is torn down to be set up differently. A listener or
+   * a dial attempt from before only acts while its generation is current, so a
+   * late "connection refused" from the old converter cannot schedule a redial to
+   * it, or report its error over the new one's.
+   */
+  private generation = 0;
+  /** Set when the connection was changed in the portal; null = the settings file. */
+  private changed: { at: string; by: string } | null = null;
 
-  private readonly status: StreamStatus = {
+  private readonly status: Omit<StreamStatus, 'connection'> = {
     enabled: this.config.enabled,
     mode: this.config.mode,
     remote: this.config.mode === 'connect' ? `${this.config.remoteHost}:${this.config.remotePort}` : null,
@@ -125,10 +181,15 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     remoteAddress: null,
     connectedAt: null,
     lastLineAt: null,
+    lastByteAt: null,
+    lastLine: null,
+    lastRejected: null,
+    format: null,
     lastReadingAt: null,
     readingsLastMinute: 0,
     counts: {
       connections: 0,
+      bytes: 0,
       lines: 0,
       readings: 0,
       headers: 0,
@@ -166,9 +227,9 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
       this.logger.log('sensor stream disabled (STREAM_ENABLED)');
       return;
     }
-    await this.loadStation();
-    if (this.config.mode === 'connect') this.dial();
-    else await this.listen();
+    const station = await this.loadStation();
+    if (station) await this.useSavedConnection(station.deviceId);
+    await this.startLink();
     this.timer = setInterval(() => this.flush(this.buffer.due(this.now())), 1_000);
     this.timer.unref();
   }
@@ -177,13 +238,7 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    if (this.redialTimer) clearTimeout(this.redialTimer);
-    this.redialTimer = null;
-    this.socket?.destroy();
-    this.socket = null;
-    if (this.server) await new Promise<void>((resolve) => this.server!.close(() => resolve()));
-    this.server = null;
-    this.status.listening = false;
+    await this.stopLink();
     // A part-minute is data: write it rather than lose it. Its sample count
     // records that it is short.
     await this.flushNow();
@@ -203,7 +258,106 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
         rainAnomalies: this.rain.anomalies,
       },
       fields: this.parser.fields,
+      connection: this.connection(),
     };
+  }
+
+  connection(): StreamConnection {
+    return {
+      mode: this.config.mode,
+      remoteHost: this.config.remoteHost,
+      remotePort: this.config.remotePort,
+      listenPort: this.status.port ?? this.config.port,
+      source: this.changed ? 'portal' : 'file',
+      changedAt: this.changed?.at ?? null,
+      changedBy: this.changed?.by ?? null,
+    };
+  }
+
+  /**
+   * Change how this PC reaches the converter, from the portal: saved on the
+   * station (so it survives a restart and wins over the settings file), audited,
+   * and applied at once — the old link is closed and the new one opened. A
+   * converter that is off or unreachable is not an error here: the status then
+   * says why, and the reader keeps trying, exactly as at startup.
+   */
+  async setConnection(input: ConnectionInput, actor: { userId: string; email: string; ipAddress?: string | null }): Promise<StreamStatus> {
+    const mode = input.mode;
+    const remoteHost = input.remoteHost?.trim() || null;
+    const remotePort = input.remotePort ?? this.config.remotePort;
+    if (mode === 'connect' && !remoteHost) throw badRequest("Enter the converter's address.");
+    if (remoteHost && !isConverterHost(remoteHost)) throw badRequest(`"${remoteHost}" is not an IP address or a host name.`);
+    if (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65_535) throw badRequest('The port must be a whole number from 1 to 65535.');
+
+    const station = this.station ?? (await this.loadStation());
+    if (!station) throw Object.assign(new Error('There is no weather station yet. Run the installer first.'), { statusCode: 409, code: 'CONFLICT' });
+
+    const before = { mode: this.config.mode, remoteHost: this.config.remoteHost, remotePort: this.config.remotePort };
+    // An address only matters when this PC dials; in listen mode it is kept, so
+    // switching back does not mean typing it again.
+    const after = { mode, remoteHost: remoteHost ?? this.config.remoteHost, remotePort };
+    const saved: SensorConnectionSetting = { ...after, changedAt: new Date(this.now()), changedBy: actor.email };
+    await Device.updateOne({ _id: new Types.ObjectId(station.deviceId) }, { $set: { sensorConnection: saved } });
+    AuditLog.create({
+      organizationId: new Types.ObjectId(station.organizationId),
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      ipAddress: actor.ipAddress ?? null,
+      action: 'update',
+      resourceType: 'device',
+      resourceId: station.deviceId,
+      resourceName: 'Sensor connection',
+      changes: { before, after },
+    }).catch(() => void 0);
+
+    this.logger.log(
+      `sensor connection changed by ${actor.email}: ${mode === 'connect' ? `dial ${after.remoteHost}:${remotePort}` : `listen on port ${this.config.port}`}`,
+    );
+    await this.stopLink();
+    Object.assign(this.config, after);
+    this.changed = { at: saved.changedAt.toISOString(), by: saved.changedBy };
+    if (this.config.enabled) await this.startLink();
+    return this.getStatus();
+  }
+
+  /** At startup: the connection last saved in the portal, if any, over the settings file's. */
+  private async useSavedConnection(deviceId: string): Promise<void> {
+    const device = await Device.findById(deviceId).select('sensorConnection').lean();
+    const saved = device?.sensorConnection;
+    if (!saved) return;
+    if (saved.mode === 'connect' && !saved.remoteHost) return;
+    Object.assign(this.config, { mode: saved.mode, remoteHost: saved.remoteHost, remotePort: saved.remotePort });
+    this.changed = { at: new Date(saved.changedAt).toISOString(), by: saved.changedBy };
+    this.logger.log(
+      `sensor connection from the portal (changed by ${saved.changedBy}) overrides the settings file: ` +
+        (saved.mode === 'connect' ? `dial ${saved.remoteHost}:${saved.remotePort}` : 'listen'),
+    );
+  }
+
+  private async startLink(): Promise<void> {
+    this.status.mode = this.config.mode;
+    this.status.remote = this.config.mode === 'connect' ? `${this.config.remoteHost}:${this.config.remotePort}` : null;
+    this.status.error = null;
+    this.redialDelayMs = this.config.redialMs;
+    if (this.config.mode === 'connect') this.dial();
+    else await this.listen();
+  }
+
+  /** Close the listener, the connection and any pending redial. The minute buffer is kept. */
+  private async stopLink(): Promise<void> {
+    this.generation += 1;
+    if (this.redialTimer) clearTimeout(this.redialTimer);
+    this.redialTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    socket?.destroy();
+    this.status.connected = false;
+    this.status.remoteAddress = null;
+    const server = this.server;
+    this.server = null;
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    this.status.listening = false;
+    this.status.port = null;
   }
 
   /** The bound port — for tests, which listen on port 0. */
@@ -220,9 +374,14 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
   // ── Listening ─────────────────────────────────────────────────────────────
 
   private listen(): Promise<void> {
+    const gen = this.generation;
     return new Promise((resolve) => {
-      const server = net.createServer((socket) => this.accept(socket));
+      const server = net.createServer((socket) => {
+        if (gen !== this.generation) socket.destroy();
+        else this.accept(socket);
+      });
       server.on('error', (err: NodeJS.ErrnoException) => {
+        if (gen !== this.generation) return resolve();
         // EADDRINUSE on a PC means another program — or a second copy of this
         // service — has the port. Said plainly, because it is the likeliest
         // install problem and the log is where a technician will look.
@@ -236,6 +395,7 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
         resolve();
       });
       server.listen(this.config.port, this.config.host, () => {
+        if (gen !== this.generation) return resolve();
         const addr = server.address();
         this.status.port = typeof addr === 'object' && addr ? addr.port : this.config.port;
         this.status.listening = true;
@@ -257,21 +417,28 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
    */
   private dial(): void {
     if (this.stopping) return;
+    const gen = this.generation;
     const { remoteHost, remotePort } = this.config;
     const socket = net.connect({ host: remoteHost!, port: remotePort });
     let opened = false;
     socket.once('connect', () => {
+      if (gen !== this.generation) {
+        socket.destroy();
+        return;
+      }
       opened = true;
       this.redialDelayMs = this.config.redialMs;
       this.status.error = null;
       this.accept(socket);
     });
     socket.once('error', (err) => {
+      if (gen !== this.generation) return;
       if (!opened) {
         this.status.error = `cannot reach the converter at ${remoteHost}:${remotePort} — ${err.message}`;
       }
     });
     socket.once('close', () => {
+      if (gen !== this.generation) return;
       if (!opened) this.logger.warn(this.status.error ?? `cannot reach ${remoteHost}:${remotePort}`);
       this.scheduleRedial();
     });
@@ -327,42 +494,82 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
 
   private onData(chunk: Buffer): void {
     const at = this.now();
+    this.status.counts.bytes += chunk.length;
+    this.status.lastByteAt = new Date(at).toISOString();
     for (const line of this.framer.push(chunk)) {
       this.status.counts.lines += 1;
       this.status.lastLineAt = new Date(at).toISOString();
+      this.status.lastLine = printable(line);
+      // NMEA sentences and Gill ASCII lines are told apart line by line, so a
+      // unit switched between the two needs no setting changed here.
+      if (isNmeaSentence(line)) {
+        this.status.format = 'nmea';
+        const result = this.nmea.accept(line, at);
+        if (result.kind === 'rejected') this.reject(line, result.reason, at);
+        else this.remember(line, at, result.kind === 'data' ? 'reading' : 'part of a reading');
+        if (result.kind === 'data') this.onReading(result.reading, result.atMs);
+        continue;
+      }
       const result = this.parser.accept(line);
       switch (result.kind) {
         case 'header':
+          this.status.format = 'gill-ascii';
           this.status.counts.headers += 1;
+          this.remember(line, at, 'header');
           this.logger.log(`sensor header: ${result.fields.join(',')}`);
           break;
         case 'units':
+          this.remember(line, at, 'units');
           this.logger.log(`sensor units: ${result.units.join(',')}`);
           break;
         case 'rejected':
-          if (result.reason === 'CHECKSUM') this.status.counts.checksumErrors += 1;
-          else if (result.reason === 'UNFRAMED') this.status.counts.unframed += 1;
-          else this.status.counts.columnMismatches += 1;
+          this.reject(line, result.reason, at);
           break;
-        case 'data': {
-          const raw = result.reading.values.precipt;
-          // No rain column at all → no rain figure, rather than a flat zero that
-          // would read as "it did not rain".
-          const before = this.rain.anomalies;
-          const rainTotal = raw === undefined ? null : this.rain.update(raw, at);
-          if (this.rain.anomalies !== before) this.logger.warn(`rain: ${this.rain.lastAnomaly}`);
-          const row = toMetRow(result.reading, at, rainTotal, this.config.preferCorrectedDirection);
-          this.dirReference = directionReference(result.reading, this.config.preferCorrectedDirection) ?? this.dirReference;
-          this.status.counts.readings += 1;
-          this.status.lastReadingAt = new Date(at).toISOString();
-          this.recentReadings.push(at);
-          if (this.recentReadings.length > 600) this.recentReadings.splice(0, this.recentReadings.length - 600);
-          this.emitLive(row);
-          this.flush(this.buffer.add(row));
+        case 'data':
+          this.status.format = 'gill-ascii';
+          this.remember(line, at, 'reading');
+          this.onReading(result.reading, at);
           break;
-        }
       }
     }
+  }
+
+  private reject(line: string, reason: GmxRejectReason, at: number): void {
+    this.status.lastRejected = { reason, line: printable(line), at: new Date(at).toISOString() };
+    if (reason === 'CHECKSUM') this.status.counts.checksumErrors += 1;
+    else if (reason === 'UNFRAMED') this.status.counts.unframed += 1;
+    else this.status.counts.columnMismatches += 1;
+    this.remember(line, at, REJECTED[reason]);
+  }
+
+  /** The last lines received and what became of each — what a technician sends us. */
+  private remember(line: string, at: number, outcome: string): void {
+    this.recentLines.push({ at: new Date(at).toISOString(), line: printable(line, 300), outcome });
+    if (this.recentLines.length > RECENT_LINES) this.recentLines.splice(0, this.recentLines.length - RECENT_LINES);
+  }
+
+  getRecentLines(): ReadonlyArray<{ at: string; line: string; outcome: string }> {
+    return [...this.recentLines];
+  }
+
+  /** One complete reading, from either format, into the live dial and the minute. */
+  private onReading(reading: NmeaReading, at: number): void {
+    const raw = reading.values.precipt;
+    // No rain column at all → no rain figure, rather than a flat zero that would
+    // read as "it did not rain". NMEA sends intensity only: its rain arrives as
+    // the amount over the cycle.
+    const before = this.rain.anomalies;
+    const rainTotal =
+      raw !== undefined ? this.rain.update(raw, at) : reading.rainIntervalMm !== undefined ? this.rain.addInterval(reading.rainIntervalMm, at) : null;
+    if (this.rain.anomalies !== before) this.logger.warn(`rain: ${this.rain.lastAnomaly}`);
+    const row = toMetRow(reading, at, rainTotal, this.config.preferCorrectedDirection);
+    this.dirReference = directionReference(reading, this.config.preferCorrectedDirection) ?? this.dirReference;
+    this.status.counts.readings += 1;
+    this.status.lastReadingAt = new Date(at).toISOString();
+    this.recentReadings.push(at);
+    if (this.recentReadings.length > 600) this.recentReadings.splice(0, this.recentReadings.length - 600);
+    this.emitLive(row);
+    this.flush(this.buffer.add(row));
   }
 
   /**
@@ -471,4 +678,28 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     return this.station;
   }
+}
+
+const RECENT_LINES = 100;
+
+const REJECTED: Record<GmxRejectReason, string> = {
+  CHECKSUM: 'refused: checksum does not match',
+  UNFRAMED: 'refused: no <STX>…<ETX> framing',
+  COLUMN_COUNT: 'refused: wrong number of columns',
+};
+
+function badRequest(message: string): Error {
+  return Object.assign(new Error(message), { statusCode: 400, code: 'VALIDATION_ERROR' });
+}
+
+/** A received line as text a person can read: control bytes named, long lines cut. */
+export function printable(line: string, max = 160): string {
+  const named: Record<string, string> = { '\x02': '<STX>', '\x03': '<ETX>', '\t': '<TAB>' };
+  let out = '';
+  for (const c of line) {
+    const code = c.charCodeAt(0);
+    out += named[c] ?? (code < 0x20 || code === 0x7f || code > 0x7e ? `\\x${code.toString(16).padStart(2, '0').toUpperCase()}` : c);
+    if (out.length >= max) return `${out.slice(0, max)}…`;
+  }
+  return out;
 }

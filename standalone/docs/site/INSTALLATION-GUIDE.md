@@ -1,6 +1,6 @@
 # Installing the Weather Station — step by step
 
-**Observator Weather Station 1.0.0** — installing it on the station PC with the setup program.
+**Observator Weather Station 1.0.2** — installing it on the station PC with the setup program.
 
 This is the picture-by-picture walk through the setup program. It takes about 15
 minutes. You install it once, on the one PC that will be the station's server; every
@@ -35,7 +35,7 @@ other computer just opens the portal in a web browser.
 | **4 GB of memory and 20 GB free disk** | Readings are never deleted, so the data grows slowly — about 0.5 GB a year |
 | **A fixed IP address** for the PC | The sensor's converter, and everyone's browser, find the PC by it |
 | **The PC set never to sleep**, and Windows time sync on | Every reading is time-stamped by this PC's clock |
-| `observator-weather-1.0.0-setup.exe` | The setup program. No internet is needed, now or later |
+| `observator-weather-1.0.2-setup.exe` | The setup program. No internet is needed, now or later |
 
 **Find the PC's IP address** — you will need it for the converter and for the
 portal's address. Press the Windows key, type `cmd`, press Enter, then type
@@ -46,7 +46,7 @@ portal's address. Press the Windows key, type `cmd`, press Enter, then type
 
 ## Step 1: Start the setup program
 
-Double-click `observator-weather-1.0.0-setup.exe`. Windows asks whether to let it
+Double-click `observator-weather-1.0.2-setup.exe`. Windows asks whether to let it
 make changes — choose **Yes**. The wizard opens.
 
 ![The setup wizard opens](img/install-01-welcome.png)
@@ -197,13 +197,20 @@ page:
 | Mode | **TCP Client** (sometimes called *active* or *connect* mode) |
 | Destination IP | **This PC's IP address** — for example `192.168.1.20` |
 | Destination port | **4000** |
-| Serial | Must match the GMX551: Gill's default is **19200 baud, 8 data bits, no parity, 1 stop bit** |
+| Serial | Must match the GMX551: Gill's default is **19200 baud, 8 data bits, no parity, 1 stop bit** (a sensor set to NMEA usually uses **4800** or **9600** baud) |
+
+The sensor may send Gill's ASCII format (its default) or **NMEA 0183** — the software
+reads both, with nothing to set.
 
 Within a minute **System** shows the sensor stream as *Connected*, with about 60
 readings a minute, and the wind dial on the **Dashboard** starts moving every second.
 
-> If you chose **This PC connects to the converter** in step 5, set the converter to
-> **TCP Server** on port 4000 instead — the PC calls it.
+**If the converter can only be a TCP Server**, the PC calls it instead. Set the
+converter to **TCP Server** on port 4000, then in the portal open **System → Sensor
+stream → Change connection**, choose **This PC connects to the converter**, type the
+converter's IP address and port, and select **Save and connect**. The window shows at
+once whether the converter answered. You can switch back the same way; nothing needs
+reinstalling.
 
 ---
 
@@ -239,5 +246,5 @@ send that file if you ask us for help.
 
 ---
 
-*Observator Weather Station 1.0.0. Day-to-day use of the portal is in the User Guide;
+*Observator Weather Station 1.0.2. Day-to-day use of the portal is in the User Guide;
 looking after the PC (status, backups, upgrades, passwords) is in OPERATIONS.md.*

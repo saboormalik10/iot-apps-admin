@@ -863,6 +863,33 @@ export interface SystemWarning {
 }
 
 /** GET /system/status. */
+/** How this PC reaches the sensor's converter (System -> Sensor stream -> Change connection). */
+export interface StreamConnection {
+  /** `listen`: the converter connects to this PC. `connect`: this PC dials the converter. */
+  mode: 'listen' | 'connect';
+  remoteHost: string | null;
+  remotePort: number;
+  /** The port this PC listens on; set at install, where the firewall is opened for it. */
+  listenPort: number;
+  /** `file`: as installed. `portal`: changed in the portal since. */
+  source: 'file' | 'portal';
+  changedAt: string | null;
+  changedBy: string | null;
+}
+
+/** One of the last lines the sensor sent, and what became of it. */
+export interface RecentStreamLine {
+  at: string;
+  line: string;
+  outcome: string;
+}
+
+export interface UpdateStreamConnectionInput {
+  mode: 'listen' | 'connect';
+  remoteHost?: string | null;
+  remotePort?: number;
+}
+
 export interface SystemStatus {
   version: string;
   now: string;
@@ -886,6 +913,21 @@ export interface SystemStatus {
     checksumErrors: number;
     rainAnomalies: number;
     error: string | null;
+    connection: StreamConnection;
+    /** What actually arrives, to tell "nothing comes" from "something comes that is not understood". */
+    bytesReceived: number;
+    linesReceived: number;
+    lastByteAt: string | null;
+    columnMismatches: number;
+    unframed: number;
+    overflows: number;
+    headers: number;
+    fields: string[];
+    /** The last line received, printable (<STX>, <ETX>, \xNN), at most 160 characters. */
+    lastLine: string | null;
+    lastRejected: { reason: 'CHECKSUM' | 'UNFRAMED' | 'COLUMN_COUNT'; line: string; at: string } | null;
+    /** What the sensor speaks, from the last line understood. */
+    format: 'gill-ascii' | 'nmea' | null;
   };
   disk: { path: string; freeBytes: number; totalBytes: number } | null;
   backup: { at: string; ok: boolean; path: string; bytes: number; error: string } | null;

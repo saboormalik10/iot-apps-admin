@@ -575,6 +575,18 @@ function Write-BackupResult($Layout, [bool]$Ok, [string]$Path, [long]$Bytes, [st
     Write-TextFile (Join-Path $Layout.LogDir 'backup-last.json') ($o | ConvertTo-Json -Compress)
 }
 
+# Run a program and keep everything it printed, stdout and stderr together; the
+# EXIT CODE says whether it worked. Windows PowerShell 5.1 turns each stderr line
+# of a native program into an error record, and under ErrorActionPreference=Stop
+# the first one throws - mongodump and mongorestore print their normal progress on
+# stderr, so every backup "failed" at its first line ("writing
+# observator_standalone.roles to ...") on a client PC (9 Oct 2026).
+function Invoke-Native([string]$Exe, [string[]]$Arguments) {
+    $ErrorActionPreference = 'Continue'
+    $out = @(& $Exe @Arguments 2>&1 | ForEach-Object { "$_" })
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $out }
+}
+
 function Invoke-Backup($Layout, [string]$Dest = '', [int]$Keep = 0, [string]$Label = 'daily') {
     $settings = Get-BackupSettings $Layout
     if (-not $Dest) { $Dest = $settings.Dir }
@@ -584,8 +596,8 @@ function Invoke-Backup($Layout, [string]$Dest = '', [int]$Keep = 0, [string]$Lab
     try {
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
         $archive = Join-Path $folder 'database.archive.gz'
-        $out = & $Layout.Mongodump '--uri=mongodb://127.0.0.1:27017/?directConnection=true' '--db=observator_standalone' '--gzip' "--archive=$archive" 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "mongodump failed ($LASTEXITCODE): $($out | Select-Object -Last 3)" }
+        $r = Invoke-Native $Layout.Mongodump @('--uri=mongodb://127.0.0.1:27017/?directConnection=true', '--db=observator_standalone', '--gzip', "--archive=$archive")
+        if ($r.ExitCode -ne 0) { throw "mongodump failed ($($r.ExitCode)): $(($r.Output | Select-Object -Last 3) -join ' / ')" }
         if (-not (Test-Path $archive) -or (Get-Item $archive).Length -lt 100) { throw 'mongodump wrote an empty archive.' }
         if (Test-Path $Layout.UploadsDir) { Copy-Item -Path $Layout.UploadsDir -Destination (Join-Path $folder 'uploads') -Recurse -Force }
         Copy-Item -Path $Layout.ConfigFile -Destination (Join-Path $folder 'observator.env') -Force

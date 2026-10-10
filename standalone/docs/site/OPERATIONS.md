@@ -54,7 +54,8 @@ file holds the keys that protect sign-in.
    starts.
 
 Common ones: `STREAM_MODE` / `STREAM_TCP_PORT` / `STREAM_REMOTE_HOST` (the sensor
-connection), `STREAM_RAIN_MODE` (how the rain gauge reports), `BACKUP_DIR` /
+connection — usually changed in the portal instead, under **System → Sensor stream →
+Change connection**, which then takes precedence over these three), `STREAM_RAIN_MODE` (how the rain gauge reports), `BACKUP_DIR` /
 `BACKUP_KEEP` (backups), `STANDALONE_SELF_SIGNUP` (let people ask for an account),
 the `EMAIL_*` block (only if the PC can reach a mail server). Changing the portal
 port (`WEB_PORT`) also needs the firewall rule changed — easiest by running
