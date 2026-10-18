@@ -144,7 +144,9 @@ describe('query screen and rain (e2e)', () => {
     const res = await get('/v1/query/columns', { deviceId: String(deviceId) });
     expect(res.status).toBe(200);
     const keys = res.body.data.columns.map((c: { key: string }) => c.key);
-    expect(keys).toEqual(expect.arrayContaining(['windSpeed', 'windGust', 'windSpeed10m', 'temperature', 'rain', 'coverage']));
+    expect(keys).toEqual(expect.arrayContaining(['windSpeed', 'windGust', 'windSpeed10m', 'temperature', 'rain']));
+    // "Readings in the minute" is not offered for now (client, 10 Oct 2026).
+    expect(keys).not.toContain('coverage');
     expect(res.body.data).toMatchObject({ timezone: TZ, rainDayStartHour: 9 });
   });
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { SHOW_EXTRAS } from '@/lib/extras';
+import { useEffect, useRef, useState } from 'react';
 import { Download, Play } from 'lucide-react';
 import type { HistoryRow, LocationId, ParameterId, QueryInterval } from '@/lib/api/types';
 import { PARAMETER_LABELS, runHistoryQuery } from '@/lib/api/endpoints';
@@ -60,7 +61,15 @@ function exportRows(rows: HistoryRow[]) {
     '# SYNTHETIC DEMO DATA — Sydney Metro M1 design prototype — not measurements',
     ['Timestamp', 'Location', 'Parameter', 'Value', 'Unit', 'Status', 'Logger'].join(','),
     ...rows.map((r) =>
-      [new Date(r.t).toISOString(), r.locationName, r.parameterLabel, r.value ?? '', r.unit, r.status, r.sensorId]
+      [
+        new Date(r.t).toISOString(),
+        r.locationName,
+        r.parameterLabel,
+        r.value ?? '',
+        r.unit,
+        r.status,
+        r.sensorId,
+      ]
         .map((c) => `"${String(c).replace(/"/g, '""')}"`)
         .join(','),
     ),
@@ -84,22 +93,46 @@ export function HistoryPage() {
   const [useDates, setUseDates] = useState(false);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 't', dir: 'desc' });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({
+    key: 't',
+    dir: 'desc',
+  });
   const [rows, setRows] = useState<HistoryRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [running, setRunning] = useState(false);
   /* What the last run asked for — the trend charts draw that, not the form as it is being edited. */
-  const [ran, setRan] = useState<{ locations: LocationId[]; parameters: ParameterId[]; from: number; to: number } | null>(null);
+  const [ran, setRan] = useState<{
+    locations: LocationId[];
+    parameters: ParameterId[];
+    from: number;
+    to: number;
+  } | null>(null);
+
+  // Figure 10 opens with its example query already run (Marrickville and Belmore
+  // triangle, rainfall and water level, 10-minute): so does this screen.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (SHOW_EXTRAS || !now || autoRan.current) return;
+    autoRan.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now]);
 
   if (!now) return <LoadingState label="Loading…" />;
 
+  // Figure 10 asks for a From date and a To date, defaulting to the last seven days.
+  const sydneyDay = (t: number) =>
+    new Date(t).toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+  const datesShown = useDates || !SHOW_EXTRAS;
+  const fromValue = fromDate || sydneyDay(now - 6 * 86_400_000);
+  const toValue = toDate || sydneyDay(now);
   const dateRange = () => {
-    if (!useDates || !fromDate || !toDate) return { from: now - days * 86_400_000, to: now };
-    const from = new Date(`${fromDate}T00:00:00`).getTime();
-    const to = new Date(`${toDate}T23:59:59`).getTime();
-    return { from: Math.min(from, to), to: Math.max(from, to) };
+    if (!datesShown) return { from: now - days * 86_400_000, to: now };
+    const from = new Date(`${fromValue}T00:00:00`).getTime();
+    const to = new Date(`${toValue}T23:59:59`).getTime();
+    return { from: Math.min(from, to), to: Math.min(Math.max(from, to), now) };
   };
 
   const run = async (toPage = 1) => {
@@ -150,14 +183,15 @@ export function HistoryPage() {
       <div>
         <h1 className="text-xl font-semibold">Historical data — query engine</h1>
         <p className="text-sm text-muted-foreground">
-          All readings are retained. Choose locations, parameters and a period; view them here or export the exact
-          set as CSV.
+          All readings are retained. Choose locations, parameters and a period; view them here or
+          export the exact set as CSV.
         </p>
       </div>
 
-      <RainHeatmaps minuteKey={Math.floor(now / 60_000)} />
+      {/* Not in Figure 10: hidden (lib/extras.ts). */}
+      {SHOW_EXTRAS ? <RainHeatmaps minuteKey={Math.floor(now / 60_000)} /> : null}
 
-      <h2 className="pt-2 text-base font-semibold">Query</h2>
+      <h2 className={cn('pt-2 text-base font-semibold', !SHOW_EXTRAS && 'sr-only')}>Query</h2>
       <section className="space-y-3 rounded-lg border bg-card p-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <fieldset>
@@ -198,7 +232,7 @@ export function HistoryPage() {
         </div>
 
         <div className="flex flex-wrap items-end gap-3 border-t pt-3">
-          <label className="text-sm">
+          <label className={cn('text-sm', !SHOW_EXTRAS && 'hidden')}>
             <span className="mb-1 block text-muted-foreground">Period</span>
             <select
               value={useDates ? 'custom' : String(days)}
@@ -223,22 +257,22 @@ export function HistoryPage() {
               <option value="custom">Between two dates…</option>
             </select>
           </label>
-          {useDates ? (
+          {datesShown ? (
             <>
               <label className="text-sm">
-                <span className="mb-1 block text-muted-foreground">From</span>
+                <span className="mb-1 block text-muted-foreground">From date</span>
                 <input
                   type="date"
-                  value={fromDate}
+                  value={fromValue}
                   onChange={(e) => setFromDate(e.target.value)}
                   className="h-9 rounded-md border bg-background px-2 text-sm"
                 />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block text-muted-foreground">To</span>
+                <span className="mb-1 block text-muted-foreground">To date</span>
                 <input
                   type="date"
-                  value={toDate}
+                  value={toValue}
                   onChange={(e) => setToDate(e.target.value)}
                   className="h-9 rounded-md border bg-background px-2 text-sm"
                 />
@@ -259,19 +293,24 @@ export function HistoryPage() {
               ))}
             </select>
           </label>
-          <Button onClick={() => run(1)} disabled={running || !locations.length || !parameters.length}>
+          <Button
+            onClick={() => run(1)}
+            disabled={running || !locations.length || !parameters.length}
+          >
             <Play className="h-4 w-4" /> {running ? 'Running…' : 'Run query'}
           </Button>
           <Button variant="outline" disabled={!rows?.length} onClick={() => exportRows(sorted)}>
             <Download className="h-4 w-4" /> Export CSV
           </Button>
           {!locations.length || !parameters.length ? (
-            <p className="text-xs text-muted-foreground">Choose at least one location and one parameter.</p>
+            <p className="text-xs text-muted-foreground">
+              Choose at least one location and one parameter.
+            </p>
           ) : null}
         </div>
       </section>
 
-      {ran ? (
+      {SHOW_EXTRAS && ran ? (
         <section className="space-y-2">
           <h2 className="text-base font-semibold">Trend of the queried set</h2>
           <QueryTrends {...ran} />
@@ -279,7 +318,10 @@ export function HistoryPage() {
       ) : null}
 
       {rows === null ? (
-        <EmptyState title="No query has been run yet" body="Choose what you want and select Run query." />
+        <EmptyState
+          title="No query has been run yet"
+          body="Choose what you want and select Run query."
+        />
       ) : (
         <section className="rounded-lg border bg-card">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
@@ -311,7 +353,10 @@ export function HistoryPage() {
               <TableSkeleton rows={8} cols={7} />
             </div>
           ) : rows.length === 0 ? (
-            <EmptyState title="No rows in that period" body="Widen the period, or pick another parameter." />
+            <EmptyState
+              title="No rows in that period"
+              body="Widen the period, or pick another parameter."
+            />
           ) : (
             <div className="scroll-x-hint overflow-x-auto">
               <table className="w-full min-w-[820px] text-sm">
@@ -321,7 +366,13 @@ export function HistoryPage() {
                       <th
                         key={c.label}
                         aria-sort={
-                          c.key ? (sort.key === c.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined
+                          c.key
+                            ? sort.key === c.key
+                              ? sort.dir === 'asc'
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                            : undefined
                         }
                         className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium"
                       >
@@ -337,7 +388,10 @@ export function HistoryPage() {
                             className="inline-flex items-center gap-1 hover:underline"
                           >
                             {c.label}
-                            <span aria-hidden className={cn('text-[9px]', sort.key !== c.key && 'opacity-30')}>
+                            <span
+                              aria-hidden
+                              className={cn('text-[9px]', sort.key !== c.key && 'opacity-30')}
+                            >
                               {sort.key === c.key && sort.dir === 'asc' ? '▲' : '▼'}
                             </span>
                           </button>
@@ -350,18 +404,36 @@ export function HistoryPage() {
                 </thead>
                 <tbody>
                   {sorted.map((r, i) => (
-                    <tr key={`${r.t}-${r.sensorId}-${i}`} className="border-b last:border-0 hover:bg-muted/40">
-                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-muted-foreground">{fmtDateTime(r.t)}</td>
+                    <tr
+                      key={`${r.t}-${r.sensorId}-${i}`}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                        {fmtDateTime(r.t)}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-1.5">{r.locationName}</td>
                       <td className="whitespace-nowrap px-3 py-1.5">{r.parameterLabel}</td>
-                      <td className={cn('tabular whitespace-nowrap px-3 py-1.5 font-medium', r.status === 'alert' && 'text-sev-alert-strong')}>
-                        {r.parameter === 'float_switch' ? (r.value === 1 ? 'WET' : 'DRY') : fmtValue(r.value, 1)}
+                      <td
+                        className={cn(
+                          'tabular whitespace-nowrap px-3 py-1.5 font-medium',
+                          r.status === 'alert' && 'text-sev-alert-strong',
+                        )}
+                      >
+                        {r.parameter === 'float_switch'
+                          ? r.value === 1
+                            ? 'WET'
+                            : 'DRY'
+                          : fmtValue(r.value, 1)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">{r.unit}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                        {r.unit}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-1.5">
                         <StatusPill tone={readingTone(r.status)} size="sm" />
                       </td>
-                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-muted-foreground">{r.sensorId}</td>
+                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                        {r.sensorId}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -372,13 +444,23 @@ export function HistoryPage() {
           <footer className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
             <span>The export delivers the exact filtered result set as a UTF-8 CSV file.</span>
             <div className="flex items-center gap-1">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => run(page - 1)}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => run(page - 1)}
+              >
                 Previous
               </Button>
               <span className="tabular px-2">
                 {page} / {pageCount}
               </span>
-              <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => run(page + 1)}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= pageCount}
+                onClick={() => run(page + 1)}
+              >
                 Next
               </Button>
             </div>
@@ -389,14 +471,24 @@ export function HistoryPage() {
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
       className={cn(
         'rounded-full border px-2.5 py-1 text-xs transition-colors',
-        active ? 'border-primary bg-primary/10 font-medium text-primary-strong' : 'bg-card text-muted-foreground hover:bg-muted',
+        active
+          ? 'border-primary bg-primary/10 font-medium text-primary-strong'
+          : 'bg-card text-muted-foreground hover:bg-muted',
       )}
     >
       {children}

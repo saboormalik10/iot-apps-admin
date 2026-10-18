@@ -20,8 +20,11 @@ const DEFAULTS: Record<FeatureFlag, boolean> = {
   devices: true,
   records: true,
   analytics: true,
-  alerts: true,
-  notifications: true,
+  // Switched off at the client's request (10 Oct 2026): "Disable - Alerts &
+  // Notifications". The pages, the menu entries and the bell go; the backend
+  // stops evaluating rules unless ALERTS_ENABLED=true.
+  alerts: false,
+  notifications: false,
   commandPalette: true,
 };
 

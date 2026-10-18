@@ -7,8 +7,8 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
-  title: 'Observator Weather Station',
-  description: 'Observator Instruments — site weather station portal',
+  title: 'Observator Automatic Weather Station',
+  description: 'Observator Instruments — site automatic weather station portal',
   robots: { index: false, follow: false },
 };
 

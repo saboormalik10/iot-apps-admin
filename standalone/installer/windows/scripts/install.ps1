@@ -40,7 +40,7 @@ param(
     # password from OBSERVATOR_ADMIN_PASSWORD instead of asking for it. Keeps it off
     # this script's command line, where other programs on the PC could read it.
     [switch]$AdminPasswordFromEnvironment,
-    [string]$SiteName = 'Weather Station',
+    [string]$SiteName = 'Automatic Weather Station',
     [string]$StationName = 'GMX551 Station',
     # An IANA zone such as Australia/Melbourne. Empty = this PC's own time zone.
     [string]$TimeZone = '',
@@ -295,7 +295,8 @@ if ($StreamMode -eq 'listen') {
     Write-Host " Sensor: this PC connects to the converter at ${ConverterHost}:$StreamPort."
 }
 Write-Host " Settings: $($L.ConfigFile)"
-Write-Host " Logs:     $($L.LogDir)     Backups: $($L.BackupDir) (daily at $BackupAt)"
+if ((Get-BackupSettings $L).Enabled) { Write-Host " Logs:     $($L.LogDir)     Backups: $($L.BackupDir) (daily at $BackupAt)" }
+else { Write-Host " Logs:     $($L.LogDir)     Nightly backup: off (backup-now.cmd backs up on demand)" }
 Write-Host " Status:   status.cmd       Forgotten password: reset-password.cmd"
 Write-Host ''
 Write-Host ' IMPORTANT: every reading is time-stamped with this PC''s clock. Keep Windows'

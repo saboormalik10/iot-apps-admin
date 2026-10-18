@@ -25,7 +25,7 @@ export interface BackupResult {
 }
 
 export interface SystemWarning {
-  code: 'SENSOR_QUIET' | 'SENSOR_NEVER' | 'STREAM_ERROR' | 'DISK_LOW' | 'BACKUP_FAILED' | 'BACKUP_STALE' | 'BACKUP_NONE' | 'CLOCK_BEHIND' | 'DB_DOWN';
+  code: 'STATION_STOPPED' | 'SENSOR_QUIET' | 'SENSOR_NEVER' | 'STREAM_ERROR' | 'DISK_LOW' | 'BACKUP_FAILED' | 'BACKUP_STALE' | 'BACKUP_NONE' | 'CLOCK_BEHIND' | 'DB_DOWN';
   message: string;
 }
 
@@ -135,17 +135,27 @@ export class SystemStatusService {
       if (stream.error) warnings.push({ code: 'STREAM_ERROR', message: `The sensor stream cannot run: ${stream.error}` });
       const last = stream.lastReadingAt ? Date.parse(stream.lastReadingAt) : null;
       const why = whyNoReadings(stream, nowMs);
-      if (last === null)
+      if (stream.stopped)
+        warnings.push({
+          code: 'STATION_STOPPED',
+          message: `The weather station was stopped from the portal by ${stream.stopped.by}. No readings are being recorded until it is started again.`,
+        });
+      else if (last === null)
         warnings.push({ code: 'SENSOR_NEVER', message: `No reading from the sensor since the service started.${why ? ` ${why}` : ''}` });
       else if (nowMs - last > SENSOR_QUIET_MS)
         warnings.push({ code: 'SENSOR_QUIET', message: `No reading from the sensor for ${Math.round((nowMs - last) / 60_000)} minutes.${why ? ` ${why}` : ''}` });
     }
     if (disk && disk.freeBytes < LOW_DISK_BYTES)
       warnings.push({ code: 'DISK_LOW', message: `Only ${(disk.freeBytes / 1024 ** 3).toFixed(1)} GB free on the data drive. Readings are never deleted, so the disk is the limit.` });
-    if (!backup) warnings.push({ code: 'BACKUP_NONE', message: 'No backup has been taken yet.' });
-    else if (!backup.ok) warnings.push({ code: 'BACKUP_FAILED', message: `The last backup failed: ${backup.error}` });
-    else if (nowMs - Date.parse(backup.at) > BACKUP_STALE_MS)
-      warnings.push({ code: 'BACKUP_STALE', message: `The last backup was ${Math.round((nowMs - Date.parse(backup.at)) / 3_600_000)} hours ago.` });
+    // The nightly backup is off on site PCs unless switched on (client, 10 Oct
+    // 2026); then there is nothing to warn about.
+    const backupEnabled = (process.env.BACKUP_ENABLED ?? '').trim().toLowerCase() === 'true';
+    if (backupEnabled) {
+      if (!backup) warnings.push({ code: 'BACKUP_NONE', message: 'No backup has been taken yet.' });
+      else if (!backup.ok) warnings.push({ code: 'BACKUP_FAILED', message: `The last backup failed: ${backup.error}` });
+      else if (nowMs - Date.parse(backup.at) > BACKUP_STALE_MS)
+        warnings.push({ code: 'BACKUP_STALE', message: `The last backup was ${Math.round((nowMs - Date.parse(backup.at)) / 3_600_000)} hours ago.` });
+    }
     // The PC clock is the only timestamp source. Data stamped AFTER "now" means
     // the clock has gone back since it was written.
     if (latestMinuteAt && Date.parse(latestMinuteAt) - nowMs > 2 * 60_000)
@@ -180,6 +190,7 @@ export class SystemStatusService {
         rainAnomalies: stream.counts.rainAnomalies,
         error: stream.error,
         connection: stream.connection,
+        stopped: stream.stopped,
         // What actually arrives — to tell "nothing comes" from "something comes
         // that is not understood" (client, 9 Oct 2026: connected, no data).
         bytesReceived: stream.counts.bytes,
@@ -196,6 +207,7 @@ export class SystemStatusService {
       },
       disk,
       backup,
+      backupEnabled,
       warnings,
     };
   }

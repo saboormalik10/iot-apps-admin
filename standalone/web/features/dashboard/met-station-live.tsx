@@ -33,21 +33,6 @@ const PRESSURE_BANDS: GaugeBand[] = [
 ];
 
 /**
- * Wind-speed threshold bands, in m/s.
- *
- * These ARE the 4 Parklife bands (25/50/75/100 km/h) — restated in m/s because
- * the gauge domain is now canonical, so the displayed unit can change without
- * moving a threshold. Same visual boundaries, different arithmetic.
- */
-const WIND_MAX_MS = 100 / 3.6;
-const WIND_BANDS: GaugeBand[] = [
-  { from: 0, to: 25 / 3.6, role: 'seq-1' },
-  { from: 25 / 3.6, to: 50 / 3.6, role: 'seq-3' },
-  { from: 50 / 3.6, to: 75 / 3.6, role: 'seq-4' },
-  { from: 75 / 3.6, to: WIND_MAX_MS, role: 'seq-5' },
-];
-
-/**
  * MET station "Live" view (plan §5.5 / gap-analysis item 5) — the curated
  * instrument grid mirroring the Parklife station overview: radial gauges (wind
  * speed, humidity, pressure), thermometers (temp, dew point), a battery gauge (DC
@@ -244,18 +229,9 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
               />
             </Widget>
           ) : null}
-          {show('wind_speed') ? (
+          {show('wind_dir') ? (
             <Widget>
-              <Gauge
-                value={data.windSpeedMs}
-                min={0}
-                max={WIND_MAX_MS}
-                label="Wind speed"
-                unit={units.unitFor('m/s')}
-                format={(v) => units.format(v, 'm/s')}
-                valueRole="seq-3"
-                bands={WIND_BANDS}
-              />
+              <CompassTile deg={data.windDirTrueDeg} label="Wind direction" />
             </Widget>
           ) : null}
           {show('humidity') ? (
@@ -304,11 +280,6 @@ export function MetStationLive({ deviceId, isAuto }: { deviceId?: string; isAuto
                 unit={units.unitFor('°C')}
                 format={(v) => units.format(v, '°C')}
               />
-            </Widget>
-          ) : null}
-          {show('wind_dir') ? (
-            <Widget>
-              <CompassTile deg={data.windDirTrueDeg} label="Wind direction" />
             </Widget>
           ) : null}
           {/* Only when the station has actually reported a voltage: mains-powered

@@ -17,6 +17,8 @@ export type UnitKind = 'windSpeed' | 'temperature' | 'pressure' | 'fixed';
 
 export interface QueryColumn {
   key: string;
+  /** Accepted in a query but not offered in the column list. */
+  hidden?: boolean;
   label: string;
   kind: UnitKind;
   /** The unit, when `kind` is `fixed`. */
@@ -42,7 +44,9 @@ export const QUERY_COLUMNS: readonly QueryColumn[] = Object.freeze([
   // How complete each row is — readings in a minute (60 at 1 Hz), or minutes in
   // an hour or day. Always available; it is the first thing to look at when a
   // number looks wrong.
-  { key: 'coverage', label: 'Readings', kind: 'fixed', unit: '', sensor: null },
+  // Not offered for now — "Readings in the minute" confused people (client,
+  // 10 Oct 2026). Still accepted, so a saved query that names it keeps working.
+  { key: 'coverage', label: 'Readings', kind: 'fixed', unit: '', sensor: null, hidden: true },
 ]);
 
 export const COLUMN_BY_KEY: ReadonlyMap<string, QueryColumn> = new Map(QUERY_COLUMNS.map((c) => [c.key, c]));

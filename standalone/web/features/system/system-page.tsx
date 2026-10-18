@@ -2,7 +2,18 @@
 
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Database, HardDrive, ListTree, Pencil, Radio, Save, Server, XCircle } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  HardDrive,
+  ListTree,
+  Pencil,
+  Radio,
+  Save,
+  Server,
+  XCircle,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/screen-states';
@@ -15,6 +26,7 @@ import type { SystemStatus } from '@/lib/api/types';
 import { Can } from '@/lib/rbac/guard';
 import { SensorConnectionDialog } from './sensor-connection-dialog';
 import { RecentLinesDialog } from './recent-lines-dialog';
+import { StationControlCard } from './station-control-card';
 
 /**
  * The site PC's health (Phase 7): is the sensor talking, is the disk filling, did
@@ -84,7 +96,8 @@ const good = (text: string) => (
 );
 const bad = (text: string, variant: 'error' | 'warn' = 'error') => (
   <Badge variant={variant}>
-    {variant === 'error' ? <XCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />} {text}
+    {variant === 'error' ? <XCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{' '}
+    {text}
   </Badge>
 );
 
@@ -107,7 +120,9 @@ export function SystemView({ s }: { s: SystemStatus }) {
         <Card className="space-y-2 border-status-warn p-4" role="alert">
           <h2 className="flex items-center gap-2 text-sm font-medium">
             <AlertTriangle className="h-4 w-4 text-status-warn-strong" aria-hidden />
-            {s.warnings.length === 1 ? '1 thing needs attention' : `${s.warnings.length} things need attention`}
+            {s.warnings.length === 1
+              ? '1 thing needs attention'
+              : `${s.warnings.length} things need attention`}
           </h2>
           <ul className="list-disc space-y-1 pl-6 text-sm">
             {s.warnings.map((w) => (
@@ -117,7 +132,8 @@ export function SystemView({ s }: { s: SystemStatus }) {
         </Card>
       ) : (
         <Card className="flex items-center gap-2 p-4 text-sm" role="status">
-          <CheckCircle2 className="h-4 w-4 text-status-ok-strong" aria-hidden /> Everything is working.
+          <CheckCircle2 className="h-4 w-4 text-status-ok-strong" aria-hidden /> Everything is
+          working.
         </Card>
       )}
 
@@ -125,7 +141,13 @@ export function SystemView({ s }: { s: SystemStatus }) {
         <Section
           icon={Radio}
           title="Sensor stream"
-          state={!st.enabled ? bad('Switched off', 'warn') : st.connected ? good('Connected') : bad('Not connected')}
+          state={
+            !st.enabled
+              ? bad('Switched off', 'warn')
+              : st.connected
+                ? good('Connected')
+                : bad('Not connected')
+          }
           footer={
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
               <p className="text-xs text-muted-foreground">
@@ -154,9 +176,17 @@ export function SystemView({ s }: { s: SystemStatus }) {
               : `This PC connects to the converter at ${st.remote ?? '–'}`}
           </Row>
           {st.remoteAddress ? <Row label="Connected from">{st.remoteAddress}</Row> : null}
-          {st.format ? <Row label="Data format">{st.format === 'nmea' ? 'NMEA 0183' : 'Gill ASCII'}</Row> : null}
-          <Row label="Last reading">{st.lastReadingAt ? `${formatRelative(st.lastReadingAt)} (${at(st.lastReadingAt)})` : 'none since the service started'}</Row>
-          <Row label="Readings in the last minute">{st.readingsLastMinute} (about 60 when healthy)</Row>
+          {st.format ? (
+            <Row label="Data format">{st.format === 'nmea' ? 'NMEA 0183' : 'Gill ASCII'}</Row>
+          ) : null}
+          <Row label="Last reading">
+            {st.lastReadingAt
+              ? `${formatRelative(st.lastReadingAt)} (${at(st.lastReadingAt)})`
+              : 'none since the service started'}
+          </Row>
+          <Row label="Readings in the last minute">
+            {st.readingsLastMinute} (about 60 when healthy)
+          </Row>
           {st.connected || st.bytesReceived > 0 ? (
             <Row label="Data received">
               {st.bytesReceived > 0
@@ -165,7 +195,9 @@ export function SystemView({ s }: { s: SystemStatus }) {
             </Row>
           ) : null}
           {st.columnMismatches > 0 ? (
-            <Row label="Not understood: wrong number of columns">{st.columnMismatches.toLocaleString()}</Row>
+            <Row label="Not understood: wrong number of columns">
+              {st.columnMismatches.toLocaleString()}
+            </Row>
           ) : null}
           <Row label="Minutes stored since start">{st.minutesWritten.toLocaleString()}</Row>
           <Row label="Rejected: bad checksum">{st.checksumErrors.toLocaleString()}</Row>
@@ -174,33 +206,58 @@ export function SystemView({ s }: { s: SystemStatus }) {
           {st.lastLine ? (
             <div className="space-y-1 py-1 text-sm">
               <dt className="text-muted-foreground">Last line received</dt>
-              <dd className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">{st.lastLine}</dd>
+              <dd className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                {st.lastLine}
+              </dd>
             </div>
           ) : null}
         </Section>
 
-        <Section icon={Save} title="Backup" state={!s.backup ? bad('None yet', 'warn') : !s.backup.ok ? bad('Failed') : has('BACKUP_STALE') ? bad('Late', 'warn') : good('OK')}>
-          {s.backup ? (
-            <>
-              <Row label="Last backup">{`${formatRelative(s.backup.at)} (${at(s.backup.at)})`}</Row>
-              <Row label="Size">{formatBytes(s.backup.bytes)}</Row>
-              <Row label="Where">
-                <span className="break-all font-mono text-xs">{s.backup.path}</span>
-              </Row>
-              {s.backup.error ? <Row label="Error">{s.backup.error}</Row> : null}
-            </>
-          ) : (
-            <Row label="Last backup">The nightly backup has not run yet.</Row>
-          )}
-        </Section>
+        {s.backupEnabled ? (
+          <Section
+            icon={Save}
+            title="Backup"
+            state={
+              !s.backup
+                ? bad('None yet', 'warn')
+                : !s.backup.ok
+                  ? bad('Failed')
+                  : has('BACKUP_STALE')
+                    ? bad('Late', 'warn')
+                    : good('OK')
+            }
+          >
+            {s.backup ? (
+              <>
+                <Row label="Last backup">{`${formatRelative(s.backup.at)} (${at(s.backup.at)})`}</Row>
+                <Row label="Size">{formatBytes(s.backup.bytes)}</Row>
+                <Row label="Where">
+                  <span className="break-all font-mono text-xs">{s.backup.path}</span>
+                </Row>
+                {s.backup.error ? <Row label="Error">{s.backup.error}</Row> : null}
+              </>
+            ) : (
+              <Row label="Last backup">The nightly backup has not run yet.</Row>
+            )}
+          </Section>
+        ) : null}
 
-        <Section icon={HardDrive} title="Disk" state={!s.disk ? bad('Unknown', 'warn') : has('DISK_LOW') ? bad('Low', 'warn') : good('OK')}>
+        <Section
+          icon={HardDrive}
+          title="Disk"
+          state={
+            !s.disk ? bad('Unknown', 'warn') : has('DISK_LOW') ? bad('Low', 'warn') : good('OK')
+          }
+        >
           {s.disk ? (
             <>
               <Row label="Free">{`${formatBytes(s.disk.freeBytes)} of ${formatBytes(s.disk.totalBytes)}`}</Row>
               <div className="py-2" aria-hidden>
                 <div className="h-2 overflow-hidden rounded bg-muted">
-                  <div className="h-full bg-primary" style={{ width: `${Math.round((diskUsed ?? 0) * 100)}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${Math.round((diskUsed ?? 0) * 100)}%` }}
+                  />
                 </div>
               </div>
               <Row label="Data folder">
@@ -213,20 +270,29 @@ export function SystemView({ s }: { s: SystemStatus }) {
           <Row label="Database size">{formatBytes(s.db.storageBytes)}</Row>
         </Section>
 
-        <Section icon={Server} title="This PC" state={has('CLOCK_BEHIND') ? bad('Check the clock', 'warn') : good('OK')}>
+        <Section
+          icon={Server}
+          title="This PC"
+          state={has('CLOCK_BEHIND') ? bad('Check the clock', 'warn') : good('OK')}
+        >
           <Row label={`Station time (${zoneLabel(tz)})`}>{at(s.now)}</Row>
           <Row label="The PC's own time zone">{s.pcTimeZone}</Row>
-          <Row label="Newest stored minute">{s.db.latestMinuteAt ? at(s.db.latestMinuteAt) : '–'}</Row>
-          <Row label="Software">{`Observator Weather Station ${s.version}`}</Row>
+          <Row label="Newest stored minute">
+            {s.db.latestMinuteAt ? at(s.db.latestMinuteAt) : '–'}
+          </Row>
+          <Row label="Software">{`Observator Automatic Weather Station ${s.version}`}</Row>
           <Row label="Running for">{formatUptime(s.uptimeSec)}</Row>
           <Row label="Database">{s.db.connected ? 'connected' : 'NOT connected'}</Row>
         </Section>
       </div>
-      {editConnection ? <SensorConnectionDialog current={conn} open onOpenChange={setEditConnection} /> : null}
+      {editConnection ? (
+        <SensorConnectionDialog current={conn} open onOpenChange={setEditConnection} />
+      ) : null}
       {showLines ? <RecentLinesDialog open onOpenChange={setShowLines} /> : null}
+      <StationControlCard />
       <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Database className="h-3 w-3" aria-hidden /> Readings are time-stamped with the PC&apos;s clock — keep Windows time
-        synchronisation on.
+        <Database className="h-3 w-3" aria-hidden /> Readings are time-stamped with the PC&apos;s
+        clock — keep Windows time synchronisation on.
       </p>
     </div>
   );
@@ -243,16 +309,19 @@ export function SystemPage() {
     return (
       <Card className="space-y-3 p-6" role="alert">
         <h2 className="flex items-center gap-2 text-base font-medium">
-          <XCircle className="h-5 w-5 text-status-error-strong" aria-hidden /> The weather station service is not answering
+          <XCircle className="h-5 w-5 text-status-error-strong" aria-hidden /> The weather station
+          service is not answering
         </h2>
         <p className="text-sm text-muted-foreground">
-          The portal is running, but the service that stores readings and serves this page did not respond. It may be
-          stopped, or still starting.
+          The portal is running, but the service that stores readings and serves this page did not
+          respond. It may be stopped, or still starting.
         </p>
         <p className="text-sm text-muted-foreground">
-          At the station PC, run <span className="font-mono">status.cmd</span> in the program folder (usually
-          <span className="font-mono"> C:\Observator</span>). It says which of the three services is not running and
-          where its log is. Readings received while it is down are not lost unless the sensor is disconnected too.
+          At the station PC, run <span className="font-mono">status.cmd</span> in the program folder
+          (usually
+          <span className="font-mono"> C:\Observator</span>). It says which of the three services is
+          not running and where its log is. Readings received while it is down are not lost unless
+          the sensor is disconnected too.
         </p>
         <div>
           <Button variant="outline" size="sm" onClick={() => q.refetch()}>

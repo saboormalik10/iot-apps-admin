@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 $script:RegKey = 'HKLM:\SOFTWARE\Observator\WeatherStation'
 $script:FirewallGroup = 'Observator Weather Station'
 $script:TaskName = 'Observator Weather Station - daily maintenance'
+# Only to remove it where 1.0.3 installed it.
+$script:ShutdownTaskName = 'Observator Weather Station - shutdown on request'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 # Built-in accounts by SID, so the scripts work in any Windows language.
 $script:SidAdmins = '*S-1-5-32-544'
@@ -543,11 +545,18 @@ function Register-MaintenanceTask($Layout, [string]$At = '02:30') {
     Register-ScheduledTask -TaskName $script:TaskName -Action $action -Trigger $trigger -Principal $principal `
         -Settings $settings -Description 'Backs up the weather station database and tidies old logs.' -Force | Out-Null
     Write-Ok "daily maintenance scheduled at $At"
+    # 1.0.3 briefly installed a task that powered the PC off on request; the
+    # client chose stopping the software instead (10 Oct 2026). Remove it if present.
+    if (Get-ScheduledTask -TaskName $script:ShutdownTaskName -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $script:ShutdownTaskName -Confirm:$false
+    }
 }
 
 function Unregister-MaintenanceTask {
-    if (Get-ScheduledTask -TaskName $script:TaskName -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $script:TaskName -Confirm:$false
+    foreach ($name in @($script:TaskName, $script:ShutdownTaskName)) {
+        if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false
+        }
     }
 }
 
@@ -564,7 +573,9 @@ function Get-BackupSettings($Layout) {
     if ($cfg.Contains('BACKUP_DIR') -and $cfg['BACKUP_DIR']) { $dir = $cfg['BACKUP_DIR'] }
     $keep = 14
     if ($cfg.Contains('BACKUP_KEEP') -and $cfg['BACKUP_KEEP'] -match '^\d+$' -and [int]$cfg['BACKUP_KEEP'] -ge 1) { $keep = [int]$cfg['BACKUP_KEEP'] }
-    return [pscustomobject]@{ Dir = $dir; Keep = $keep }
+    # The nightly backup is off unless BACKUP_ENABLED=true (client, 10 Oct 2026).
+    $enabled = $cfg.Contains('BACKUP_ENABLED') -and ([string]$cfg['BACKUP_ENABLED']).Trim().ToLower() -eq 'true'
+    return [pscustomobject]@{ Dir = $dir; Keep = $keep; Enabled = $enabled }
 }
 
 # The result of the last backup, for status.cmd and the portal's System page.

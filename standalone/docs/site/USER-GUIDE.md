@@ -231,6 +231,13 @@ For administrators and operators. The first screen to open when something looks 
 
 Anything needing attention is listed at the top. Tell whoever looks after the PC.
 
+**Weather station — Stop / Start** appears only for the master administrator — the
+administrator created when the software was installed. **Stop** closes the sensor
+connection and stops recording; readings already stored are kept, and the PC and this
+portal stay on. It stays stopped even if the PC restarts, and the top of the System
+page says so. **Start** connects to the sensor again and recording resumes within a
+minute.
+
 > Every reading is time-stamped by **this PC's clock** — the sensor has none of its
 > own. If the clock is wrong, the readings are wrong, so leave Windows time
 > synchronisation on.
@@ -321,6 +328,6 @@ sensor stream is not connected, the converter or the network is the place to sta
 
 ---
 
-*Observator Weather Station 1.0.2 — the install and day-to-day care of the PC itself
+*Observator Weather Station 1.0.4 — the install and day-to-day care of the PC itself
 are covered in [INSTALL.md](INSTALL.md), [OPERATIONS.md](OPERATIONS.md) and
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md).*

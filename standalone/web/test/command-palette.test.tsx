@@ -108,12 +108,13 @@ describe('CommandPalette (plan §13)', () => {
     const u = userEvent.setup();
     renderPalette();
     await u.click(screen.getByRole('button', { name: /search stations and records/i }));
-    // Was 'alert' before the alerts section was switched off — that destination
-    // no longer exists in the nav, so filter on another one.
-    await u.type(screen.getByRole('combobox'), 'notif');
+    // Alerts and notifications are switched off (10 Oct 2026) — filter on a
+    // destination that is always there.
+    await u.type(screen.getByRole('combobox'), 'quer');
 
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /notifications/i })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: /query/i })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: /notifications/i })).toBeNull();
       expect(screen.queryByRole('option', { name: /dashboard/i })).toBeNull();
     });
   });

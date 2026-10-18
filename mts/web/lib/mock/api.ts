@@ -37,7 +37,7 @@ import { ALERT_RULES, RULE_HISTORY } from './seed/rules';
 import { CAMPSIE_RADAR, WINDSOR_HANDOVER, campsieRadarOut } from './seed/incidents';
 import { LOGGER_COUNT, STATIONS, STATIONS_BY_ID } from './seed/stations';
 import { THRESHOLDS, THRESHOLD_LABELS } from './seed/thresholds';
-import { getStore, mutate } from './store';
+import { getStore, mutate, stationName } from './store';
 
 /**
  * The fake backend.
@@ -653,7 +653,7 @@ function diffRule(a: AlertRule, b: AlertRule): RuleVersion['changes'] {
   add('Vigilance', a.vigilance ?? '', b.vigilance ?? '');
   add('Reset on re-trigger', a.resetOnRetrigger ? 'Yes' : 'No', b.resetOnRetrigger ? 'Yes' : 'No');
   add('Schedule', a.schedule ? `${a.schedule.from} → ${a.schedule.to}` : 'Always active', b.schedule ? `${b.schedule.from} → ${b.schedule.to}` : 'Always active');
-  add('Locations', a.appliesTo.map((l) => STATIONS_BY_ID[l].name).join(', '), b.appliesTo.map((l) => STATIONS_BY_ID[l].name).join(', '));
+  add('Locations', a.appliesTo.map(stationName).join(', '), b.appliesTo.map(stationName).join(', '));
   add('Message', a.message, b.message);
   add('Recipients', a.recipients.join(', '), b.recipients.join(', '));
   add('Channels', a.channels.join(', '), b.channels.join(', '));

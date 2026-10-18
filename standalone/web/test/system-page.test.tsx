@@ -30,6 +30,7 @@ const base: SystemStatus = {
   },
   disk: { path: 'C:\\ObservatorData', freeBytes: 200 * 1024 ** 3, totalBytes: 500 * 1024 ** 3 },
   backup: { at: '2026-09-22T02:30:00.000Z', ok: true, path: 'C:\\ObservatorData\\backups\\x', bytes: 5_000_000, error: '' },
+  backupEnabled: true,
   warnings: [],
 };
 
@@ -181,6 +182,44 @@ describe('System page', () => {
     const box = (await screen.findByLabelText('Recent lines')) as HTMLTextAreaElement;
     expect(box.value).toContain('$PGILT,A,+31,D,-58,D,+1,TILT*3D    [part of a reading]');
     expect(screen.getByRole('button', { name: /download as text file/i })).toBeEnabled();
+  });
+
+  // Client, 10 Oct 2026: "Disable the backup function too".
+  it('leaves the backup out when the nightly backup is off', () => {
+    as(admin, <SystemView s={{ ...base, backupEnabled: false, backup: null }} />);
+    expect(screen.queryByText('Backup')).not.toBeInTheDocument();
+    expect(screen.getByText('Everything is working.')).toBeInTheDocument();
+  });
+
+  // Client, 10 Oct 2026: "Just shut the software. It should have a start and stop server" — system admin only.
+  describe('stopping and starting the weather station', () => {
+    it('is not shown to anyone but the master administrator', async () => {
+      server.use(http.get('/api/system/station', () => HttpResponse.json({ data: { allowed: false, running: true, stopped: null } })));
+      as(admin, <SystemView s={base} />);
+      await waitFor(() => expect(screen.getByText('Everything is working.')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /^stop$/i })).not.toBeInTheDocument();
+    });
+
+    it('asks before stopping, then offers Start', async () => {
+      let stopped = false;
+      const state = () => ({ allowed: true, running: !stopped, stopped: stopped ? { at: '2026-10-10T03:00:00.000Z', by: 'a@b.c' } : null });
+      server.use(
+        http.get('/api/system/station', () => HttpResponse.json({ data: state() })),
+        http.post('/api/system/station/stop', () => {
+          stopped = true;
+          return HttpResponse.json({ data: state() });
+        }),
+      );
+      as(admin, <SystemView s={base} />);
+      fireEvent.click(await screen.findByRole('button', { name: /^stop$/i }));
+      expect(stopped).toBe(false);
+      expect(await screen.findByText('Stop the weather station?')).toBeInTheDocument();
+      const buttons = screen.getAllByRole('button', { name: /^stop$/i });
+      fireEvent.click(buttons[buttons.length - 1]);
+      await waitFor(() => expect(stopped).toBe(true));
+      expect(await screen.findByText(/Stopped by a@b.c/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^start$/i })).toBeInTheDocument();
+    });
   });
 
   it('writes sizes the way people read them', () => {

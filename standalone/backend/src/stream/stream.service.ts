@@ -101,6 +101,8 @@ export interface StreamStatus {
   checksum: StreamConfig['checksum'];
   configWarnings: string[];
   stationId: string | null;
+  /** Set while the weather station is stopped from the portal: who, and when. */
+  stopped: { at: string; by: string } | null;
   /** The connection settings in use, and where they came from. */
   connection: StreamConnection;
 }
@@ -209,6 +211,7 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     checksum: this.config.checksum,
     configWarnings: this.config.warnings,
     stationId: null,
+    stopped: null,
   };
 
   constructor(
@@ -229,7 +232,12 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     const station = await this.loadStation();
     if (station) await this.useSavedConnection(station.deviceId);
-    await this.startLink();
+    if (station) {
+      const d = await Device.findById(station.deviceId).select('stationStopped').lean();
+      if (d?.stationStopped) this.status.stopped = { at: new Date(d.stationStopped.at).toISOString(), by: d.stationStopped.by };
+    }
+    if (this.status.stopped) this.logger.log(`weather station stopped from the portal by ${this.status.stopped.by} - not connecting to the sensor`);
+    else await this.startLink();
     this.timer = setInterval(() => this.flush(this.buffer.due(this.now())), 1_000);
     this.timer.unref();
   }
@@ -316,8 +324,54 @@ export class StreamService implements OnApplicationBootstrap, OnModuleDestroy {
     await this.stopLink();
     Object.assign(this.config, after);
     this.changed = { at: saved.changedAt.toISOString(), by: saved.changedBy };
-    if (this.config.enabled) await this.startLink();
+    if (this.config.enabled && !this.status.stopped) await this.startLink();
     return this.getStatus();
+  }
+
+  /**
+   * Stop the weather station from the portal (client, 10 Oct 2026: "Just shut the
+   * software. It should have a start and stop server"): the sensor link is closed
+   * and nothing is recorded. The portal and the API stay up — that is what lets it
+   * be started again from the same page. The part-minute is written first.
+   */
+  async stopStation(actor: { userId: string; email: string; ipAddress?: string | null }): Promise<StreamStatus> {
+    const station = this.station ?? (await this.loadStation());
+    if (!station) throw Object.assign(new Error('There is no weather station yet.'), { statusCode: 409, code: 'CONFLICT' });
+    if (this.status.stopped) return this.getStatus();
+    const at = new Date(this.now());
+    await Device.updateOne({ _id: new Types.ObjectId(station.deviceId) }, { $set: { stationStopped: { at, by: actor.email } } });
+    await this.stopLink();
+    await this.flushNow();
+    this.status.stopped = { at: at.toISOString(), by: actor.email };
+    this.auditStation(station, actor, 'Weather station stopped');
+    this.logger.log(`weather station stopped from the portal by ${actor.email}`);
+    return this.getStatus();
+  }
+
+  async startStation(actor: { userId: string; email: string; ipAddress?: string | null }): Promise<StreamStatus> {
+    const station = this.station ?? (await this.loadStation());
+    if (!station) throw Object.assign(new Error('There is no weather station yet.'), { statusCode: 409, code: 'CONFLICT' });
+    if (!this.status.stopped) return this.getStatus();
+    await Device.updateOne({ _id: new Types.ObjectId(station.deviceId) }, { $set: { stationStopped: null } });
+    this.status.stopped = null;
+    if (this.config.enabled) await this.startLink();
+    this.auditStation(station, actor, 'Weather station started');
+    this.logger.log(`weather station started from the portal by ${actor.email}`);
+    return this.getStatus();
+  }
+
+  private auditStation(station: Station, actor: { userId: string; email: string; ipAddress?: string | null }, what: string): void {
+    AuditLog.create({
+      organizationId: new Types.ObjectId(station.organizationId),
+      userId: new Types.ObjectId(actor.userId),
+      userEmail: actor.email,
+      ipAddress: actor.ipAddress ?? null,
+      action: 'update',
+      resourceType: 'device',
+      resourceId: station.deviceId,
+      resourceName: what,
+      changes: null,
+    }).catch(() => void 0);
   }
 
   /** At startup: the connection last saved in the portal, if any, over the settings file's. */

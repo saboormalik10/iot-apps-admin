@@ -91,6 +91,13 @@ export interface IDevice extends Document {
    * (9 Oct 2026).
    */
   sensorConnection: SensorConnectionSetting | null;
+  /**
+   * Set while the master administrator has STOPPED the weather station from the
+   * portal (System > Weather station > Stop): no sensor connection, no readings.
+   * The portal stays up so it can be started again. Kept here so a restart of the
+   * PC does not quietly start it again (client, 10 Oct 2026).
+   */
+  stationStopped: { at: Date; by: string } | null;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -137,6 +144,10 @@ const deviceSchema = new Schema<IDevice>(
         },
         { _id: false },
       ),
+      default: null,
+    },
+    stationStopped: {
+      type: new Schema({ at: { type: Date, required: true }, by: { type: String, required: true } }, { _id: false }),
       default: null,
     },
     deletedAt: { type: Date, default: null },

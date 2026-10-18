@@ -1,4 +1,5 @@
 import type { AlertEvent, AlertRule, Annotation, AuditEntry, ControlMode, Organization, OrgRight, OrgRightState, PumpState, Role, RoleId, RuleVersion, StationRecord, User } from '@/lib/api/types';
+import { STATIONS_BY_ID } from './seed/stations';
 
 /**
  * The prototype's entire mutable surface.
@@ -123,4 +124,9 @@ export function resetStore(): void {
 
 export function getRevision(): number {
   return store.revision;
+}
+
+/** A location's name — a seeded station, or one added in this session under Admin → Stations. */
+export function stationName(id: string): string {
+  return STATIONS_BY_ID[id as keyof typeof STATIONS_BY_ID]?.name ?? getStore().addedStations.find((s) => s.id === id)?.name ?? id;
 }

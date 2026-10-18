@@ -1,5 +1,6 @@
 'use client';
 
+import { SHOW_EXTRAS } from '@/lib/extras';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AlertTriangle, CalendarClock, LogOut, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
@@ -81,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         Skip to content
       </a>
-      <PrototypeBanner />
+      {SHOW_EXTRAS ? <PrototypeBanner /> : null}
 
       <header className="sticky top-0 z-30 bg-header text-header-foreground print:hidden">
         <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
@@ -112,7 +113,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   aria-current={active ? 'page' : undefined}
                   className={cn(
                     'rounded-md px-3 py-1.5 text-sm transition-colors',
-                    active ? 'bg-white/15 font-medium text-white' : 'text-header-muted hover:bg-white/10 hover:text-white',
+                    active
+                      ? 'bg-white/15 font-medium text-white'
+                      : 'text-header-muted hover:bg-white/10 hover:text-white',
                   )}
                 >
                   {item.label}
@@ -147,15 +150,21 @@ export function AppShell({ children }: { children: ReactNode }) {
               {counts.loggers}/{counts.loggers} ONLINE
             </span>
 
-            {mounted ? (
+            {!SHOW_EXTRAS ? null : mounted ? (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-header-foreground hover:bg-white/10"
-                aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                aria-label={
+                  resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+                }
                 onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
               >
-                {resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {resolvedTheme === 'dark' ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
               </Button>
             ) : (
               <span className="h-8 w-8" />
@@ -186,18 +195,28 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <DropdownMenuLabel className="font-normal">
                   <p className="text-sm font-semibold">{me.name}</p>
                   <p className="truncate text-xs text-muted-foreground">{me.email}</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">{isSuperUser ? 'Super User — every organisation' : 'Administrator — Metro Trains Sydney'}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {isSuperUser ? 'Super User — every organisation' : 'Administrator'}
+                  </p>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="cursor-pointer">
-                    <UserRound className="mr-2 h-4 w-4" aria-hidden /> Profile &amp; notifications
-                  </Link>
-                </DropdownMenuItem>
+                {SHOW_EXTRAS ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link href="/settings" className="cursor-pointer">
+                        <UserRound className="mr-2 h-4 w-4" aria-hidden /> Profile &amp;
+                        notifications
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
                 <DropdownMenuSeparator />
                 <form method="post" action="/api/logout">
                   <DropdownMenuItem asChild>
-                    <button type="submit" className="w-full cursor-pointer text-sev-alert-strong focus:text-sev-alert-strong">
+                    <button
+                      type="submit"
+                      className="w-full cursor-pointer text-sev-alert-strong focus:text-sev-alert-strong"
+                    >
                       <LogOut className="mr-2 h-4 w-4" aria-hidden /> Sign out
                     </button>
                   </DropdownMenuItem>
@@ -240,13 +259,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Printing an event is printing a report: no masthead, ticker or notices on paper. */}
       <div className="print:hidden">
         {lead ? <AlertTicker /> : null}
-        <MaintenanceStrip now={now} />
+        {SHOW_EXTRAS ? <MaintenanceStrip now={now} /> : null}
       </div>
 
-      <main id="main" className="min-w-0 flex-1 p-3 sm:p-4 lg:p-6">{children}</main>
+      <main id="main" className="min-w-0 flex-1 p-3 sm:p-4 lg:p-6">
+        {children}
+      </main>
       <InactivityWarning />
       <PtzWatcher />
-      <DemoDock />
+      {SHOW_EXTRAS ? <DemoDock /> : null}
     </div>
   );
 }
@@ -268,12 +289,17 @@ function MaintenanceStrip({ now }: { now: number }) {
     <div className="flex items-center gap-2 border-b border-sev-info/30 bg-sev-info-tint px-3 py-1.5 text-xs text-sev-info-strong sm:px-4">
       <CalendarClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <p className="min-w-0 flex-1">
-        <span className="font-semibold">Planned maintenance</span> {fmtDateTime(w.from)} – {fmtDateTime(w.to)} · readings may pause during the window.
+        <span className="font-semibold">Planned maintenance</span> {fmtDateTime(w.from)} –{' '}
+        {fmtDateTime(w.to)} · readings may pause during the window.
       </p>
       <Link href="/health" className="shrink-0 underline underline-offset-2">
         Details
       </Link>
-      <button onClick={() => setHidden(true)} className="shrink-0 rounded p-0.5 hover:bg-black/5" aria-label="Hide the maintenance notice">
+      <button
+        onClick={() => setHidden(true)}
+        className="shrink-0 rounded p-0.5 hover:bg-black/5"
+        aria-label="Hide the maintenance notice"
+      >
         <X className="h-3.5 w-3.5" />
       </button>
     </div>
@@ -291,7 +317,10 @@ function AlertTicker() {
       <p className="min-w-0 flex-1">
         <span className="font-semibold">ALERT — {lead.locationName}:</span> {lead.message}
       </p>
-      <Link href={`/alerts/${lead.id}`} className="shrink-0 whitespace-nowrap font-medium underline underline-offset-2">
+      <Link
+        href={`/alerts/${lead.id}`}
+        className="shrink-0 whitespace-nowrap font-medium underline underline-offset-2"
+      >
         Open
       </Link>
       <button
@@ -312,7 +341,8 @@ function AlertTicker() {
 function PrototypeBanner() {
   return (
     <div className="bg-banner px-3 py-1 text-center text-[11px] font-medium text-banner-foreground sm:px-4">
-      Design prototype — demonstration data only. No sensors, no alerts and no pump commands are real.{' '}
+      Design prototype — demonstration data only. No sensors, no alerts and no pump commands are
+      real.{' '}
       <Link href="/coverage" className="underline underline-offset-2">
         Requirements coverage
       </Link>{' '}

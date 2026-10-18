@@ -1,5 +1,6 @@
 'use client';
 
+import { SHOW_EXTRAS } from '@/lib/extras';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Camera, Check, Download } from 'lucide-react';
@@ -18,7 +19,7 @@ import { PtzDialog } from '@/features/alerts/ptz-dialog';
 import { AlertAnalytics } from './alert-analytics';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useDataRevision } from '@/lib/use-data';
-import { fmtDateTime, fmtTime } from '@/lib/format';
+import { fmtDateTime, fmtTime, sydneyMidnight } from '@/lib/format';
 import { STATIONS } from '@/lib/mock/seed/stations';
 import { cn } from '@/lib/utils';
 
@@ -91,6 +92,8 @@ export function AlertsPage() {
     active: activeAlertCount(),
     unack,
     today: events === null ? null : events.filter((e) => e.t >= now - 86_400_000).length,
+    // Figure 15's third tile is "Today": since midnight, station time.
+    sinceMidnight: events === null ? null : events.filter((e) => e.t >= sydneyMidnight(now)).length,
     range: total,
   };
   void revision;
@@ -127,11 +130,21 @@ export function AlertsPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Active alerts" value={counts.active} tone="alert" />
         <Kpi label="Unacknowledged" value={counts.unack} tone="warning" />
-        <Kpi label="In the last 24 hours" value={counts.today} tone="info" />
-        <Kpi label="Matching these filters" value={counts.range} tone="info" />
+        {SHOW_EXTRAS ? (
+          <>
+            <Kpi label="In the last 24 hours" value={counts.today} tone="info" />
+            <Kpi label="Matching these filters" value={counts.range} tone="info" />
+          </>
+        ) : (
+          <>
+            <Kpi label="Today" value={counts.sinceMidnight} tone="info" />
+            <Kpi label={RANGES.find((r) => r.days === days)?.label ?? 'In range'} value={counts.range} tone="info" />
+          </>
+        )}
       </div>
 
-      <AlertAnalytics now={now} />
+      {/* Not in Figure 15: the two analysis charts are hidden. */}
+      {SHOW_EXTRAS ? <AlertAnalytics now={now} /> : null}
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
         <div className="flex flex-wrap gap-1">
@@ -198,7 +211,10 @@ export function AlertsPage() {
         ) : !events ? (
           <LoadingState label="Loading events…" />
         ) : events.length === 0 ? (
-          <EmptyState title="Nothing matches those filters" body="Widen the severity, the date range or the location." />
+          <EmptyState
+            title="Nothing matches those filters"
+            body="Widen the severity, the date range or the location."
+          />
         ) : (
           <ul className="divide-y">
             {events.map((e) => (
@@ -210,7 +226,11 @@ export function AlertsPage() {
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3">
                     {/* A fixed width, so titles all start at the same x however
                         wide the severity word is. */}
-                    <StatusPill tone={severityTone(e.severity)} size="sm" className="mt-0.5 shrink-0 justify-center self-start sm:w-[104px]" />
+                    <StatusPill
+                      tone={severityTone(e.severity)}
+                      size="sm"
+                      className="mt-0.5 shrink-0 justify-center self-start sm:w-[104px]"
+                    />
                     <div className="min-w-0 flex-1">
                       <Link
                         href={`/alerts/${e.id}`}
@@ -223,9 +243,15 @@ export function AlertsPage() {
                         <span aria-hidden>·</span>
                         <span className="capitalize">{e.category}</span>
                         <span aria-hidden>·</span>
-                        <span>{e.track === 'both' ? 'Both tracks' : `${e.track === 'up' ? 'Up' : 'Down'} track`}</span>
-                        {e.draftWording ? (
-                          <span className="rounded bg-muted px-1.5 text-[11px] uppercase">draft wording</span>
+                        <span>
+                          {e.track === 'both'
+                            ? 'Both tracks'
+                            : `${e.track === 'up' ? 'Up' : 'Down'} track`}
+                        </span>
+                        {SHOW_EXTRAS && e.draftWording ? (
+                          <span className="rounded bg-muted px-1.5 text-[11px] uppercase">
+                            draft wording
+                          </span>
                         ) : null}
                       </p>
                     </div>
@@ -251,7 +277,11 @@ export function AlertsPage() {
                         ✓ ack {initials(e.acknowledgement.by)} {fmtTime(e.acknowledgement.at)}
                       </span>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => acknowledgeEvent(e.id).then(load)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => acknowledgeEvent(e.id).then(load)}
+                      >
                         Acknowledge
                       </Button>
                     )}
@@ -273,7 +303,11 @@ export function AlertsPage() {
         </footer>
       </section>
 
-      <PtzDialog event={camera} onClose={() => setCamera(null)} onAcknowledge={(id) => acknowledgeEvent(id).then(load)} />
+      <PtzDialog
+        event={camera}
+        onClose={() => setCamera(null)}
+        onAcknowledge={(id) => acknowledgeEvent(id).then(load)}
+      />
     </div>
   );
 }
@@ -287,7 +321,16 @@ function initials(name: string): string {
 
 /** The demo's CSV: the rows on screen, exactly as they read. */
 function exportCsv(events: AlertEvent[]): void {
-  const head = ['Time', 'Severity', 'Category', 'Location', 'Track', 'Message', 'Acknowledged by', 'Acknowledged at'];
+  const head = [
+    'Time',
+    'Severity',
+    'Category',
+    'Location',
+    'Track',
+    'Message',
+    'Acknowledged by',
+    'Acknowledged at',
+  ];
   const rows = events.map((e) => [
     new Date(e.t).toISOString(),
     e.severity,
@@ -309,7 +352,15 @@ function exportCsv(events: AlertEvent[]): void {
   URL.revokeObjectURL(url);
 }
 
-function Kpi({ label, value, tone }: { label: string; value: number | null; tone: 'alert' | 'warning' | 'info' }) {
+function Kpi({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | null;
+  tone: 'alert' | 'warning' | 'info';
+}) {
   return (
     <div
       className={cn(

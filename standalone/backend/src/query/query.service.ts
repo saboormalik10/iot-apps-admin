@@ -204,8 +204,9 @@ export class QueryService {
 
   /** Columns the station reports; a station that has not ingested yet is offered everything. */
   private offered(station: Station): readonly QueryColumn[] {
-    if (station.availableSensors.length === 0) return QUERY_COLUMNS;
-    return QUERY_COLUMNS.filter((c) => c.sensor === null || station.availableSensors.includes(c.sensor));
+    const shown = QUERY_COLUMNS.filter((c) => !c.hidden);
+    if (station.availableSensors.length === 0) return shown;
+    return shown.filter((c) => c.sensor === null || station.availableSensors.includes(c.sensor));
   }
 
   private select(q: QueryInput, station: Station): QueryColumn[] {
@@ -218,7 +219,7 @@ export class QueryService {
     // Kept in the catalogue's order, not the order ticked: a table whose columns
     // shuffle with the clicking is harder to read than one that never moves.
     return QUERY_COLUMNS.filter(
-      (c) => q.fields.includes(c.key) && offered.has(c.key) && !(c.minuteOnly && q.resolution !== 'minute'),
+      (c) => q.fields.includes(c.key) && (offered.has(c.key) || c.hidden) && !(c.minuteOnly && q.resolution !== 'minute'),
     );
   }
 

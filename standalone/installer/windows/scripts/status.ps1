@@ -40,7 +40,9 @@ Write-Note ('open it at: ' + ((Get-PortalUrls ([int]$cfg['WEB_PORT'])) -join '  
 
 Write-Step 'Backup and disk'
 $last = Join-Path $L.LogDir 'backup-last.json'
-if (Test-Path $last) {
+if (-not (Get-BackupSettings $L).Enabled) {
+    Write-Note 'nightly backup: off (BACKUP_ENABLED in the settings file)'
+} elseif (Test-Path $last) {
     $b = Get-Content -Raw $last | ConvertFrom-Json
     if ($b.ok) { Write-Ok "last backup: $($b.at) ($([math]::Round($b.bytes / 1MB, 1)) MB) $($b.path)" } else { Write-Caution "last backup FAILED at $($b.at): $($b.error)" }
 } else {

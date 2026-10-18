@@ -884,6 +884,13 @@ export interface RecentStreamLine {
   outcome: string;
 }
 
+/** The weather station: running or stopped from the portal — stop/start is the master administrator's. */
+export interface StationState {
+  allowed: boolean;
+  running: boolean;
+  stopped: { at: string; by: string } | null;
+}
+
 export interface UpdateStreamConnectionInput {
   mode: 'listen' | 'connect';
   remoteHost?: string | null;
@@ -931,5 +938,7 @@ export interface SystemStatus {
   };
   disk: { path: string; freeBytes: number; totalBytes: number } | null;
   backup: { at: string; ok: boolean; path: string; bytes: number; error: string } | null;
+  /** The nightly backup is off unless BACKUP_ENABLED=true; the page then leaves it out. */
+  backupEnabled?: boolean;
   warnings: SystemWarning[];
 }

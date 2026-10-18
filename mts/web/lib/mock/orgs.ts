@@ -1,10 +1,18 @@
-import type { Organization, OrgRight, StationInput, StationMeasure, StationRecord, User } from '@/lib/api/types';
+import type {
+  Organization,
+  OrgRight,
+  StationInput,
+  StationMeasure,
+  StationRecord,
+  User,
+} from '@/lib/api/types';
 import { now } from './clock';
 import { actingUser, recordAudit } from './api';
 import { OTHER_ORG_USERS, USERS } from './seed/people';
 import { ORGANISATIONS, RIGHT_LABELS } from './seed/orgs';
 import { STATIONS } from './seed/stations';
 import { getStore, mutate } from './store';
+import { SHOW_EXTRAS } from '@/lib/extras';
 
 /**
  * Organisations, their rights, and the station register (client requirement,
@@ -44,13 +52,16 @@ export function organisationNow(id: string): Organization | undefined {
 
 /** May the person signed in do this, in this organisation (MTS by default)? */
 export function can(right: OrgRight, orgId = 'mts'): boolean {
-  if (actingAs() === 'super-user') return true;
+  // The proposal has one MTS Administrator with full control; the per-organisation rights are an extra.
+  if (!SHOW_EXTRAS || actingAs() === 'super-user') return true;
   return Boolean(organisationNow(orgId)?.rights[right].on);
 }
 
 export async function listOrganisations(): Promise<Organization[]> {
   const store = getStore();
-  const people: User[] = [...USERS, ...OTHER_ORG_USERS, ...store.addedUsers].filter((u) => !store.removedUsers.has(u.id));
+  const people: User[] = [...USERS, ...OTHER_ORG_USERS, ...store.addedUsers].filter(
+    (u) => !store.removedUsers.has(u.id),
+  );
   const stations = stationRecordsNow();
   return settle(
     orgsNow().map((o) => ({
@@ -61,7 +72,13 @@ export async function listOrganisations(): Promise<Organization[]> {
   );
 }
 
-export async function createOrganisation(input: { name: string; code: string; region: string; adminName: string; adminEmail: string }): Promise<void> {
+export async function createOrganisation(input: {
+  name: string;
+  code: string;
+  region: string;
+  adminName: string;
+  adminEmail: string;
+}): Promise<void> {
   const id = input.code.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const by = actingUser().name;
   mutate((s) => {
@@ -80,23 +97,39 @@ export async function createOrganisation(input: { name: string; code: string; re
       id: `u-added-${s.addedUsers.length + 1}`,
       name: input.adminName,
       email: input.adminEmail,
-      initials: input.adminName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+      initials: input.adminName
+        .split(/\s+/)
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase(),
       roles: ['administrator'],
       stationAccess: 'all',
       orgId: id,
       status: 'invited',
     });
   });
-  recordAudit('Organisation created', `${input.name} (${input.code.toUpperCase()}) — rights to add users, stations and sensors all off; ${input.adminName} invited as Administrator`, 'organisation');
+  recordAudit(
+    'Organisation created',
+    `${input.name} (${input.code.toUpperCase()}) — rights to add users, stations and sensors all off; ${input.adminName} invited as Administrator`,
+    'organisation',
+  );
   return settle(undefined, 260);
 }
 
 export async function setOrgRight(orgId: string, right: OrgRight, on: boolean): Promise<void> {
   const org = organisationNow(orgId);
   mutate((s) =>
-    s.orgRightEdits.set(orgId, { ...(s.orgRightEdits.get(orgId) ?? {}), [right]: { on, by: actingUser().name, at: now() } }),
+    s.orgRightEdits.set(orgId, {
+      ...(s.orgRightEdits.get(orgId) ?? {}),
+      [right]: { on, by: actingUser().name, at: now() },
+    }),
   );
-  recordAudit(on ? 'Right granted' : 'Right withdrawn', `${org?.name ?? orgId} — ${RIGHT_LABELS[right].label} for its Administrator`, 'organisation');
+  recordAudit(
+    on ? 'Right granted' : 'Right withdrawn',
+    `${org?.name ?? orgId} — ${RIGHT_LABELS[right].label} for its Administrator`,
+    'organisation',
+  );
   return settle(undefined, 150);
 }
 
@@ -135,13 +168,15 @@ export async function listStationRecords(orgId: string | 'all' = 'all'): Promise
   return settle(stationRecordsNow().filter((s) => orgId === 'all' || s.orgId === orgId));
 }
 
-export async function addStation(input: StationInput): Promise<void> {
+/** Registers the station and returns its id, so its sensors can be added straight after. */
+export async function addStation(input: StationInput): Promise<string> {
   const org = organisationNow(input.orgId);
   const ordinal = stationRecordsNow().filter((s) => s.orgId === input.orgId).length + 1;
+  const id = `st-added-${getStore().addedStations.length + 1}`;
   mutate((s) =>
     s.addedStations.push({
       ...input,
-      id: `st-added-${s.addedStations.length + 1}`,
+      id,
       orgName: org?.name ?? input.orgId,
       ordinal,
       status: 'commissioning',
@@ -150,6 +185,10 @@ export async function addStation(input: StationInput): Promise<void> {
       added: true,
     }),
   );
-  recordAudit('Station added', `${input.name} (Location ${ordinal}) — ${org?.name ?? input.orgId}, logger ${input.loggerId}. Commissioning.`, 'station');
-  return settle(undefined, 240);
+  recordAudit(
+    'Station added',
+    `${input.name} (Location ${ordinal}) — ${org?.name ?? input.orgId}, logger ${input.loggerId}. Commissioning.`,
+    'station',
+  );
+  return settle(id, 240);
 }

@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Camera, ChevronLeft, Play, Square, Wrench } from 'lucide-react';
-import type { AlertEvent, LocationId, MaintenanceState, PumpCommandResult, PumpStationLive, StationLive } from '@/lib/api/types';
+import type {
+  AlertEvent,
+  LocationId,
+  MaintenanceState,
+  PumpCommandResult,
+  PumpStationLive,
+  StationLive,
+} from '@/lib/api/types';
 import {
   DEMO_USER,
   acknowledgeEvent,
@@ -31,6 +38,8 @@ import { toast } from '@/lib/hooks/use-toast';
 import { fmtDuration, fmtSigned, fmtTime } from '@/lib/format';
 import { ROLES_BY_ID } from '@/lib/mock/seed/people';
 import { cn } from '@/lib/utils';
+import { SHOW_EXTRAS } from '@/lib/extras';
+import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { TelemetryPanel } from './equipment-panel';
 import { StationTabs } from './station-tabs';
 import { ReadingCard, pointLabel } from './reading-card';
@@ -117,21 +126,38 @@ export function StationPage({ id }: { id: LocationId }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/" className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Link
+            href="/"
+            className={cn(
+              'mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground',
+              !SHOW_EXTRAS && 'hidden',
+            )}
+          >
             <ChevronLeft className="h-3 w-3" /> Corridor
           </Link>
           <h1 className="text-xl font-semibold">{station.location.name}</h1>
+          {/* Figure 12's one line: location, chainage, what it measures, station ID. */}
+          {!SHOW_EXTRAS ? (
+            <p className="text-sm text-muted-foreground">
+              Location {station.location.ordinal} · {station.location.chainage.label} ·{' '}
+              {capabilitiesOf(station.location)} · station{' '}
+              {station.location.loggers.map((l) => l.id).join(', ')}
+            </p>
+          ) : null}
           {/* What this location *does*, not what it is called internally. */}
-          <p className="text-sm text-muted-foreground">
+          <p className={cn('text-sm text-muted-foreground', !SHOW_EXTRAS && 'hidden')}>
             Location {station.location.ordinal} · {capabilitiesOf(station.location)}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className={cn('mt-0.5 text-xs text-muted-foreground', !SHOW_EXTRAS && 'hidden')}>
             Chainage{' '}
             <span className="italic" title="Provisional — to be supplied by MTS">
               {station.location.chainage.label}
             </span>{' '}
             · logger {station.location.loggers.map((l) => l.id).join(', ')} ·{' '}
-            <span className="italic" title="§15: final kilometrages and GPS positions are confirmed on site visits">
+            <span
+              className="italic"
+              title="§15: final kilometrages and GPS positions are confirmed on site visits"
+            >
               GPS position pending site survey
             </span>
           </p>
@@ -139,46 +165,70 @@ export function StationPage({ id }: { id: LocationId }) {
         <div className="flex flex-col items-end gap-1">
           <StatusPill
             tone={stationTone(station.status)}
-            label={station.status === 'alert' ? (hasPump && anyRunning ? 'Flood alert — pumps running' : 'Alert') : undefined}
+            label={
+              station.status === 'alert'
+                ? hasPump && anyRunning
+                  ? 'Flood alert — pumps running'
+                  : 'Alert'
+                : undefined
+            }
           />
-          <p className="tabular text-xs text-muted-foreground">Last update {fmtTime(station.updatedAt)} · auto-refresh 30 s</p>
+          <p className="tabular text-xs text-muted-foreground">
+            Last update {fmtTime(station.updatedAt)} · auto-refresh 30 s
+          </p>
           {/* §7.5: where standing water wants verifying, the camera is one click from the station too. */}
-          {station.location.cameraUrl ? (
+          {station.location.cameraUrl && (SHOW_EXTRAS || station.cameraVerification) ? (
             <Button
               size="sm"
               variant={station.cameraVerification ? 'default' : 'outline'}
-              className={cn('mt-1', station.cameraVerification && 'bg-sev-alert text-white hover:bg-sev-alert/90')}
+              className={cn(
+                'mt-1',
+                station.cameraVerification && 'bg-sev-alert text-white hover:bg-sev-alert/90',
+              )}
               onClick={() =>
-                setPtz(cameraEvents().filter((e) => e.locationId === id).sort((a, b) => b.t - a.t)[0] ?? null)
+                setPtz(
+                  cameraEvents()
+                    .filter((e) => e.locationId === id)
+                    .sort((a, b) => b.t - a.t)[0] ?? null,
+                )
               }
             >
-              <Camera className={cn('h-4 w-4', station.cameraVerification && 'motion-safe:animate-pulse')} aria-hidden />
+              <Camera
+                className={cn('h-4 w-4', station.cameraVerification && 'motion-safe:animate-pulse')}
+                aria-hidden
+              />
               {station.cameraVerification ? 'Verify on PTZ camera' : 'PTZ camera'}
             </Button>
           ) : null}
         </div>
       </div>
 
-      <StationTabs id={id} active="live" />
+      {SHOW_EXTRAS ? <StationTabs id={id} active="live" /> : null}
 
       {/* §8.4: a Maintainer can put a location into maintenance mode. While it
           is on, everyone sees why — and that the float switch is still live. */}
-      {maintenance ? (
+      {/* Not in Figure 12: hidden (lib/extras.ts). */}
+      {SHOW_EXTRAS && maintenance ? (
         <div
           className={cn(
             'flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm',
-            maintenance.on ? 'border-sev-warning/50 bg-sev-warning-tint text-sev-warning-strong' : 'bg-card text-muted-foreground',
+            maintenance.on
+              ? 'border-sev-warning/50 bg-sev-warning-tint text-sev-warning-strong'
+              : 'bg-card text-muted-foreground',
           )}
         >
           <p className="flex min-w-0 items-start gap-2">
             <Wrench className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
             {maintenance.on ? (
               <span>
-                <span className="font-semibold">Maintenance mode</span> since {fmtTime(maintenance.since!)} — {maintenance.by}.{' '}
-                {maintenance.reason}
+                <span className="font-semibold">Maintenance mode</span> since{' '}
+                {fmtTime(maintenance.since!)} — {maintenance.by}. {maintenance.reason}
               </span>
             ) : (
-              <span>Not in maintenance. A Maintainer puts a location into maintenance mode before working on site.</span>
+              <span>
+                Not in maintenance. A Maintainer puts a location into maintenance mode before
+                working on site.
+              </span>
             )}
           </p>
           <Button size="sm" variant="outline" onClick={toggleMaintenance}>
@@ -187,54 +237,109 @@ export function StationPage({ id }: { id: LocationId }) {
         </div>
       ) : null}
 
-      <div className={cn('grid min-w-0 gap-4', hasPump && 'xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]')}>
-        <section className="min-w-0 xl:col-start-1 xl:row-start-1">
+      <div
+        className={cn(
+          'grid min-w-0 gap-4',
+          hasPump && 'xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]',
+        )}
+      >
+        <section className="order-1 min-w-0 xl:order-none xl:col-start-1 xl:row-start-1">
           <h2 className="mb-2 text-sm font-semibold">Live sensor readings</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {station.readings.map((r) => (
               <ReadingCard key={r.sensorId + r.parameter} reading={r} station={station.location} />
             ))}
 
-            <article className="rounded-lg border bg-card p-3 sm:col-span-2">
+            {/* Figure 12: station health is the fourth card of the grid, as rows. */}
+            <article
+              className={cn(
+                'rounded-lg border bg-card p-3',
+                (SHOW_EXTRAS || station.readings.length % 2 === 0) && 'sm:col-span-2',
+              )}
+            >
               <header className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-medium">Station health</h3>
                 <StatusPill tone="normal" size="sm" />
               </header>
               <div className="space-y-2">
-                {station.location.loggers.map((l) => (
-                  <dl key={l.id} className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-                    {station.location.loggers.length > 1 ? (
-                      <p className="col-span-2 font-medium sm:col-span-4">{pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}</p>
-                    ) : null}
-                    <Fact label="Battery" value={`${l.batteryPct}% · ${l.charging ? 'charging' : 'on battery'}`} />
-                    <Fact
-                      label="Cellular"
-                      value={`${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`}
-                    />
-                    <Fact label="Enclosure" value={`${l.enclosure.closed ? 'closed' : 'OPEN'} · ${l.enclosure.internalC} °C internal`} />
-                    <Fact label="Logger" value={`${l.model} · ${l.id} · online`} />
-                  </dl>
-                ))}
+                {!SHOW_EXTRAS && station.readings.length % 2 === 1
+                  ? station.location.loggers.map((l) => (
+                      <dl key={l.id} className="text-xs">
+                        {station.location.loggers.length > 1 ? (
+                          <p className="font-medium">
+                            {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
+                          </p>
+                        ) : null}
+                        <Row
+                          label="Battery"
+                          value={`${l.batteryPct} % · ${l.charging ? 'solar charging' : 'on battery'}`}
+                        />
+                        <Row
+                          label="Cellular"
+                          value={`${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`}
+                        />
+                        <Row
+                          label="Enclosure"
+                          value={`${l.enclosure.closed ? 'closed' : 'OPEN'} · ${l.enclosure.internalC} °C internal`}
+                        />
+                        <Row label="Logger" value={`${l.model} · online`} />
+                      </dl>
+                    ))
+                  : null}
+                {(SHOW_EXTRAS || station.readings.length % 2 === 0) &&
+                  station.location.loggers.map((l) => (
+                    <dl
+                      key={l.id}
+                      className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4"
+                    >
+                      {station.location.loggers.length > 1 ? (
+                        <p className="col-span-2 font-medium sm:col-span-4">
+                          {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
+                        </p>
+                      ) : null}
+                      <Fact
+                        label="Battery"
+                        value={`${l.batteryPct}% · ${l.charging ? 'charging' : 'on battery'}`}
+                      />
+                      <Fact
+                        label="Cellular"
+                        value={`${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`}
+                      />
+                      <Fact
+                        label="Enclosure"
+                        value={`${l.enclosure.closed ? 'closed' : 'OPEN'} · ${l.enclosure.internalC} °C internal`}
+                      />
+                      <Fact label="Logger" value={`${l.model} · ${l.id} · online`} />
+                    </dl>
+                  ))}
               </div>
             </article>
           </div>
         </section>
 
         {hasPump && pump ? (
-          <div className="min-w-0 space-y-4 xl:col-start-2 xl:row-span-3 xl:row-start-1">
+          <div className="order-3 min-w-0 space-y-4 xl:order-none xl:col-start-2 xl:row-span-3 xl:row-start-1">
             <section className="rounded-lg border bg-card p-3">
               <header className="mb-2 flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-sm font-semibold">Pump station</h2>
                   <p className="text-xs text-muted-foreground">
-                    1 duty + 1 standby · rotating pumps · up to {station.location.pumpStation!.capacityLps} L/s
+                    1 duty + 1 standby · rotating pumps · up to{' '}
+                    {station.location.pumpStation!.capacityLps} L/s
                   </p>
                 </div>
-                <StatusPill tone={pump.state === 'running' ? 'normal' : 'information'} label={pump.state.toUpperCase()} size="sm" />
+                <StatusPill
+                  tone={pump.state === 'running' ? 'normal' : 'information'}
+                  label={pump.state.toUpperCase()}
+                  size="sm"
+                />
               </header>
               <ul className="space-y-2">
                 {pump.pumps.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
+                  >
                     <div className="min-w-0">
                       <p className="text-sm font-medium capitalize">{p.role} pump</p>
                       <p className="tabular text-xs text-muted-foreground">
@@ -251,13 +356,22 @@ export function StationPage({ id }: { id: LocationId }) {
                       <span
                         className={cn(
                           'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold',
-                          p.state === 'running' ? 'bg-op-running-tint text-op-running' : 'bg-op-ready-tint text-op-ready',
+                          p.state === 'running'
+                            ? 'bg-op-running-tint text-op-running'
+                            : 'bg-op-ready-tint text-op-ready',
                         )}
                       >
-                        <span className={cn('h-1.5 w-1.5 rounded-full', p.state === 'running' ? 'bg-op-running' : 'bg-op-ready')} />
+                        <span
+                          className={cn(
+                            'h-1.5 w-1.5 rounded-full',
+                            p.state === 'running' ? 'bg-op-running' : 'bg-op-ready',
+                          )}
+                        />
                         {p.state.toUpperCase()}
                       </span>
-                      <p className="tabular mt-0.5 text-xs text-muted-foreground">{p.flowLps} L/s</p>
+                      <p className="tabular mt-0.5 text-xs text-muted-foreground">
+                        {p.flowLps} L/s
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -267,7 +381,10 @@ export function StationPage({ id }: { id: LocationId }) {
               <p className="mt-2 flex flex-wrap justify-between gap-2 rounded-md bg-muted/50 px-3 py-1.5 text-xs">
                 <span className="text-muted-foreground">Pumped today, approximately</span>
                 <span className="tabular font-semibold">
-                  {Math.round(pump.pumps.reduce((a, p) => a + p.runHoursToday * 3600 * 60, 0) / 1000).toLocaleString('en-AU')} m³
+                  {Math.round(
+                    pump.pumps.reduce((a, p) => a + p.runHoursToday * 3600 * 60, 0) / 1000,
+                  ).toLocaleString('en-AU')}{' '}
+                  m³
                 </span>
               </p>
             </section>
@@ -286,7 +403,11 @@ export function StationPage({ id }: { id: LocationId }) {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Control mode</h2>
                 <div className="flex items-center gap-2">
-                  <div className="inline-flex overflow-hidden rounded-md border" role="group" aria-label="Control mode">
+                  <div
+                    className="inline-flex overflow-hidden rounded-md border"
+                    role="group"
+                    aria-label="Control mode"
+                  >
                     {(['auto', 'manual'] as const).map((m) => (
                       <button
                         key={m}
@@ -308,10 +429,13 @@ export function StationPage({ id }: { id: LocationId }) {
                 </div>
               </div>
               {pump.mode === 'auto' ? (
-                <p className="mb-3 text-xs text-muted-foreground">Switch to MANUAL to operate the pumps.</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Switch to MANUAL to operate the pumps.
+                </p>
               ) : (
                 <p className="mb-3 text-xs font-medium text-op-manual">
-                  MANUAL — automatic control is overridden. It returns to AUTO after the configured period.
+                  MANUAL — automatic control is overridden. It returns to AUTO after the configured
+                  period.
                 </p>
               )}
 
@@ -344,14 +468,17 @@ export function StationPage({ id }: { id: LocationId }) {
                 </p>
               ) : null}
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Manual start/stop requires MANUAL mode and a confirmation. The action is authenticated, timestamped
-                and logged.
+                Manual start/stop requires MANUAL mode and a confirmation. The action is
+                authenticated, timestamped and logged.
               </p>
             </section>
 
-            <PumpHistoryPanel minuteKey={Math.floor(now / 60_000)} />
+            {SHOW_EXTRAS ? <PumpHistoryPanel minuteKey={Math.floor(now / 60_000)} /> : null}
 
-            <section className="rounded-lg border bg-card p-3">
+            {/* Figure 13 leaves the activity list off the phone layout. */}
+            <section
+              className={cn('rounded-lg border bg-card p-3', !SHOW_EXTRAS && 'hidden sm:block')}
+            >
               <h2 className="mb-2 text-sm font-semibold">Recent activity</h2>
               <ol className="space-y-2">
                 {pump.activity.slice(0, 7).map((a, i) => (
@@ -359,14 +486,20 @@ export function StationPage({ id }: { id: LocationId }) {
                     <span
                       className={cn(
                         'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
-                        a.severity === 'alert' ? 'bg-sev-alert' : a.severity === 'warning' ? 'bg-sev-warning' : 'bg-sev-info',
+                        a.severity === 'alert'
+                          ? 'bg-sev-alert'
+                          : a.severity === 'warning'
+                            ? 'bg-sev-warning'
+                            : 'bg-sev-info',
                       )}
                     />
                     <span className="tabular shrink-0 text-muted-foreground">{fmtTime(a.t)}</span>
                     <span className="min-w-0">
                       {a.text}
                       {a.simulated ? (
-                        <span className="ml-1 rounded bg-muted px-1 text-[11px] uppercase text-muted-foreground">simulated</span>
+                        <span className="ml-1 rounded bg-muted px-1 text-[11px] uppercase text-muted-foreground">
+                          simulated
+                        </span>
                       ) : null}
                     </span>
                   </li>
@@ -376,9 +509,20 @@ export function StationPage({ id }: { id: LocationId }) {
           </div>
         ) : null}
 
-        <div className="min-w-0 space-y-4 xl:col-start-1 xl:row-start-2">
+        <div className="order-2 min-w-0 space-y-4 xl:order-none xl:col-start-1 xl:row-start-2">
           {/* What the logger is doing, from the logger's own set points. */}
-          {hasPump ? (
+          {/* Figure 12 has a short text box for the local logic; the full
+              diagram is an extra. */}
+          {hasPump && !SHOW_EXTRAS ? (
+            <LocalLogicNote
+              levelMm={station.readings.find((r) => r.parameter === 'water_level')?.value ?? null}
+              floatWet={station.readings.some(
+                (r) => r.parameter === 'float_switch' && r.value === 1,
+              )}
+              dutyRunning={dutyRunning}
+            />
+          ) : null}
+          {hasPump && SHOW_EXTRAS ? (
             <PumpProtectionPanel
               minuteKey={minute}
               pumps={pump?.pumps}
@@ -386,33 +530,43 @@ export function StationPage({ id }: { id: LocationId }) {
             />
           ) : null}
           <StationCharts station={station.location} now={now} />
-          <PowerPanel locationId={id} minuteKey={minute} />
+          {SHOW_EXTRAS ? <PowerPanel locationId={id} minuteKey={minute} /> : null}
         </div>
       </div>
 
       {/* Drawings, wiring and the equipment list are on the Installation tab. */}
-      <TelemetryPanel locationId={id} now={now} />
+      {SHOW_EXTRAS ? <TelemetryPanel locationId={id} now={now} /> : null}
 
-      <PtzDialog event={ptz} onClose={() => setPtz(null)} onAcknowledge={(eid) => acknowledgeEvent(eid).then(load)} />
+      <PtzDialog
+        event={ptz}
+        onClose={() => setPtz(null)}
+        onAcknowledge={(eid) => acknowledgeEvent(eid).then(load)}
+      />
 
       {/* Confirmation. The dialog carries the prototype notice in its own body:
           this is the one screenshot that must never look like a real command. */}
       <Dialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{confirm === 'start' ? 'Start the duty pump?' : 'Stop the duty pump?'}</DialogTitle>
+            <DialogTitle>
+              {confirm === 'start' ? 'Start the duty pump?' : 'Stop the duty pump?'}
+            </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <dl className="rounded-md border bg-muted/50 p-3 text-xs">
                   <Row label="Plant" value="Marrickville trackside pumps — DUTY" />
-                  <Row label="Action" value={confirm === 'start' ? 'START (manual)' : 'STOP (manual)'} />
+                  <Row
+                    label="Action"
+                    value={confirm === 'start' ? 'START (manual)' : 'STOP (manual)'}
+                  />
                   <Row label="Mode" value="MANUAL — automatic control overridden" />
                   <Row label="Authorised by" value={`${DEMO_USER.name} · ${roleNames}`} />
                   <Row label="Water level now" value={`${fmtSigned(level?.value ?? null)} mm`} />
                 </dl>
                 <p className="rounded-md border border-sev-info/40 bg-sev-info-tint p-2 text-xs text-sev-info-strong">
-                  Prototype — no command is sent to any plant. In the delivered system this action is authenticated,
-                  timestamped, written to the audit trail and alarmed to the control room.
+                  Prototype — no command is sent to any plant. In the delivered system this action
+                  is authenticated, timestamped, written to the audit trail and alarmed to the
+                  control room.
                 </p>
               </div>
             </DialogDescription>
@@ -424,7 +578,11 @@ export function StationPage({ id }: { id: LocationId }) {
             <Button
               onClick={() => runCommand(confirm!)}
               disabled={busy}
-              className={confirm === 'start' ? 'bg-op-running text-white hover:bg-op-running/90' : 'bg-sev-alert text-white hover:bg-sev-alert/90'}
+              className={
+                confirm === 'start'
+                  ? 'bg-op-running text-white hover:bg-op-running/90'
+                  : 'bg-sev-alert text-white hover:bg-sev-alert/90'
+              }
             >
               {busy ? 'Sending…' : confirm === 'start' ? 'Start pump' : 'Stop pump'}
             </Button>
@@ -443,15 +601,22 @@ export function StationPage({ id }: { id: LocationId }) {
                 <p className="text-sm">{result?.message}</p>
                 <ol className="space-y-1.5">
                   {result?.steps.map((s) => (
-                    <li key={s.step} className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs">
+                    <li
+                      key={s.step}
+                      className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs"
+                    >
                       <span className="capitalize">{stepLabel(s.step)}</span>
                       <span
                         className={cn(
                           'rounded px-1.5 py-0.5 text-[11px] font-medium',
-                          s.state === 'done' ? 'bg-sev-normal-tint text-sev-normal-strong' : 'bg-muted text-muted-foreground',
+                          s.state === 'done'
+                            ? 'bg-sev-normal-tint text-sev-normal-strong'
+                            : 'bg-muted text-muted-foreground',
                         )}
                       >
-                        {s.state === 'done' ? `done ${s.at ? fmtTime(s.at) : ''}` : 'awaiting integration'}
+                        {s.state === 'done'
+                          ? `done ${s.at ? fmtTime(s.at) : ''}`
+                          : 'awaiting integration'}
                       </span>
                     </li>
                   ))}
@@ -465,6 +630,41 @@ export function StationPage({ id }: { id: LocationId }) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Figure 12's "Local pump-control logic" box: what the logger is doing, in three lines. */
+function LocalLogicNote({
+  levelMm,
+  floatWet,
+  dutyRunning,
+}: {
+  levelMm: number | null;
+  floatWet: boolean;
+  dutyRunning: boolean | undefined;
+}) {
+  const f = THRESHOLDS.flood;
+  const above = levelMm !== null && levelMm > f.pumpStartMm;
+  return (
+    <section className="hidden rounded-lg border bg-primary/5 p-3 text-xs sm:block">
+      <h2 className="mb-1.5 text-sm font-semibold">
+        Local pump-control logic (runs on the OMC-048 — independent of the cellular link)
+      </h2>
+      <p>
+        Radar {levelMm === null ? '–' : fmtSigned(levelMm)} mm {above ? '>' : '≤'} pump-start +
+        {f.pumpStartMm} mm
+        {above && dutyRunning ? ' → DUTY pump started; STANDBY armed' : ' → pumps stopped'}
+        {floatWet ? '. Float = WET confirms high level.' : '.'}
+      </p>
+      <p>
+        Mode: AUTO. Min run-time and anti-cycle active. Standby armed on duty-pump fault. High-high
+        alarm at +{f.highHighMm} mm.
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        All start/stop actions — automatic or manual — are timestamped and logged, and alarmed to
+        the central server.
+      </p>
+    </section>
   );
 }
 
@@ -499,12 +699,14 @@ function ConditionTile({ label, value }: { label: string; value: string }) {
 }
 
 function stepLabel(step: string): string {
-  return {
-    issued: 'Command issued',
-    acknowledged: 'Received by the OMC-048',
-    contactor: 'Pump-panel contactor energised',
-    flow: 'Run confirmation and flow',
-  }[step] ?? step;
+  return (
+    {
+      issued: 'Command issued',
+      acknowledged: 'Received by the OMC-048',
+      contactor: 'Pump-panel contactor energised',
+      flow: 'Run confirmation and flow',
+    }[step] ?? step
+  );
 }
 
 /** "Rain · Flood · Pump" — the words the corridor table and the nav use. */
@@ -518,4 +720,3 @@ function capabilitiesOf(location: StationLive['location']): string {
   if (location.pumpStation) parts.push('Pump');
   return parts.join(' · ');
 }
-

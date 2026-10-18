@@ -86,7 +86,22 @@ describe('System status (e2e)', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/SECRET|PASSWORD/);
   });
 
+  // Client, 10 Oct 2026: "Disable the backup function too".
+  it('says nothing about backups while the nightly backup is off', async () => {
+    const before = process.env.BACKUP_ENABLED;
+    delete process.env.BACKUP_ENABLED;
+    try {
+      fs.rmSync(path.join(dataDir, 'logs', 'backup-last.json'), { force: true });
+      const s = await service.status();
+      expect(s.backupEnabled).toBe(false);
+      expect(s.warnings.map((w) => w.code)).not.toEqual(expect.arrayContaining(['BACKUP_NONE']));
+    } finally {
+      if (before !== undefined) process.env.BACKUP_ENABLED = before;
+    }
+  });
+
   it('warns when there has been no backup, when it failed, and when it is late', async () => {
+    process.env.BACKUP_ENABLED = 'true';
     fs.rmSync(path.join(dataDir, 'logs', 'backup-last.json'), { force: true });
     expect((await service.status()).warnings.map((w) => w.code)).toContain('BACKUP_NONE');
 
@@ -101,6 +116,7 @@ describe('System status (e2e)', () => {
     const fresh = await service.status();
     expect(fresh.warnings.map((w) => w.code)).not.toEqual(expect.arrayContaining(['BACKUP_NONE', 'BACKUP_FAILED', 'BACKUP_STALE']));
     expect(fresh.backup).toMatchObject({ ok: true });
+    delete process.env.BACKUP_ENABLED;
   });
 
   it('says when stored readings are newer than the PC clock — the clock went back', async () => {

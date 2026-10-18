@@ -1,5 +1,6 @@
 'use client';
 
+import { SHOW_EXTRAS } from '@/lib/extras';
 import { useCallback, useEffect, useState } from 'react';
 import { Search, Trash2, UserPlus } from 'lucide-react';
 import type { ChannelId, NotifyPrefs, Organization, RoleId, Severity, User } from '@/lib/api/types';
@@ -59,7 +60,10 @@ export function UsersPage() {
   const [q, setQ] = useState('');
   const [role, setRole] = useState<RoleId | 'all'>('all');
   const [editing, setEditing] = useState<User | 'new' | null>(null);
-  const [confirming, setConfirming] = useState<{ user: User; action: 'suspend' | 'reinstate' | 'remove' } | null>(null);
+  const [confirming, setConfirming] = useState<{
+    user: User;
+    action: 'suspend' | 'reinstate' | 'remove';
+  } | null>(null);
   const { isSuperUser, can, revision } = useActing();
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [orgFilter, setOrgFilter] = useState('all');
@@ -80,7 +84,11 @@ export function UsersPage() {
       u.name.toLowerCase().includes(q.toLowerCase()) ||
       u.email.toLowerCase().includes(q.toLowerCase()) ||
       u.roles.some((r) => ROLES_BY_ID[r].name.toLowerCase().includes(q.toLowerCase()));
-    return matchesQ && (role === 'all' || u.roles.includes(role)) && (orgFilter === 'all' || (u.orgId ?? 'mts') === orgFilter);
+    return (
+      matchesQ &&
+      (role === 'all' || u.roles.includes(role)) &&
+      (orgFilter === 'all' || (u.orgId ?? 'mts') === orgFilter)
+    );
   });
 
   const active = users.filter((u) => u.status === 'active').length;
@@ -89,11 +97,18 @@ export function UsersPage() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Add, edit, suspend or remove users and assign their roles and station access. Administrator only.
+        Add, edit, suspend or remove users and assign their roles and station access. Administrator
+        only.
       </p>
-      <p className="rounded-md border border-sev-info/40 bg-sev-info-tint px-3 py-2 text-xs text-sev-info-strong">
-        Forgotten passwords are self-service: people reset their own from the sign-in screen with an emailed link that
-        works once for 30 minutes. Administrators never see or set a password — resets appear in the audit trail.
+      <p
+        className={cn(
+          'rounded-md border border-sev-info/40 bg-sev-info-tint px-3 py-2 text-xs text-sev-info-strong',
+          !SHOW_EXTRAS && 'hidden',
+        )}
+      >
+        Forgotten passwords are self-service: people reset their own from the sign-in screen with an
+        emailed link that works once for 30 minutes. Administrators never see or set a password —
+        resets appear in the audit trail.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -124,7 +139,12 @@ export function UsersPage() {
           {users.length} users · {active} active · {suspended} suspended
         </span>
         {isSuperUser ? (
-          <select value={orgFilter} onChange={(e) => setOrgFilter(e.target.value)} aria-label="Organisation" className="h-9 rounded-md border bg-background px-2 text-sm">
+          <select
+            value={orgFilter}
+            onChange={(e) => setOrgFilter(e.target.value)}
+            aria-label="Organisation"
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+          >
             <option value="all">All organisations</option>
             {orgs.map((o) => (
               <option key={o.id} value={o.id}>
@@ -148,18 +168,25 @@ export function UsersPage() {
           {filtered.map((u) => (
             <li key={u.id} className="space-y-2 px-4 py-3">
               <div className="flex items-start gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">{u.initials}</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                  {u.initials}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium leading-tight">{u.name}</p>
                   <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                  {u.mobile ? <p className="tabular text-[11px] text-muted-foreground">{u.mobile}</p> : null}
+                  {u.mobile ? (
+                    <p className="tabular text-[11px] text-muted-foreground">{u.mobile}</p>
+                  ) : null}
                 </div>
                 <span
                   className={cn(
                     'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
-                    u.status === 'active' && 'bg-sev-normal-tint text-sev-normal-strong ring-sev-normal/25',
-                    u.status === 'suspended' && 'bg-sev-warning-tint text-sev-warning-strong ring-sev-warning/25',
-                    u.status === 'invited' && 'bg-sev-info-tint text-sev-info-strong ring-sev-info/25',
+                    u.status === 'active' &&
+                      'bg-sev-normal-tint text-sev-normal-strong ring-sev-normal/25',
+                    u.status === 'suspended' &&
+                      'bg-sev-warning-tint text-sev-warning-strong ring-sev-warning/25',
+                    u.status === 'invited' &&
+                      'bg-sev-info-tint text-sev-info-strong ring-sev-info/25',
                   )}
                 >
                   {u.status[0].toUpperCase() + u.status.slice(1)}
@@ -167,15 +194,23 @@ export function UsersPage() {
               </div>
               <div className="flex flex-wrap gap-1">
                 {u.roles.map((r) => (
-                  <span key={r} className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset', ROLE_STYLE[r])}>
+                  <span
+                    key={r}
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+                      ROLE_STYLE[r],
+                    )}
+                  >
                     {ROLES_BY_ID[r].name}
                   </span>
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
                 {isSuperUser ? `${orgName(u.orgId)} · ` : ''}
-                {u.stationAccess === 'all' ? 'All stations' : u.stationAccess.map((x) => STATIONS_BY_ID[x].name).join(', ')} ·{' '}
-                {u.lastLogin ? `last login ${fmtRelative(u.lastLogin, now)}` : 'never signed in'}
+                {u.stationAccess === 'all'
+                  ? 'All stations'
+                  : u.stationAccess.map((x) => STATIONS_BY_ID[x].name).join(', ')}{' '}
+                · {u.lastLogin ? `last login ${fmtRelative(u.lastLogin, now)}` : 'never signed in'}
               </p>
               {!can('addUsers') ? <p className="text-xs text-muted-foreground">View only</p> : null}
               <div className={cn('flex gap-2', !can('addUsers') && 'hidden')}>
@@ -186,11 +221,21 @@ export function UsersPage() {
                   size="sm"
                   variant="outline"
                   disabled={u.id === DEMO_USER.id}
-                  onClick={() => setConfirming({ user: u, action: u.status === 'suspended' ? 'reinstate' : 'suspend' })}
+                  onClick={() =>
+                    setConfirming({
+                      user: u,
+                      action: u.status === 'suspended' ? 'reinstate' : 'suspend',
+                    })
+                  }
                 >
                   {u.status === 'suspended' ? 'Reinstate' : 'Suspend'}
                 </Button>
-                <Button size="sm" variant="outline" disabled={u.id === DEMO_USER.id} onClick={() => setConfirming({ user: u, action: 'remove' })}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={u.id === DEMO_USER.id}
+                  onClick={() => setConfirming({ user: u, action: 'remove' })}
+                >
                   Remove
                 </Button>
               </div>
@@ -201,7 +246,15 @@ export function UsersPage() {
           <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-header text-header-foreground">
               <tr>
-                {['User', ...(isSuperUser ? ['Organisation'] : []), 'Role(s)', 'Station access', 'Status', 'Last login', 'Actions'].map((h) => (
+                {[
+                  'User',
+                  ...(isSuperUser ? ['Organisation'] : []),
+                  'Role(s)',
+                  'Station access',
+                  'Status',
+                  'Last login',
+                  'Actions',
+                ].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium">
                     {h}
                   </th>
@@ -219,17 +272,26 @@ export function UsersPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{u.name}</p>
                         <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                        {u.mobile ? <p className="tabular truncate text-[11px] text-muted-foreground">{u.mobile}</p> : null}
+                        {u.mobile ? (
+                          <p className="tabular truncate text-[11px] text-muted-foreground">
+                            {u.mobile}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </td>
-                  {isSuperUser ? <td className="whitespace-nowrap px-3 py-2 text-xs">{orgName(u.orgId)}</td> : null}
+                  {isSuperUser ? (
+                    <td className="whitespace-nowrap px-3 py-2 text-xs">{orgName(u.orgId)}</td>
+                  ) : null}
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
                       {u.roles.map((r) => (
                         <span
                           key={r}
-                          className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset', ROLE_STYLE[r])}
+                          className={cn(
+                            'rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+                            ROLE_STYLE[r],
+                          )}
                         >
                           {ROLES_BY_ID[r].name}
                         </span>
@@ -245,9 +307,12 @@ export function UsersPage() {
                     <span
                       className={cn(
                         'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-                        u.status === 'active' && 'bg-sev-normal-tint text-sev-normal-strong ring-sev-normal/25',
-                        u.status === 'suspended' && 'bg-sev-warning-tint text-sev-warning-strong ring-sev-warning/25',
-                        u.status === 'invited' && 'bg-sev-info-tint text-sev-info-strong ring-sev-info/25',
+                        u.status === 'active' &&
+                          'bg-sev-normal-tint text-sev-normal-strong ring-sev-normal/25',
+                        u.status === 'suspended' &&
+                          'bg-sev-warning-tint text-sev-warning-strong ring-sev-warning/25',
+                        u.status === 'invited' &&
+                          'bg-sev-info-tint text-sev-info-strong ring-sev-info/25',
                       )}
                     >
                       <span
@@ -265,9 +330,19 @@ export function UsersPage() {
                     {u.lastLogin ? fmtRelative(u.lastLogin, now) : '–'}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    {!can('addUsers') ? <span className="text-xs text-muted-foreground">View only</span> : null}
-                    <div className={cn('flex items-center gap-2 text-xs', !can('addUsers') && 'hidden')}>
-                      <button className="text-primary hover:underline" onClick={() => setEditing(u)}>
+                    {!can('addUsers') ? (
+                      <span className="text-xs text-muted-foreground">View only</span>
+                    ) : null}
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 text-xs',
+                        !can('addUsers') && 'hidden',
+                      )}
+                    >
+                      <button
+                        className="text-primary hover:underline"
+                        onClick={() => setEditing(u)}
+                      >
                         Edit
                       </button>
                       {/* You cannot suspend or delete yourself: locking the last
@@ -276,9 +351,14 @@ export function UsersPage() {
                       <button
                         className="text-muted-foreground hover:text-sev-alert disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={u.id === DEMO_USER.id}
-                        title={u.id === DEMO_USER.id ? 'You cannot suspend your own account' : undefined}
+                        title={
+                          u.id === DEMO_USER.id ? 'You cannot suspend your own account' : undefined
+                        }
                         onClick={() =>
-                          setConfirming({ user: u, action: u.status === 'suspended' ? 'reinstate' : 'suspend' })
+                          setConfirming({
+                            user: u,
+                            action: u.status === 'suspended' ? 'reinstate' : 'suspend',
+                          })
                         }
                       >
                         {u.status === 'suspended' ? 'Reinstate' : 'Suspend'}
@@ -286,7 +366,9 @@ export function UsersPage() {
                       <button
                         className="inline-flex items-center gap-1 text-muted-foreground hover:text-sev-alert disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={u.id === DEMO_USER.id}
-                        title={u.id === DEMO_USER.id ? 'You cannot remove your own account' : undefined}
+                        title={
+                          u.id === DEMO_USER.id ? 'You cannot remove your own account' : undefined
+                        }
                         onClick={() => setConfirming({ user: u, action: 'remove' })}
                       >
                         <Trash2 className="h-3.5 w-3.5" /> Remove
@@ -301,12 +383,18 @@ export function UsersPage() {
 
         <footer className="border-t p-4">
           <p className="mb-2 text-xs font-medium">
-            Roles — least privilege; a user may hold more than one, and access can be scoped to selected stations
+            Roles — least privilege; a user may hold more than one, and access can be scoped to
+            selected stations
           </p>
           <ul className="grid gap-1.5 sm:grid-cols-2">
             {ROLES.map((r) => (
               <li key={r.id} className="flex items-start gap-2 text-xs">
-                <span className={cn('shrink-0 rounded-full px-2 py-0.5 font-medium ring-1 ring-inset', ROLE_STYLE[r.id])}>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-2 py-0.5 font-medium ring-1 ring-inset',
+                    ROLE_STYLE[r.id],
+                  )}
+                >
                   {r.name}
                 </span>
                 <span className="text-muted-foreground">{r.summary}</span>
@@ -385,7 +473,10 @@ function UserDialog({
     roles: roles.length ? undefined : 'Give them at least one role.',
     stations: allStations || stations.length ? undefined : 'Choose the stations they may see.',
     // Optional, but if given it has to be an Australian mobile.
-    mobile: !mobile.trim() || /^04\d{2}\s?\d{3}\s?\d{3}$/.test(mobile.trim()) ? undefined : 'Use the 04xx xxx xxx format.',
+    mobile:
+      !mobile.trim() || /^04\d{2}\s?\d{3}\s?\d{3}$/.test(mobile.trim())
+        ? undefined
+        : 'Use the 04xx xxx xxx format.',
   };
   const invalid = Object.values(errors).some(Boolean);
 
@@ -404,7 +495,11 @@ function UserDialog({
         <div className="space-y-4">
           {isNew && orgs.length ? (
             <Field label="Organisation">
-              <select value={orgId} onChange={(e) => setOrgId(e.target.value)} className="h-9 w-full rounded-md border bg-background px-2 text-sm">
+              <select
+                value={orgId}
+                onChange={(e) => setOrgId(e.target.value)}
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
                 {orgs.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
@@ -417,10 +512,24 @@ function UserDialog({
             <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
           </Field>
           <Field label="Email" error={touched ? errors.email : undefined}>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-9" />
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-9"
+            />
           </Field>
-          <Field label="Mobile (§8.4 — used for SMS if MTS keeps that channel)" error={touched ? errors.mobile : undefined}>
-            <Input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="04xx xxx xxx" className="h-9" />
+          <Field
+            label="Mobile (§8.4 — used for SMS if MTS keeps that channel)"
+            error={touched ? errors.mobile : undefined}
+          >
+            <Input
+              type="tel"
+              value={mobile}
+              onChange={(e) => setMobile(e.target.value)}
+              placeholder="04xx xxx xxx"
+              className="h-9"
+            />
           </Field>
 
           <fieldset>
@@ -435,7 +544,9 @@ function UserDialog({
                     key={r.id}
                     type="button"
                     aria-pressed={on}
-                    onClick={() => setRoles(on ? roles.filter((x) => x !== r.id) : [...roles, r.id])}
+                    onClick={() =>
+                      setRoles(on ? roles.filter((x) => x !== r.id) : [...roles, r.id])
+                    }
                     className={cn(
                       'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors',
                       on ? ROLE_STYLE[r.id] : 'text-muted-foreground ring-border hover:bg-muted',
@@ -458,7 +569,9 @@ function UserDialog({
                 onClick={() => setAllStations(true)}
                 className={cn(
                   'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-                  allStations ? 'bg-primary/10 text-primary-strong ring-primary/25' : 'text-muted-foreground ring-border',
+                  allStations
+                    ? 'bg-primary/10 text-primary-strong ring-primary/25'
+                    : 'text-muted-foreground ring-border',
                 )}
               >
                 All stations
@@ -469,7 +582,9 @@ function UserDialog({
                 onClick={() => setAllStations(false)}
                 className={cn(
                   'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
-                  !allStations ? 'bg-primary/10 text-primary-strong ring-primary/25' : 'text-muted-foreground ring-border',
+                  !allStations
+                    ? 'bg-primary/10 text-primary-strong ring-primary/25'
+                    : 'text-muted-foreground ring-border',
                 )}
               >
                 Selected stations
@@ -484,10 +599,14 @@ function UserDialog({
                       key={st.id}
                       type="button"
                       aria-pressed={on}
-                      onClick={() => setStations(on ? stations.filter((x) => x !== st.id) : [...stations, st.id])}
+                      onClick={() =>
+                        setStations(on ? stations.filter((x) => x !== st.id) : [...stations, st.id])
+                      }
                       className={cn(
                         'rounded-full px-2.5 py-1 text-xs ring-1 ring-inset transition-colors',
-                        on ? 'bg-primary/10 font-medium text-primary-strong ring-primary/25' : 'text-muted-foreground ring-border hover:bg-muted',
+                        on
+                          ? 'bg-primary/10 font-medium text-primary-strong ring-primary/25'
+                          : 'text-muted-foreground ring-border hover:bg-muted',
                       )}
                     >
                       {st.name}
@@ -503,7 +622,9 @@ function UserDialog({
               themselves cannot be switched off — an operator who opted out of
               the block-line alert is the failure this system exists to prevent. */}
           <fieldset>
-            <legend className="mb-1.5 text-xs text-muted-foreground">Notification preferences</legend>
+            <legend className="mb-1.5 text-xs text-muted-foreground">
+              Notification preferences
+            </legend>
             <div className="space-y-2 rounded-md border p-3 text-sm">
               <p className="text-xs font-medium text-muted-foreground">Channels</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
@@ -517,17 +638,30 @@ function UserDialog({
                 ).map(([id, label, locked]) => {
                   const sms = id === 'sms';
                   return (
-                    <label key={id} className={cn('flex items-center gap-2', sms && 'text-muted-foreground')}>
+                    <label
+                      key={id}
+                      className={cn('flex items-center gap-2', sms && 'text-muted-foreground')}
+                    >
                       <input
                         type="checkbox"
                         className="h-4 w-4"
                         aria-label={`Notify by ${label.toLowerCase()}`}
                         checked={channels.includes(id)}
                         disabled={locked || sms}
-                        onChange={() => setChannels(channels.includes(id) ? channels.filter((c) => c !== id) : [...channels, id])}
+                        onChange={() =>
+                          setChannels(
+                            channels.includes(id)
+                              ? channels.filter((c) => c !== id)
+                              : [...channels, id],
+                          )
+                        }
                       />
                       {label}
-                      {sms ? <span className="text-[11px]">(not in scope — Rev B)</span> : locked ? <span className="text-[11px] text-muted-foreground">(always)</span> : null}
+                      {sms ? (
+                        <span className="text-[11px]">(not in scope — Rev B)</span>
+                      ) : locked ? (
+                        <span className="text-[11px] text-muted-foreground">(always)</span>
+                      ) : null}
                     </label>
                   );
                 })}
@@ -547,15 +681,28 @@ function UserDialog({
                       className="h-4 w-4"
                       checked={locked || severities.includes(id)}
                       disabled={locked}
-                      onChange={() => setSeverities(severities.includes(id) ? severities.filter((x) => x !== id) : [...severities, id])}
+                      onChange={() =>
+                        setSeverities(
+                          severities.includes(id)
+                            ? severities.filter((x) => x !== id)
+                            : [...severities, id],
+                        )
+                      }
                     />
                     {label}
-                    {locked ? <span className="text-[11px] text-muted-foreground">(always)</span> : null}
+                    {locked ? (
+                      <span className="text-[11px] text-muted-foreground">(always)</span>
+                    ) : null}
                   </label>
                 ))}
               </div>
               <label className="flex items-center gap-2 pt-1">
-                <input type="checkbox" className="h-4 w-4" checked={quiet} onChange={() => setQuiet(!quiet)} />
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={quiet}
+                  onChange={() => setQuiet(!quiet)}
+                />
                 Quiet hours 22:00–06:00 for information only
               </label>
             </div>
@@ -605,7 +752,9 @@ function UserDialog({
               toast({
                 variant: 'success',
                 title: isNew ? 'Invitation sent (simulated)' : 'User updated (simulated)',
-                description: isNew ? `${name.trim()} will appear as Invited until they set a password.` : name.trim(),
+                description: isNew
+                  ? `${name.trim()} will appear as Invited until they set a password.`
+                  : name.trim(),
               });
               onSaved();
             }}
@@ -687,7 +836,8 @@ function ConfirmDialog({
               if (!subject) return;
               setBusy(true);
               if (action === 'remove') await removeUser(subject.user.id);
-              else await setUserStatus(subject.user.id, action === 'suspend' ? 'suspended' : 'active');
+              else
+                await setUserStatus(subject.user.id, action === 'suspend' ? 'suspended' : 'active');
               setBusy(false);
               toast({
                 variant: action === 'remove' ? 'warn' : 'success',
@@ -705,7 +855,15 @@ function ConfirmDialog({
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block text-xs text-muted-foreground">{label}</span>

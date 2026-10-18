@@ -101,9 +101,18 @@ export class FirstRunService implements OnApplicationBootstrap {
   /** The site's one organisation, created on a fresh database. */
   async ensureOrganization() {
     const existing = await Organization.findOne({ deletedAt: null }).sort({ createdAt: 1 });
-    if (existing) return existing;
+    if (existing) {
+      // The default site name became "Automatic Weather Station" (client, 10 Oct
+      // 2026). A site still carrying the old default, untouched, takes the new
+      // one; a name anyone chose is left alone.
+      if (existing.name === 'Weather Station') {
+        existing.name = 'Automatic Weather Station';
+        await existing.save();
+      }
+      return existing;
+    }
 
-    const name = process.env.STANDALONE_SITE_NAME?.trim() || 'Weather Station';
+    const name = process.env.STANDALONE_SITE_NAME?.trim() || 'Automatic Weather Station';
     // The PC's own timezone. It decides where each day's record starts, so for a
     // machine sitting at the site it is the right default rather than UTC.
     // Validated: a typo would otherwise be stored as typed, and every day would be

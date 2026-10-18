@@ -37,6 +37,9 @@ export class AlertEvaluationService {
 
   @OnEvent(DomainEvent.MET_MEASURES)
   async onMetMeasures(e: MetMeasuresEvent): Promise<void> {
+    // Alerts & notifications are switched off on site PCs (client, 10 Oct 2026);
+    // ALERTS_ENABLED=true in the settings file turns rule evaluation back on.
+    if (!alertsEnabled()) return;
     await this.evaluateDevice(e.organizationId, e.deviceId, 'MET', e.latest, MET_SENSOR_MAP, { recordId: e.recordId }, e.extremes);
   }
 
@@ -219,4 +222,9 @@ export class AlertEvaluationService {
     const failed = results.filter((r) => r.status === 'rejected').length;
     if (failed) this.logger.warn(`alert email: ${failed}/${recipients.length} recipient(s) failed`);
   }
+}
+
+/** Off unless the settings file says ALERTS_ENABLED=true. Read each time, so tests can flip it. */
+export function alertsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.ALERTS_ENABLED ?? '').trim().toLowerCase() === 'true';
 }

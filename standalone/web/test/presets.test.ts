@@ -8,14 +8,14 @@ import {
 
 describe('dashboard preset tiles ↔ visible keys', () => {
   it('encodes a subset in catalog order (ignores input order)', () => {
-    const tiles = keysToTiles(['pressure', 'wind_speed', 'battery']);
-    expect(tiles.map((t) => t.nmea)).toEqual(['wind_speed', 'pressure', 'battery']);
+    const tiles = keysToTiles(['pressure', 'humidity', 'battery']);
+    expect(tiles.map((t) => t.nmea)).toEqual(['humidity', 'pressure', 'battery']);
     expect(tiles.map((t) => t.index)).toEqual([0, 1, 2]);
   });
 
   it('round-trips through tilesToKeys', () => {
-    const keys = ['wind_speed', 'temperature', 'solar'];
-    expect(tilesToKeys(keysToTiles(keys))).toEqual(['wind_speed', 'solar', 'temperature']);
+    const keys = ['humidity', 'temperature', 'solar'];
+    expect(tilesToKeys(keysToTiles(keys))).toEqual(['humidity', 'solar', 'temperature']);
   });
 
   it('drops unknown keys when decoding', () => {

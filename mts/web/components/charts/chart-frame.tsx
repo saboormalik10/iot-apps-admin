@@ -1,6 +1,7 @@
 'use client';
 
 import { Download, FlaskConical, Table2 } from 'lucide-react';
+import { SHOW_EXTRAS } from '@/lib/extras';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { fmtDateTime, fmtValue } from '@/lib/format';
@@ -73,7 +74,9 @@ export function ChartFrame({
     } else if (rows?.length) {
       header = ['Time', ...rows.map((r) => r.label)].join(',');
       const times = rows[0].points.map((p) => p.t);
-      lines = times.map((t, i) => [new Date(t).toISOString(), ...rows.map((r) => r.points[i]?.v ?? '')].join(','));
+      lines = times.map((t, i) =>
+        [new Date(t).toISOString(), ...rows.map((r) => r.points[i]?.v ?? '')].join(','),
+      );
     } else return;
     // Someone will open this in Excel and forget where it came from.
     const csv = [
@@ -97,7 +100,9 @@ export function ChartFrame({
         <div className="min-w-0">
           <Heading className="text-sm font-semibold">
             {title}
-            {unit ? <span className="ml-1.5 font-normal text-muted-foreground">({unit})</span> : null}
+            {unit ? (
+              <span className="ml-1.5 font-normal text-muted-foreground">({unit})</span>
+            ) : null}
           </Heading>
           {footnote ? <p className="mt-0.5 text-xs text-muted-foreground">{footnote}</p> : null}
         </div>
@@ -117,7 +122,7 @@ export function ChartFrame({
             </span>
           ) : null}
           {actions}
-          {hasTable ? (
+          {SHOW_EXTRAS && hasTable ? (
             <>
               <Button
                 size="icon"
@@ -129,7 +134,13 @@ export function ChartFrame({
               >
                 <Table2 className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Download as CSV" onClick={download}>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                aria-label="Download as CSV"
+                onClick={download}
+              >
                 <Download className="h-4 w-4" />
               </Button>
             </>
@@ -146,7 +157,13 @@ export function ChartFrame({
               <thead className="sticky top-0 bg-muted">
                 <tr>
                   {table.head.map((h, i) => (
-                    <th key={h} className={cn('whitespace-nowrap px-2 py-1.5 font-medium', i === 0 ? 'text-left' : 'text-right')}>
+                    <th
+                      key={h}
+                      className={cn(
+                        'whitespace-nowrap px-2 py-1.5 font-medium',
+                        i === 0 ? 'text-left' : 'text-right',
+                      )}
+                    >
                       {h}
                     </th>
                   ))}
@@ -156,7 +173,13 @@ export function ChartFrame({
                 {table.rows.map((r, i) => (
                   <tr key={i} className="border-t">
                     {r.map((c, j) => (
-                      <td key={j} className={cn('whitespace-nowrap px-2 py-1', j === 0 ? 'text-left text-muted-foreground' : 'text-right')}>
+                      <td
+                        key={j}
+                        className={cn(
+                          'whitespace-nowrap px-2 py-1',
+                          j === 0 ? 'text-left text-muted-foreground' : 'text-right',
+                        )}
+                      >
                         {c}
                       </td>
                     ))}
@@ -181,7 +204,9 @@ export function ChartFrame({
               <tbody className="tabular">
                 {rows![0].points.map((p, i) => (
                   <tr key={p.t} className="border-t">
-                    <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">{fmtDateTime(p.t)}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-muted-foreground">
+                      {fmtDateTime(p.t)}
+                    </td>
                     {rows!.map((r) => (
                       <td key={r.label} className="px-2 py-1 text-right">
                         {fmtValue(r.points[i]?.v ?? null)}
@@ -195,7 +220,7 @@ export function ChartFrame({
         )}
       </div>
 
-      {!hideSyntheticMark ? (
+      {SHOW_EXTRAS && !hideSyntheticMark ? (
         <p className="mt-2 flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground">
           <FlaskConical className="h-3 w-3" aria-hidden />
           synthetic demonstration data

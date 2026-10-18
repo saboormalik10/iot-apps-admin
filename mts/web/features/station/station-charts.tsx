@@ -1,5 +1,6 @@
 'use client';
 
+import { SHOW_EXTRAS } from '@/lib/extras';
 import { useEffect, useMemo, useState } from 'react';
 import type { AlertEvent, StationLocation } from '@/lib/api/types';
 import { buildSeries, listEvents } from '@/lib/api/endpoints';
@@ -125,7 +126,9 @@ export function StationCharts({ station, now }: { station: StationLocation; now:
         </ChartFrame>
       ) : null}
 
-      {day.rain.length || day.mean.length || day.temp.length ? (
+      {/* Figure 12 shows only the water-level trend; the day charts are an extra
+          there, but the only charts a station without a level sensor has. */}
+      {(SHOW_EXTRAS || !level.length) && (day.rain.length || day.mean.length || day.temp.length) ? (
         <>
           <h2 className="pt-1 text-sm font-semibold">Last 24 hours at this station</h2>
           {/* A station with one daily measurement gets it full width, not half a

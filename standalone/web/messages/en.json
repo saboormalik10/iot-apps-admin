@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Observator Weather Station",
-    "shortName": "Weather Station"
+    "name": "Observator Automatic Weather Station",
+    "shortName": "Automatic Weather Station"
   },
   "common": {
     "save": "Save",
@@ -39,7 +39,7 @@
   },
   "auth": {
     "loginTitle": "Sign in",
-    "loginSubtitle": "Sign in to the weather station portal",
+    "loginSubtitle": "Sign in to the automatic weather station portal",
     "email": "Email",
     "password": "Password",
     "currentPassword": "Current password",

@@ -9,6 +9,7 @@ import type {
   SystemStatus,
   UpdateStreamConnectionInput,
   RecentStreamLine,
+  StationState,
   AlertTimeline,
   AppNotification,
   AuditEntry,
@@ -502,6 +503,11 @@ export const queryCsvHref = (p: QueryParams) => `/api/query/measures.csv?${query
 // ── Rain (standalone Phase 4) ───────────────────────────────────────────────
 /** The site PC's health — the System page. */
 export const getSystemStatus = (signal?: AbortSignal) => http.get<SystemStatus>('/system/status', signal);
+
+/** The weather station: running or stopped, and whether this user may stop and start it. */
+export const getStationState = (signal?: AbortSignal) => http.get<StationState>('/system/station', signal);
+export const stopStation = () => http.post<StationState>('/system/station/stop');
+export const startStation = () => http.post<StationState>('/system/station/start');
 
 /** The last 100 lines the sensor sent, oldest first, each with what became of it. */
 export const getRecentStreamLines = (signal?: AbortSignal) => http.get<RecentStreamLine[]>('/stream/recent-lines', signal);

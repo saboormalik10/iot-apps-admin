@@ -26,13 +26,12 @@ export const MET_STATION_WIDGETS: StationWidget[] = [
   // The live dial combines speed and bearing in one instrument. It sits first
   // because it is the reading the client asked to lead with.
   { key: 'wind_dial', label: 'Wind (live)', unit: 'km/h', type: 'compass' },
-  { key: 'wind_speed', label: 'Wind speed', unit: 'km/h', type: 'gauge' },
+  { key: 'wind_dir', label: 'Wind direction', unit: '°', type: 'compass' },
   { key: 'humidity', label: 'Humidity', unit: '%', type: 'gauge' },
   { key: 'pressure', label: 'Pressure', unit: 'hPa', type: 'gauge' },
   { key: 'solar', label: 'Solar', unit: 'W/m²', type: 'gauge' },
   { key: 'temperature', label: 'Temperature', unit: '°C', type: 'thermometer' },
   { key: 'dew_point', label: 'Dew point', unit: '°C', type: 'thermometer' },
-  { key: 'wind_dir', label: 'Wind direction', unit: '°', type: 'compass' },
   { key: 'battery', label: 'DC voltage', unit: 'V', type: 'battery' },
   // Keys kept from the cloud so saved views still load; the figures behind them
   // are now rain today (from the station's rain-day start), and the rate.

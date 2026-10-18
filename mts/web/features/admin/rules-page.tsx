@@ -1,9 +1,17 @@
 'use client';
 
+import { SHOW_EXTRAS } from '@/lib/extras';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Search, X } from 'lucide-react';
 import type { AlertRule } from '@/lib/api/types';
-import { PARAMETER_LABELS, createRule, currentRuleVersion, listRules, saveRule, setRuleEnabled } from '@/lib/api/endpoints';
+import {
+  PARAMETER_LABELS,
+  createRule,
+  currentRuleVersion,
+  listRules,
+  saveRule,
+  setRuleEnabled,
+} from '@/lib/api/endpoints';
 import { LoadingState } from '@/components/screen-states';
 import { StatusPill, severityTone } from '@/components/status/status-pill';
 import { Button } from '@/components/ui/button';
@@ -13,7 +21,8 @@ import { useDemoClock } from '@/lib/demo-clock';
 import { fmtRelative } from '@/lib/format';
 import { CHANNELS } from '@/lib/mock/seed/rules';
 import { RECIPIENT_GROUPS } from '@/lib/mock/seed/people';
-import { STATIONS, STATIONS_BY_ID } from '@/lib/mock/seed/stations';
+import { STATIONS } from '@/lib/mock/seed/stations';
+import { stationName } from '@/lib/mock/store';
 import { toast } from '@/lib/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { RuleDryRun } from './rule-dry-run';
@@ -42,7 +51,7 @@ export function RulesPage() {
   const load = useCallback(() => {
     listRules().then((r) => {
       setRules(r);
-      setEditing((cur) => (cur ? r.find((x) => x.id === cur.id) ?? null : null));
+      setEditing((cur) => (cur ? (r.find((x) => x.id === cur.id) ?? null) : null));
     });
   }, []);
   useEffect(load, [load]);
@@ -50,7 +59,9 @@ export function RulesPage() {
   if (!rules) return <LoadingState label="Loading rules…" />;
 
   const shown = rules.filter(
-    (r) => (group === 'all' || r.group === group) && (!q || r.name.toLowerCase().includes(q.toLowerCase())),
+    (r) =>
+      (group === 'all' || r.group === group) &&
+      (!q || r.name.toLowerCase().includes(q.toLowerCase())),
   );
   const enabled = rules.filter((r) => r.enabled).length;
   const head = currentRuleVersion();
@@ -58,8 +69,8 @@ export function RulesPage() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        The rules-based engine: thresholds, timers, severities and recipients — not code. MTS administrators can add,
-        edit, enable or disable any rule.
+        The rules-based engine: thresholds, timers, severities and recipients — not code. MTS
+        administrators can add, edit, enable or disable any rule.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -80,7 +91,9 @@ export function RulesPage() {
               aria-pressed={group === g}
               className={cn(
                 'rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors',
-                group === g ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent',
+                group === g
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-accent',
               )}
             >
               {g}
@@ -99,105 +112,138 @@ export function RulesPage() {
         </div>
       </div>
 
-      <div className={cn('grid gap-4', editing ? 'xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]' : '')}>
+      <div
+        className={cn('grid gap-4', editing ? 'xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]' : '')}
+      >
         <div className="min-w-0 space-y-4">
-        <section className="min-w-0 rounded-lg border bg-card">
-          {/* On a phone each rule is a card: a six-column table there showed the
+          <section className="min-w-0 rounded-lg border bg-card">
+            {/* On a phone each rule is a card: a six-column table there showed the
               rule names and nothing else without scrolling sideways. */}
-          <ul className="divide-y md:hidden">
-            {shown.map((r) => (
-              <li key={r.id} className={cn('space-y-2 px-4 py-3', editing?.id === r.id && 'bg-accent/40')}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium leading-tight">{r.name}</p>
-                    <p className="text-xs text-muted-foreground">{PARAMETER_LABELS[r.parameter]}</p>
+            <ul className="divide-y md:hidden">
+              {shown.map((r) => (
+                <li
+                  key={r.id}
+                  className={cn('space-y-2 px-4 py-3', editing?.id === r.id && 'bg-accent/40')}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium leading-tight">{r.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {PARAMETER_LABELS[r.parameter]}
+                      </p>
+                    </div>
+                    <StatusPill tone={severityTone(r.severity)} size="sm" />
                   </div>
-                  <StatusPill tone={severityTone(r.severity)} size="sm" />
-                </div>
-                <p className="text-sm">{r.condition ?? `≥ ${r.value} ${r.unit} ${r.window !== 'instant' ? `/ ${windowLabel(r.window)}` : ''}`}</p>
-                <p className="text-xs text-muted-foreground">
-                  {r.vigilance ? `Vigilance ${r.vigilance}${r.resetOnRetrigger ? ' · reset on re-trigger' : ''}` : r.dwell ?? 'Immediate'}
-                  {r.schedule ? ` · scheduled ${r.schedule.from.slice(5)} → ${r.schedule.to.slice(5)}` : ''}
-                </p>
-                <div className="flex items-center justify-between gap-2">
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Switch
-                      checked={r.enabled}
-                      onCheckedChange={(v) => setRuleEnabled(r.id, v).then(load)}
-                      aria-label={`${r.enabled ? 'Disable' : 'Enable'} ${r.name}`}
-                    />
-                    {r.enabled ? 'Enabled' : 'Disabled'}
-                  </label>
-                  <Button size="sm" variant="outline" onClick={() => setEditing(r)}>
-                    Edit
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="scroll-x-hint hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="bg-header text-header-foreground">
-                <tr>
-                  {['Rule / parameter', 'Trigger condition', 'Dwell / vigilance', 'Severity', 'On', ''].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={cn('border-b last:border-0 hover:bg-muted/40', editing?.id === r.id && 'bg-accent/40')}
-                  >
-                    <td className="px-3 py-2">
-                      <p className="font-medium">{r.name}</p>
-                      <p className="text-xs text-muted-foreground">{PARAMETER_LABELS[r.parameter]}</p>
-                    </td>
-                    <td className="tabular whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {r.condition ?? `≥ ${r.value} ${r.unit} ${r.window !== 'instant' ? `/ ${windowLabel(r.window)}` : ''}`}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {r.vigilance ? `Vigilance ${r.vigilance}${r.resetOnRetrigger ? ' · reset' : ''}` : r.dwell ?? 'Immediate'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <StatusPill tone={severityTone(r.severity)} size="sm" />
-                    </td>
-                    <td className="px-3 py-2">
+                  <p className="text-sm">
+                    {r.condition ??
+                      `≥ ${r.value} ${r.unit} ${r.window !== 'instant' ? `/ ${windowLabel(r.window)}` : ''}`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {r.vigilance
+                      ? `Vigilance ${r.vigilance}${r.resetOnRetrigger ? ' · reset on re-trigger' : ''}`
+                      : (r.dwell ?? 'Immediate')}
+                    {r.schedule
+                      ? ` · scheduled ${r.schedule.from.slice(5)} → ${r.schedule.to.slice(5)}`
+                      : ''}
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Switch
                         checked={r.enabled}
                         onCheckedChange={(v) => setRuleEnabled(r.id, v).then(load)}
                         aria-label={`${r.enabled ? 'Disable' : 'Enable'} ${r.name}`}
                       />
-                      {r.schedule ? (
-                        <span className="mt-1 block whitespace-nowrap text-[11px] text-muted-foreground">
-                          scheduled {r.schedule.from.slice(5)} → {r.schedule.to.slice(5)}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button size="sm" variant="outline" onClick={() => setEditing(r)}>
-                        Edit
-                      </Button>
-                    </td>
+                      {r.enabled ? 'Enabled' : 'Disabled'}
+                    </label>
+                    <Button size="sm" variant="outline" onClick={() => setEditing(r)}>
+                      Edit
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="scroll-x-hint hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead className="bg-header text-header-foreground">
+                  <tr>
+                    {[
+                      'Rule / parameter',
+                      'Trigger condition',
+                      'Dwell / vigilance',
+                      'Severity',
+                      'On',
+                      '',
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <footer className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
-            <span>
-              All changes are validated, version-controlled and logged. Last change: {head.by} ·{' '}
-              {fmtRelative(head.at, now)} · rule set v{head.version}
-            </span>
-            <span>
-              {rules.length} rules · {enabled} enabled
-            </span>
-          </footer>
-        </section>
-        <RuleHistory />
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr
+                      key={r.id}
+                      className={cn(
+                        'border-b last:border-0 hover:bg-muted/40',
+                        editing?.id === r.id && 'bg-accent/40',
+                      )}
+                    >
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{r.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {PARAMETER_LABELS[r.parameter]}
+                        </p>
+                      </td>
+                      <td className="tabular whitespace-nowrap px-3 py-2 text-muted-foreground">
+                        {r.condition ??
+                          `≥ ${r.value} ${r.unit} ${r.window !== 'instant' ? `/ ${windowLabel(r.window)}` : ''}`}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                        {r.vigilance
+                          ? `Vigilance ${r.vigilance}${r.resetOnRetrigger ? ' · reset' : ''}`
+                          : (r.dwell ?? 'Immediate')}
+                      </td>
+                      <td className="px-3 py-2">
+                        <StatusPill tone={severityTone(r.severity)} size="sm" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <Switch
+                          checked={r.enabled}
+                          onCheckedChange={(v) => setRuleEnabled(r.id, v).then(load)}
+                          aria-label={`${r.enabled ? 'Disable' : 'Enable'} ${r.name}`}
+                        />
+                        {r.schedule ? (
+                          <span className="mt-1 block whitespace-nowrap text-[11px] text-muted-foreground">
+                            scheduled {r.schedule.from.slice(5)} → {r.schedule.to.slice(5)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button size="sm" variant="outline" onClick={() => setEditing(r)}>
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <footer className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
+              <span>
+                All changes are validated, version-controlled and logged. Last change: {head.by} ·{' '}
+                {fmtRelative(head.at, now)} · rule set v{head.version}
+              </span>
+              <span>
+                {rules.length} rules · {enabled} enabled
+              </span>
+            </footer>
+          </section>
+          {/* Not in Figure 17: hidden (lib/extras.ts). */}
+          {SHOW_EXTRAS ? <RuleHistory /> : null}
         </div>
 
         {editing ? (
@@ -267,13 +313,17 @@ function RuleDrawer({
     ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [rule.id]);
 
-  const set = <K extends keyof AlertRule>(key: K, value: AlertRule[K]) => setDraft({ ...draft, [key]: value });
+  const set = <K extends keyof AlertRule>(key: K, value: AlertRule[K]) =>
+    setDraft({ ...draft, [key]: value });
 
   /* A rule with no name, no threshold or no locations cannot fire; a negative
      rainfall threshold would fire forever. Saying so beats saving it. */
   const errors = {
     name: draft.name.trim() ? undefined : 'Give the rule a name.',
-    value: Number.isFinite(draft.value) && draft.value > 0 ? undefined : 'The threshold must be greater than zero.',
+    value:
+      Number.isFinite(draft.value) && draft.value > 0
+        ? undefined
+        : 'The threshold must be greater than zero.',
     message: draft.message.trim() ? undefined : 'Write the message a controller will receive.',
     appliesTo: draft.appliesTo.length ? undefined : 'Choose at least one location.',
   };
@@ -282,7 +332,13 @@ function RuleDrawer({
   /* Not an error, an advisory: a warning set at or above its own alert would
      only ever fire after the alert, which is almost certainly a typo. */
   const siblings = rules.filter(
-    (r) => r.id !== draft.id && !r.condition && !draft.condition && r.parameter === draft.parameter && r.window === draft.window && r.operator === draft.operator,
+    (r) =>
+      r.id !== draft.id &&
+      !r.condition &&
+      !draft.condition &&
+      r.parameter === draft.parameter &&
+      r.window === draft.window &&
+      r.operator === draft.operator,
   );
   const clash =
     draft.severity === 'warning'
@@ -294,7 +350,8 @@ function RuleDrawer({
   return (
     <aside
       ref={ref}
-      className="fixed inset-x-0 bottom-0 z-40 max-h-[88vh] overflow-y-auto rounded-t-lg border bg-card shadow-2xl xl:static xl:max-h-none xl:overflow-visible xl:rounded-lg xl:shadow-none">
+      className="fixed inset-x-0 bottom-0 z-40 max-h-[88vh] overflow-y-auto rounded-t-lg border bg-card shadow-2xl xl:static xl:max-h-none xl:overflow-visible xl:rounded-lg xl:shadow-none"
+    >
       <header className="flex items-center justify-between gap-2 border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{isNew ? 'New rule' : `Edit rule — ${rule.name}`}</h2>
         <button onClick={onClose} aria-label="Close" className="rounded p-1 hover:bg-muted">
@@ -328,7 +385,11 @@ function RuleDrawer({
               </Labelled>
             ) : (
               <Labelled label="Parameter">
-                <Input value={PARAMETER_LABELS[draft.parameter]} readOnly className="h-9 bg-muted/50" />
+                <Input
+                  value={PARAMETER_LABELS[draft.parameter]}
+                  readOnly
+                  className="h-9 bg-muted/50"
+                />
               </Labelled>
             )}
             <Labelled label="Severity">
@@ -374,9 +435,13 @@ function RuleDrawer({
           </div>
           {clash ? (
             <p className="rounded-md border border-sev-warning/40 bg-sev-warning-tint px-2 py-1.5 text-xs text-sev-warning-strong">
-              {draft.severity === 'warning' ? 'At or above' : 'At or below'} “{clash.name}” ({clash.severity}, {clash.operator === 'gte' ? '≥' : '≤'}{' '}
-              {clash.value} {clash.unit}) — the {draft.severity === 'warning' ? 'warning would only fire after the alert' : 'alert would fire before its warning'}.
-              Check the value.
+              {draft.severity === 'warning' ? 'At or above' : 'At or below'} “{clash.name}” (
+              {clash.severity}, {clash.operator === 'gte' ? '≥' : '≤'} {clash.value} {clash.unit}) —
+              the{' '}
+              {draft.severity === 'warning'
+                ? 'warning would only fire after the alert'
+                : 'alert would fire before its warning'}
+              . Check the value.
             </p>
           ) : null}
         </Section>
@@ -401,61 +466,70 @@ function RuleDrawer({
             </Labelled>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <Switch checked={draft.resetOnRetrigger} onCheckedChange={(v) => set('resetOnRetrigger', v)} />
+            <Switch
+              checked={draft.resetOnRetrigger}
+              onCheckedChange={(v) => set('resetOnRetrigger', v)}
+            />
             Reset the countdown if more qualifying rain falls
           </label>
         </Section>
 
-        <Section title="Schedule">
-          <div className="flex flex-wrap gap-1.5">
-            {(['always', 'dates'] as const).map((mode) => {
-              const on = mode === 'dates' ? Boolean(draft.schedule) : !draft.schedule;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() =>
-                    set(
-                      'schedule',
-                      mode === 'always' ? undefined : draft.schedule ?? { from: '2026-12-01', to: '2027-02-28' },
-                    )
-                  }
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    on ? 'border-primary bg-primary/10 font-medium text-primary-strong' : 'text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {mode === 'always' ? 'Always active' : 'Between dates'}
-                </button>
-              );
-            })}
-          </div>
-          {draft.schedule ? (
-            <div className="grid grid-cols-2 gap-3">
-              <Labelled label="From">
-                <Input
-                  type="date"
-                  value={draft.schedule.from}
-                  onChange={(e) => set('schedule', { ...draft.schedule!, from: e.target.value })}
-                  className="h-9"
-                />
-              </Labelled>
-              <Labelled label="To">
-                <Input
-                  type="date"
-                  value={draft.schedule.to}
-                  onChange={(e) => set('schedule', { ...draft.schedule!, to: e.target.value })}
-                  className="h-9"
-                />
-              </Labelled>
+        {SHOW_EXTRAS ? (
+          <Section title="Schedule">
+            <div className="flex flex-wrap gap-1.5">
+              {(['always', 'dates'] as const).map((mode) => {
+                const on = mode === 'dates' ? Boolean(draft.schedule) : !draft.schedule;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      set(
+                        'schedule',
+                        mode === 'always'
+                          ? undefined
+                          : (draft.schedule ?? { from: '2026-12-01', to: '2027-02-28' }),
+                      )
+                    }
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                      on
+                        ? 'border-primary bg-primary/10 font-medium text-primary-strong'
+                        : 'text-muted-foreground hover:bg-muted',
+                    )}
+                  >
+                    {mode === 'always' ? 'Always active' : 'Between dates'}
+                  </button>
+                );
+              })}
             </div>
-          ) : null}
-          <p className="text-[11px] text-muted-foreground">
-            For seasonal rules (heat in summer) or temporary ones during track works. Outside the dates the rule is
-            dormant but kept.
-          </p>
-        </Section>
+            {draft.schedule ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Labelled label="From">
+                  <Input
+                    type="date"
+                    value={draft.schedule.from}
+                    onChange={(e) => set('schedule', { ...draft.schedule!, from: e.target.value })}
+                    className="h-9"
+                  />
+                </Labelled>
+                <Labelled label="To">
+                  <Input
+                    type="date"
+                    value={draft.schedule.to}
+                    onChange={(e) => set('schedule', { ...draft.schedule!, to: e.target.value })}
+                    className="h-9"
+                  />
+                </Labelled>
+              </div>
+            ) : null}
+            <p className="text-[11px] text-muted-foreground">
+              For seasonal rules (heat in summer) or temporary ones during track works. Outside the
+              dates the rule is dormant but kept.
+            </p>
+          </Section>
+        ) : null}
 
         <Section title="Applies to">
           {touched && errors.appliesTo ? <FieldError>{errors.appliesTo}</FieldError> : null}
@@ -471,14 +545,23 @@ function RuleDrawer({
                   key={s.id}
                   type="button"
                   disabled={!fitted && !on}
-                  title={fitted ? undefined : `No ${PARAMETER_LABELS[base].toLowerCase()} sensor at ${s.name}`}
+                  title={
+                    fitted
+                      ? undefined
+                      : `No ${PARAMETER_LABELS[base].toLowerCase()} sensor at ${s.name}`
+                  }
                   onClick={() =>
-                    set('appliesTo', on ? draft.appliesTo.filter((x) => x !== s.id) : [...draft.appliesTo, s.id])
+                    set(
+                      'appliesTo',
+                      on ? draft.appliesTo.filter((x) => x !== s.id) : [...draft.appliesTo, s.id],
+                    )
                   }
                   className={cn(
                     'rounded-full border px-2.5 py-1 text-xs transition-colors',
                     !fitted && 'cursor-not-allowed border-dashed opacity-60',
-                    on ? 'border-primary bg-primary/10 font-medium text-primary-strong' : 'text-muted-foreground hover:bg-muted',
+                    on
+                      ? 'border-primary bg-primary/10 font-medium text-primary-strong'
+                      : 'text-muted-foreground hover:bg-muted',
                   )}
                 >
                   {s.name}
@@ -487,17 +570,21 @@ function RuleDrawer({
               );
             })}
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className={cn('text-[11px] text-muted-foreground', !SHOW_EXTRAS && 'hidden')}>
             Where the rule reads its sensor. Dashed locations have no{' '}
-            {PARAMETER_LABELS[draft.group === 'rainfall' ? 'rainfall' : draft.parameter].toLowerCase()} sensor; the section an
-            action covers is stated in the message. If a sensor fails, the rule falls back to its designated alternate
-            source (§7.4).
+            {PARAMETER_LABELS[
+              draft.group === 'rainfall' ? 'rainfall' : draft.parameter
+            ].toLowerCase()}{' '}
+            sensor; the section an action covers is stated in the message. If a sensor fails, the
+            rule falls back to its designated alternate source (§7.4).
           </p>
         </Section>
 
-        <Section title="Test against the last 24 hours">
-          <RuleDryRun rule={draft} />
-        </Section>
+        {SHOW_EXTRAS ? (
+          <Section title="Test against the last 24 hours">
+            <RuleDryRun rule={draft} />
+          </Section>
+        ) : null}
 
         <Section title="Alert message">
           <textarea
@@ -508,20 +595,30 @@ function RuleDrawer({
             className="w-full rounded-md border bg-background p-2 text-sm"
           />
           {touched && errors.message ? <FieldError>{errors.message}</FieldError> : null}
-          {draft.draftWording ? (
+          {SHOW_EXTRAS && draft.draftWording ? (
             <p className="rounded bg-muted px-2 py-1 text-[11px] uppercase text-muted-foreground">
               draft wording — pending MTS confirmation
             </p>
           ) : null}
           {/* What a controller will actually receive. This is the line the client
               checks for correctness, so it is rendered rather than described. */}
-          <div className="rounded-md border border-sev-warning/40 bg-sev-warning-tint p-2">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sev-warning-strong">Preview</p>
+          <div
+            className={cn(
+              'rounded-md border border-sev-warning/40 bg-sev-warning-tint p-2',
+              !SHOW_EXTRAS && 'hidden',
+            )}
+          >
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-sev-warning-strong">
+              Preview
+            </p>
             <p className="text-xs text-sev-warning-strong">
               <strong>
-                {draft.severity.toUpperCase()} — {draft.appliesTo.map((l) => STATIONS_BY_ID[l].name)[0] ?? 'Location'}:
+                {draft.severity.toUpperCase()} — {draft.appliesTo.map(stationName)[0] ?? 'Location'}
+                :
               </strong>{' '}
-              {draft.condition ?? `${draft.parameter.replace('_', ' ')} ≥ ${draft.value} ${draft.unit}`}. {draft.message}
+              {draft.condition ??
+                `${draft.parameter.replace('_', ' ')} ≥ ${draft.value} ${draft.unit}`}
+              . {draft.message}
             </p>
           </div>
         </Section>
@@ -534,11 +631,16 @@ function RuleDrawer({
                 <button
                   key={g.id}
                   onClick={() =>
-                    set('recipients', on ? draft.recipients.filter((x) => x !== g.id) : [...draft.recipients, g.id])
+                    set(
+                      'recipients',
+                      on ? draft.recipients.filter((x) => x !== g.id) : [...draft.recipients, g.id],
+                    )
                   }
                   className={cn(
                     'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    on ? 'border-primary bg-primary/10 font-medium text-primary-strong' : 'text-muted-foreground hover:bg-muted',
+                    on
+                      ? 'border-primary bg-primary/10 font-medium text-primary-strong'
+                      : 'text-muted-foreground hover:bg-muted',
                   )}
                 >
                   {g.label}
@@ -547,17 +649,22 @@ function RuleDrawer({
             })}
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {CHANNELS.map((c) => {
+            {CHANNELS.filter((c) => SHOW_EXTRAS || c.available).map((c) => {
               const on = draft.channels.includes(c.id);
               return (
                 <button
                   key={c.id}
                   disabled={!c.available}
                   title={c.reason}
-                  onClick={() => set('channels', on ? draft.channels.filter((x) => x !== c.id) : [...draft.channels, c.id])}
+                  onClick={() =>
+                    set(
+                      'channels',
+                      on ? draft.channels.filter((x) => x !== c.id) : [...draft.channels, c.id],
+                    )
+                  }
                   className={cn(
                     'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    !c.available && 'cursor-not-allowed opacity-50 line-through',
+                    !c.available && 'cursor-not-allowed line-through opacity-50',
                     on && c.available
                       ? 'border-primary bg-primary/10 font-medium text-primary-strong'
                       : 'text-muted-foreground hover:bg-muted',
@@ -568,8 +675,9 @@ function RuleDrawer({
               );
             })}
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            SMS is out of scope — web push reaches the recipient without the portal being open (Rev B §10).
+          <p className={cn('text-[11px] text-muted-foreground', !SHOW_EXTRAS && 'hidden')}>
+            SMS is out of scope — web push reaches the recipient without the portal being open (Rev
+            B §10).
           </p>
         </Section>
       </div>
@@ -617,13 +725,23 @@ function RuleDrawer({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </section>
   );
 }
 
-function Labelled({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function Labelled({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
@@ -638,5 +756,10 @@ function FieldError({ children }: { children: React.ReactNode }) {
 }
 
 function windowLabel(w: AlertRule['window']): string {
-  return { instant: 'Immediate', '1h-rolling': '1 hour (rolling)', '3h-rolling': '3 hours (rolling)', '3d-rolling': '3 days (rolling)' }[w];
+  return {
+    instant: 'Immediate',
+    '1h-rolling': '1 hour (rolling)',
+    '3h-rolling': '3 hours (rolling)',
+    '3d-rolling': '3 days (rolling)',
+  }[w];
 }

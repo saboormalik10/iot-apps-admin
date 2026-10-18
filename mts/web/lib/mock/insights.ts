@@ -46,9 +46,16 @@ import { DEMO_USER } from './seed/people';
 import { ALERT_RULES } from './seed/rules';
 import { STATIONS, STATIONS_BY_ID } from './seed/stations';
 import { THRESHOLDS } from './seed/thresholds';
-import { CAMPSIE_RADAR, LGD_PANEL, RESPONSE_OBLIGATIONS, WINDSOR_HANDOVER, WORK_ORDERS } from './seed/incidents';
+import {
+  CAMPSIE_RADAR,
+  LGD_PANEL,
+  RESPONSE_OBLIGATIONS,
+  WINDSOR_HANDOVER,
+  WORK_ORDERS,
+} from './seed/incidents';
 import { TERMINAL_FOR } from './seed/wiring';
-import { getStore, mutate } from './store';
+import { getStore, mutate, stationName } from './store';
+import { SHOW_EXTRAS } from '@/lib/extras';
 
 /**
  * The numbers behind the operational charts.
@@ -75,9 +82,27 @@ function settle<T>(value: T, ms = 160): Promise<T> {
 const STEP = TALLY_STEP;
 
 const RAIN_RULES = [
-  { id: 'intensity' as const, label: 'Intensity', windowLabel: '1 hour', windowMs: HOUR, rule: THRESHOLDS.rainfall.intensity },
-  { id: 'short' as const, label: 'Short accumulation', windowLabel: '3 hours', windowMs: 3 * HOUR, rule: THRESHOLDS.rainfall.short },
-  { id: 'multiDay' as const, label: 'Multi-day', windowLabel: '3 days', windowMs: 3 * DAY, rule: THRESHOLDS.rainfall.multiDay },
+  {
+    id: 'intensity' as const,
+    label: 'Intensity',
+    windowLabel: '1 hour',
+    windowMs: HOUR,
+    rule: THRESHOLDS.rainfall.intensity,
+  },
+  {
+    id: 'short' as const,
+    label: 'Short accumulation',
+    windowLabel: '3 hours',
+    windowMs: 3 * HOUR,
+    rule: THRESHOLDS.rainfall.short,
+  },
+  {
+    id: 'multiDay' as const,
+    label: 'Multi-day',
+    windowLabel: '3 days',
+    windowMs: 3 * DAY,
+    rule: THRESHOLDS.rainfall.multiDay,
+  },
 ];
 
 /**
@@ -192,11 +217,34 @@ export function simulateRule(rule: AlertRule, locationId: LocationId, hours = 24
   const { rise, clear } = parseDwell(rule.dwell);
   const vigilanceHours = Number(/(\d+(?:\.\d+)?)\s*h/i.exec(rule.vigilance ?? '')?.[1] ?? 0);
   const blank: RuleSimulation = {
-    locationId, metric: PARAMETER_LABELS[base], unit: rule.unit, parameter: base, points: [], from, to,
-    fires: [], resets: [], inForce: [], vigilance: [], peak: null, dwellMin: rise, clearDwellMin: clear, vigilanceHours,
+    locationId,
+    metric: PARAMETER_LABELS[base],
+    unit: rule.unit,
+    parameter: base,
+    points: [],
+    from,
+    to,
+    fires: [],
+    resets: [],
+    inForce: [],
+    vigilance: [],
+    peak: null,
+    dwellMin: rise,
+    clearDwellMin: clear,
+    vigilanceHours,
   };
+  // A station added in this session is still commissioning: it has no readings to run the rule over.
+  if (!station) {
+    return {
+      ...blank,
+      note: `${stationName(locationId)} is commissioning — no readings yet, so there is nothing to run this rule over.`,
+    };
+  }
   if (!station.sensors.some((x) => x.parameter === base)) {
-    return { ...blank, note: `${station.name} has no ${PARAMETER_LABELS[base].toLowerCase()} sensor fitted — this rule cannot fire there.` };
+    return {
+      ...blank,
+      note: `${station.name} has no ${PARAMETER_LABELS[base].toLowerCase()} sensor fitted — this rule cannot fire there.`,
+    };
   }
 
   /* What the rule actually compares, and how it is drawn. */
@@ -218,7 +266,9 @@ export function simulateRule(rule: AlertRule, locationId: LocationId, hours = 24
       return a === null || b === null ? null : Math.round((a - b) * 6);
     };
   } else {
-    metric = isFalling ? 'Water level (falling after a block)' : PARAMETER_METRIC[rule.parameter] ?? rule.parameter;
+    metric = isFalling
+      ? 'Water level (falling after a block)'
+      : (PARAMETER_METRIC[rule.parameter] ?? rule.parameter);
     read = (u) => valueAt(rule.parameter, locationId, u);
   }
 
@@ -261,7 +311,8 @@ export function simulateRule(rule: AlertRule, locationId: LocationId, hours = 24
     const shown = u >= from;
     if (shown) {
       points.push({ t: u, v, status: statusFor(base, v) });
-      if (v !== null && (!peak || (isFalling || rule.operator === 'lte' ? v < peak.v : v > peak.v))) peak = { t: u, v };
+      if (v !== null && (!peak || (isFalling || rule.operator === 'lte' ? v < peak.v : v > peak.v)))
+        peak = { t: u, v };
     }
     const met = condition(u, v);
     if (state === 'active') {
@@ -304,7 +355,10 @@ export function simulateRule(rule: AlertRule, locationId: LocationId, hours = 24
   if (state === 'active') inForce.push({ from: activeFrom, to });
   if (state === 'vigilance') vigilance.push({ from: vigFrom, to: Math.min(vigEnd, to) });
 
-  const clip = (b: { from: number; to: number }) => ({ from: Math.max(b.from, from), to: Math.min(b.to, to) });
+  const clip = (b: { from: number; to: number }) => ({
+    from: Math.max(b.from, from),
+    to: Math.min(b.to, to),
+  });
   const note =
     locationId === 'campsie' && rule.parameter === 'water_level' && points.some((p) => p.v === null)
       ? 'A gap in Campsie\u2019s line is its radar fault (WO-0412), not dry track — the float switch and the alternate source covered it (§7.4).'
@@ -334,7 +388,10 @@ const PARAMETER_METRIC: Partial<Record<ParameterId, string>> = {
 };
 
 /** Rainfall by hour for one gauge, `days` back — the heatmap's grid. */
-export async function rainfallByHour(locationId: LocationId, days = 14): Promise<{ day: number; hours: number[] }[]> {
+export async function rainfallByHour(
+  locationId: LocationId,
+  days = 14,
+): Promise<{ day: number; hours: number[] }[]> {
   const t = now();
   const today = sydneyDayStart(t);
   const rows: { day: number; hours: number[] }[] = [];
@@ -348,7 +405,8 @@ export async function rainfallByHour(locationId: LocationId, days = 14): Promise
         continue;
       }
       let mm = 0;
-      for (let u = hs; u < hs + HOUR && u <= t; u += STEP) mm += (rainfallMmHr(locationId, u) * STEP) / HOUR;
+      for (let u = hs; u < hs + HOUR && u <= t; u += STEP)
+        mm += (rainfallMmHr(locationId, u) * STEP) / HOUR;
       hours.push(Math.round(mm * 10) / 10);
     }
     rows.push({ day: dayStart, hours });
@@ -371,7 +429,9 @@ const PARAM_WORD: Partial<Record<ParameterId, string>> = {
  * that colours a reading card — so a band on this timeline is exactly the period
  * a card for that sensor would have shown amber or red.
  */
-export async function corridorExceedance(hours = 24): Promise<{ from: number; to: number; bands: ExceedanceBand[] }> {
+export async function corridorExceedance(
+  hours = 24,
+): Promise<{ from: number; to: number; bands: ExceedanceBand[] }> {
   const t = now();
   const from = t - hours * HOUR;
   const step = Math.max(5 * MIN, Math.round((hours * HOUR) / 288));
@@ -390,8 +450,18 @@ export async function corridorExceedance(hours = 24): Promise<{ from: number; to
           open = null;
         }
         if (sev && !open) {
-          const where = sensor.sensorId.includes('-UP-') ? ' (up)' : sensor.sensorId.includes('-DN-') ? ' (down)' : '';
-          open = { locationId: station.id, from: u, to: u, severity: sev, label: `${PARAM_WORD[sensor.parameter]}${where}` };
+          const where = sensor.sensorId.includes('-UP-')
+            ? ' (up)'
+            : sensor.sensorId.includes('-DN-')
+              ? ' (down)'
+              : '';
+          open = {
+            locationId: station.id,
+            from: u,
+            to: u,
+            severity: sev,
+            label: `${PARAM_WORD[sensor.parameter]}${where}`,
+          };
         }
       }
     }
@@ -410,7 +480,10 @@ export const ROSE_BANDS = [
   { from: 45, to: Infinity, label: '≥ 45' },
 ];
 
-export async function windRose(locationId: LocationId, days = 7): Promise<{ bins: WindRoseBin[]; calmPct: number; samples: number }> {
+export async function windRose(
+  locationId: LocationId,
+  days = 7,
+): Promise<{ bins: WindRoseBin[]; calmPct: number; samples: number }> {
   const t = now();
   const sectors = 16;
   const counts = Array.from({ length: sectors }, () => ROSE_BANDS.map(() => 0));
@@ -428,7 +501,10 @@ export async function windRose(locationId: LocationId, days = 7): Promise<{ bins
     const band = ROSE_BANDS.findIndex((b) => speed >= b.from && speed < b.to);
     counts[sector][band] += 1;
   }
-  const bins = counts.map((bands, i) => ({ dirDeg: i * (360 / sectors), bands: bands.map((c) => c / samples) }));
+  const bins = counts.map((bands, i) => ({
+    dirDeg: i * (360 / sectors),
+    bands: bands.map((c) => c / samples),
+  }));
   return settle({ bins, calmPct: (calm / samples) * 100, samples }, 200);
 }
 
@@ -450,8 +526,22 @@ export function deliveryFor(eventId: string, t: number, category: string): Event
     eventId,
     slaMinutes: fault ? THRESHOLDS.deliveryMinutes.systemFault : THRESHOLDS.deliveryMinutes.weather,
     attempts: [
-      { channel: 'screen', queuedAt: t, deliveredAt: t + screenS * 1000, attempts: 1, state: 'delivered', recipients: 9 },
-      { channel: 'push', queuedAt: t, deliveredAt: t + pushS * 1000, attempts: 1, state: 'delivered', recipients: 6 },
+      {
+        channel: 'screen',
+        queuedAt: t,
+        deliveredAt: t + screenS * 1000,
+        attempts: 1,
+        state: 'delivered',
+        recipients: 9,
+      },
+      {
+        channel: 'push',
+        queuedAt: t,
+        deliveredAt: t + pushS * 1000,
+        attempts: 1,
+        state: 'delivered',
+        recipients: 6,
+      },
       {
         channel: 'email',
         queuedAt: t,
@@ -459,7 +549,9 @@ export function deliveryFor(eventId: string, t: number, category: string): Event
         attempts: emailRetry ? 2 : 1,
         state: emailRetry ? 'retried' : 'delivered',
         recipients: 14,
-        note: emailRetry ? 'First attempt deferred by the receiving server; delivered on retry.' : undefined,
+        note: emailRetry
+          ? 'First attempt deferred by the receiving server; delivered on retry.'
+          : undefined,
       },
       {
         channel: 'sms',
@@ -479,12 +571,14 @@ export async function getDelivery(eventId: string): Promise<EventDelivery | unde
 }
 
 /** Every alert in the window, as seconds to deliver per channel. */
-export async function deliveryStats(days = 30): Promise<{
-  channel: 'screen' | 'push' | 'email';
-  seconds: number[];
-  withinSla: number;
-  total: number;
-}[]> {
+export async function deliveryStats(days = 30): Promise<
+  {
+    channel: 'screen' | 'push' | 'email';
+    seconds: number[];
+    withinSla: number;
+    total: number;
+  }[]
+> {
   const t = now();
   const events = allEvents().filter((e) => e.t >= t - days * DAY && e.severity !== 'cleared');
   const out = (['screen', 'push', 'email'] as const).map((channel) => {
@@ -497,7 +591,12 @@ export async function deliveryStats(days = 30): Promise<{
       seconds.push(s);
       if (s <= d.slaMinutes * 60) within += 1;
     }
-    return { channel, seconds: seconds.sort((a, b) => a - b), withinSla: within, total: seconds.length };
+    return {
+      channel,
+      seconds: seconds.sort((a, b) => a - b),
+      withinSla: within,
+      total: seconds.length,
+    };
   });
   return settle(out, 180);
 }
@@ -532,14 +631,29 @@ function seededAnnotations(): Annotation[] {
 
 export async function listAnnotations(eventId: string): Promise<Annotation[]> {
   const added = getStore().annotations.filter((a) => a.eventId === eventId);
-  return settle([...seededAnnotations().filter((a) => a.eventId === eventId), ...added].sort((a, b) => a.at - b.at), 100);
+  return settle(
+    [...seededAnnotations().filter((a) => a.eventId === eventId), ...added].sort(
+      (a, b) => a.at - b.at,
+    ),
+    100,
+  );
 }
 
 export async function addAnnotation(eventId: string, text: string): Promise<void> {
   const e = allEvents().find((x) => x.id === eventId);
-  recordAudit('Note added', `${e?.locationName ?? eventId} — “${text.length > 70 ? text.slice(0, 68) + '…' : text}”`, 'alert');
+  recordAudit(
+    'Note added',
+    `${e?.locationName ?? eventId} — “${text.length > 70 ? text.slice(0, 68) + '…' : text}”`,
+    'alert',
+  );
   mutate((s) =>
-    s.annotations.push({ id: `n-${s.annotations.length + 1}`, eventId, by: DEMO_USER.name, at: now(), text }),
+    s.annotations.push({
+      id: `n-${s.annotations.length + 1}`,
+      eventId,
+      by: DEMO_USER.name,
+      at: now(),
+      text,
+    }),
   );
   return settle(undefined, 150);
 }
@@ -556,14 +670,51 @@ function outagesFor(loggerId: string, locationId: LocationId, t: number): Outage
   const day = (d: number, h: number, m = 0) => sydneyAt(STORM_DAY, d, h, m);
   const known: Record<string, OutageRecord[]> = {
     'LGD-UP-01': [
-      { loggerId, locationId, from: day(-5, 2, 14), hours: 47 / 60, cause: 'Cellular carrier outage', planned: false },
-      { loggerId, locationId, from: day(-140, 9, 0), hours: 6.5, cause: 'Solar charge controller replaced', planned: false },
+      {
+        loggerId,
+        locationId,
+        from: day(-5, 2, 14),
+        hours: 47 / 60,
+        cause: 'Cellular carrier outage',
+        planned: false,
+      },
+      {
+        loggerId,
+        locationId,
+        from: day(-140, 9, 0),
+        hours: 6.5,
+        cause: 'Solar charge controller replaced',
+        planned: false,
+      },
     ],
     'WSR-01': [
-      { loggerId, locationId, from: WINDSOR_HANDOVER.from, hours: WINDSOR_HANDOVER.minutes / 60, cause: 'Cellular handover', planned: false },
-      { loggerId, locationId, from: day(-230, 13, 0), hours: 9.2, cause: 'Lightning strike — surge protector replaced', planned: false },
+      {
+        loggerId,
+        locationId,
+        from: WINDSOR_HANDOVER.from,
+        hours: WINDSOR_HANDOVER.minutes / 60,
+        cause: 'Cellular handover',
+        planned: false,
+      },
+      {
+        loggerId,
+        locationId,
+        from: day(-230, 13, 0),
+        hours: 9.2,
+        cause: 'Lightning strike — surge protector replaced',
+        planned: false,
+      },
     ],
-    'CAM-01': [{ loggerId, locationId, from: day(-60, 22, 0), hours: 3.1, cause: 'Enclosure door switch fault', planned: false }],
+    'CAM-01': [
+      {
+        loggerId,
+        locationId,
+        from: day(-60, 22, 0),
+        hours: 3.1,
+        cause: 'Enclosure door switch fault',
+        planned: false,
+      },
+    ],
   };
   const rng = rngFrom(hash(`outage:${loggerId}`));
   const extra: OutageRecord[] = [];
@@ -574,13 +725,26 @@ function outagesFor(loggerId: string, locationId: LocationId, t: number): Outage
       locationId,
       from: day(-Math.floor(20 + rng() * 330), Math.floor(rng() * 23)),
       hours: Math.round((0.2 + rng() * 2.4) * 10) / 10,
-      cause: ['Cellular coverage', 'Logger restart after firmware update', 'Radar sensor comms timeout'][Math.floor(rng() * 3)],
+      cause: [
+        'Cellular coverage',
+        'Logger restart after firmware update',
+        'Radar sensor comms timeout',
+      ][Math.floor(rng() * 3)],
       planned: false,
     });
   }
   // The yearly 36-hour window, planned and so excluded from the budget.
-  const planned: OutageRecord = { loggerId, locationId, from: day(-180, 22), hours: 36, cause: 'Annual maintenance (weekend possession)', planned: true };
-  return [...(known[loggerId] ?? []), ...extra, planned].filter((o) => o.from <= t).sort((a, b) => b.from - a.from);
+  const planned: OutageRecord = {
+    loggerId,
+    locationId,
+    from: day(-180, 22),
+    hours: 36,
+    cause: 'Annual maintenance (weekend possession)',
+    planned: true,
+  };
+  return [...(known[loggerId] ?? []), ...extra, planned]
+    .filter((o) => o.from <= t)
+    .sort((a, b) => b.from - a.from);
 }
 
 /**
@@ -609,10 +773,19 @@ export function loggerStrips(hours = 24, cellMin = 20): LoggerStrip[] {
           cells.push({ from: u, to, state: 'silent', note: out.cause });
           continue;
         }
-        const missing = sensors.find((x) => [u, (u + to) / 2, to - MIN].some((s) => valueAt(x.parameter, station.id, s, x.sensorId) === null));
+        const missing = sensors.find((x) =>
+          [u, (u + to) / 2, to - MIN].some(
+            (s) => valueAt(x.parameter, station.id, s, x.sensorId) === null,
+          ),
+        );
         cells.push(
           missing
-            ? { from: u, to, state: 'partial', note: `${missing.model.split(' (')[0]} not reporting` }
+            ? {
+                from: u,
+                to,
+                state: 'partial',
+                note: `${missing.model.split(' (')[0]} not reporting`,
+              }
             : { from: u, to, state: 'ok' },
         );
       }
@@ -652,7 +825,10 @@ export async function workOrders(): Promise<WorkOrder[]> {
         })),
         closedAt: w.closedAt <= t ? w.closedAt : undefined,
       }))
-      .sort((a, b) => Number(Boolean(a.closedAt)) - Number(Boolean(b.closedAt)) || b.raisedAt - a.raisedAt),
+      .sort(
+        (a, b) =>
+          Number(Boolean(a.closedAt)) - Number(Boolean(b.closedAt)) || b.raisedAt - a.raisedAt,
+      ),
   );
 }
 
@@ -667,8 +843,15 @@ export async function availabilityBudgets(): Promise<AvailabilityBudget[]> {
         loggerId: logger.id,
         locationId: station.id,
         label: station.loggers.length > 1 ? `${station.name} — ${logger.label}` : station.name,
-        hours12m: Math.round(unplanned.filter((o) => o.from >= t - 365 * DAY).reduce((a, o) => a + o.hours, 0) * 10) / 10,
-        longest6m: Math.round(Math.max(0, ...unplanned.filter((o) => o.from >= t - 182 * DAY).map((o) => o.hours)) * 10) / 10,
+        hours12m:
+          Math.round(
+            unplanned.filter((o) => o.from >= t - 365 * DAY).reduce((a, o) => a + o.hours, 0) * 10,
+          ) / 10,
+        longest6m:
+          Math.round(
+            Math.max(0, ...unplanned.filter((o) => o.from >= t - 182 * DAY).map((o) => o.hours)) *
+              10,
+          ) / 10,
         outages,
       });
     }
@@ -688,15 +871,27 @@ const CAL_INTERVAL_MONTHS: Partial<Record<ParameterId, number>> = {
 };
 
 /** One instrument's calibration — shared by the calibration list and the sensor register. */
-function calibrationFor(sensorId: string, parameter: ParameterId, t: number): { last: number; due: number; certificate: string } {
+function calibrationFor(
+  sensorId: string,
+  parameter: ParameterId,
+  t: number,
+): { last: number; due: number; certificate: string } {
   const months = CAL_INTERVAL_MONTHS[parameter] ?? 12;
   const rng = rngFrom(hash(`cal:${sensorId}`));
   // Seeded so that most are current, a few are coming due, and one is late —
   // which is the situation a maintenance screen actually has to handle.
   const ageDays =
-    sensorId === 'CAM-YGRD-01' ? months * 30.4 + 12 : sensorId === 'BEL-RIMCO-01' ? months * 30.4 - 20 : 30 + rng() * (months * 30.4 - 90);
+    sensorId === 'CAM-YGRD-01'
+      ? months * 30.4 + 12
+      : sensorId === 'BEL-RIMCO-01'
+        ? months * 30.4 - 20
+        : 30 + rng() * (months * 30.4 - 90);
   const last = t - ageDays * DAY;
-  return { last, due: last + months * 30.4 * DAY, certificate: `CAL-${new Date(last).getFullYear()}-${String((hash(sensorId) % 9000) + 1000)}` };
+  return {
+    last,
+    due: last + months * 30.4 * DAY,
+    certificate: `CAL-${new Date(last).getFullYear()}-${String((hash(sensorId) % 9000) + 1000)}`,
+  };
 }
 
 export async function calibrationSchedule(): Promise<CalibrationItem[]> {
@@ -705,7 +900,8 @@ export async function calibrationSchedule(): Promise<CalibrationItem[]> {
   const items: CalibrationItem[] = [];
   for (const station of STATIONS) {
     for (const s of station.sensors) {
-      if (seen.has(s.sensorId) || s.parameter === 'wind_gust' || s.parameter === 'humidity') continue;
+      if (seen.has(s.sensorId) || s.parameter === 'wind_gust' || s.parameter === 'humidity')
+        continue;
       seen.add(s.sensorId);
       const c = calibrationFor(s.sensorId, s.parameter, t);
       items.push({
@@ -719,7 +915,10 @@ export async function calibrationSchedule(): Promise<CalibrationItem[]> {
       });
     }
   }
-  return settle(items.sort((a, b) => a.dueAt - b.dueAt), 140);
+  return settle(
+    items.sort((a, b) => a.dueAt - b.dueAt),
+    140,
+  );
 }
 
 // ── data quality, §8.2 ───────────────────────────────────────────────────────
@@ -740,7 +939,8 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
       parameter: 'water_level',
       value: 31,
       rule: 'frozen',
-      detail: 'Identical reading for 6 consecutive polls, then no response. Alerting moved to the float switch.',
+      detail:
+        'Identical reading for 6 consecutive polls, then no response. Alerting moved to the float switch.',
       action: 'quarantined',
     },
     {
@@ -751,7 +951,8 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
       parameter: 'water_level',
       value: 1480,
       rule: 'range',
-      detail: 'Single reading of +1,480 mm between two of +33 mm — above the radar’s plausible range for this site.',
+      detail:
+        'Single reading of +1,480 mm between two of +33 mm — above the radar’s plausible range for this site.',
       action: 'quarantined',
     },
     {
@@ -762,7 +963,8 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
       parameter: 'rainfall',
       value: 96,
       rule: 'rate-of-change',
-      detail: '96 mm/hr for one minute on a dry day — 48 bucket tips during the scheduled gauge cleaning.',
+      detail:
+        '96 mm/hr for one minute on a dry day — 48 bucket tips during the scheduled gauge cleaning.',
       action: 'quarantined',
     },
     {
@@ -773,7 +975,8 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
       parameter: 'water_level',
       value: 12,
       rule: 'cross-check',
-      detail: 'Radar +12 mm while the float reported WET for 4 minutes. Float found fouled with debris; radar confirmed correct.',
+      detail:
+        'Radar +12 mm while the float reported WET for 4 minutes. Float found fouled with debris; radar confirmed correct.',
       action: 'flagged',
     },
     {
@@ -788,7 +991,10 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
       action: 'quarantined',
     },
   ];
-  return settle(flags.filter((f) => f.t <= now()), 140);
+  return settle(
+    flags.filter((f) => f.t <= now()),
+    140,
+  );
 }
 
 // ── pumps, §5.6 ──────────────────────────────────────────────────────────────
@@ -799,9 +1005,16 @@ export async function qualityFlags(): Promise<QualityFlag[]> {
  * the minimum run time, and the lead alternating each cycle. The weekly exercise
  * runs are added on top — the audit trail records the latest one.
  */
-export async function pumpHistory(days = 30): Promise<{ days: PumpDay[]; totals: { pump1H: number; pump2H: number } }> {
+export async function pumpHistory(
+  days = 30,
+): Promise<{ days: PumpDay[]; totals: { pump1H: number; pump2H: number } }> {
   const sim = simulatePumps(now(), days);
-  const list: PumpDay[] = sim.days.map((d) => ({ day: d.day, pump1Min: d.pump1Min, pump2Min: d.pump2Min, starts: d.starts }));
+  const list: PumpDay[] = sim.days.map((d) => ({
+    day: d.day,
+    pump1Min: d.pump1Min,
+    pump2Min: d.pump2Min,
+    starts: d.starts,
+  }));
   const totals = {
     pump1H: Math.round((list.reduce((a, d) => a + d.pump1Min, 0) / 60) * 10) / 10,
     pump2H: Math.round((list.reduce((a, d) => a + d.pump2Min, 0) / 60) * 10) / 10,
@@ -817,29 +1030,33 @@ export async function pumpProtection(): Promise<PumpProtection> {
   let prev = waterLevelMm('marrickville', t - HOUR);
   for (let u = t - HOUR + 5 * MIN; u <= t; u += 5 * MIN) {
     const l = waterLevelMm('marrickville', u);
-    if ((prev < F.pumpStartMm && l >= F.pumpStartMm) || (prev < F.highHighMm && l >= F.highHighMm)) starts += 1;
+    if ((prev < F.pumpStartMm && l >= F.pumpStartMm) || (prev < F.highHighMm && l >= F.highHighMm))
+      starts += 1;
     prev = l;
   }
   const floatWet = valueAt('float_switch', 'marrickville', t) === 1;
   const radarSaysWet = level >= F.pumpStartMm - 5;
-  return settle({
-    floatWet,
-    debounceS: 30,
-    lStartMm: F.pumpStartMm,
-    lLagMm: F.highHighMm,
-    lStopMm: F.pumpStopMm,
-    railFootMm: F.railFootMm,
-    floatTripMm: F.pumpStartMm - 5,
-    deadBandMm: F.pumpStartMm - F.pumpStopMm,
-    minRunMin: 5,
-    minRestMin: 3,
-    maxStartsPerHour: 6,
-    startsLastHour: starts,
-    leadPump: simulatePumps(t).leadPump,
-    radarFloatAgreement: floatWet === radarSaysWet ? 'agree' : 'discrepancy',
-    controlSource: 'radar',
-    levelMm: level,
-  }, 120);
+  return settle(
+    {
+      floatWet,
+      debounceS: 30,
+      lStartMm: F.pumpStartMm,
+      lLagMm: F.highHighMm,
+      lStopMm: F.pumpStopMm,
+      railFootMm: F.railFootMm,
+      floatTripMm: F.pumpStartMm - 5,
+      deadBandMm: F.pumpStartMm - F.pumpStopMm,
+      minRunMin: 5,
+      minRestMin: 3,
+      maxStartsPerHour: 6,
+      startsLastHour: starts,
+      leadPump: simulatePumps(t).leadPump,
+      radarFloatAgreement: floatWet === radarSaysWet ? 'agree' : 'discrepancy',
+      controlSource: 'radar',
+      levelMm: level,
+    },
+    120,
+  );
 }
 
 // ── power, §5.7 and §8.6 ─────────────────────────────────────────────────────
@@ -855,8 +1072,10 @@ export function chargeController(loggerId: string): ChargeController {
   const pv = solarInputW(loggerId, t);
   const batteryV = Math.round((restingVoltage(soc) + (pv > LOAD_W ? 0.25 : 0)) * 100) / 100;
   const netA = Math.round(((pv * 0.96 - LOAD_W) / batteryV) * 10) / 10;
-  const underYield = loggerId === 'LGD-DN-01' && t >= LGD_PANEL.underYieldFrom && t < LGD_PANEL.cleanedAt;
-  const enclosure = STATIONS.flatMap((s) => s.loggers).find((l) => l.id === loggerId)?.enclosure.internalC ?? 30;
+  const underYield =
+    loggerId === 'LGD-DN-01' && t >= LGD_PANEL.underYieldFrom && t < LGD_PANEL.cleanedAt;
+  const enclosure =
+    STATIONS.flatMap((s) => s.loggers).find((l) => l.id === loggerId)?.enclosure.internalC ?? 30;
   return {
     loggerId,
     socPct: soc,
@@ -864,9 +1083,18 @@ export function chargeController(loggerId: string): ChargeController {
     batteryV,
     netA,
     flags: [
-      { id: 'uv', label: 'Battery under-voltage', active: soc < THRESHOLDS.power.lowBatteryPct / 2 },
+      {
+        id: 'uv',
+        label: 'Battery under-voltage',
+        active: soc < THRESHOLDS.power.lowBatteryPct / 2,
+      },
       { id: 'ov', label: 'Battery over-voltage', active: false },
-      { id: 'yield', label: 'PV under-yield', active: underYield, since: underYield ? LGD_PANEL.underYieldFrom : undefined },
+      {
+        id: 'yield',
+        label: 'PV under-yield',
+        active: underYield,
+        since: underYield ? LGD_PANEL.underYieldFrom : undefined,
+      },
       { id: 'temp', label: 'Over-temperature', active: enclosure > 55 },
       { id: 'lvd', label: 'Load disconnect', active: false },
     ],
@@ -936,19 +1164,25 @@ export async function maintenanceWindows(): Promise<MaintenanceWindow[]> {
   /* Forward to the next Saturday — Sydney's weekday, not the server's — and place
      both ends on the Sydney wall clock: 22:00 Saturday to 10:00 Monday, even when
      the clocks change in between. */
-  const weekday = new Date(sydneyAt(STORM_DAY, 9, 12)).toLocaleDateString('en-AU', { weekday: 'short', timeZone: 'Australia/Sydney' });
+  const weekday = new Date(sydneyAt(STORM_DAY, 9, 12)).toLocaleDateString('en-AU', {
+    weekday: 'short',
+    timeZone: 'Australia/Sydney',
+  });
   const toSat = (6 - ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday) + 7) % 7;
   const from = sydneyAt(STORM_DAY, 9 + toSat, 22);
-  return settle([
-    {
-      id: 'mw-next',
-      from,
-      to: sydneyAt(STORM_DAY, 9 + toSat + 2, 10),
-      scope: 'Annual calibration and preventive maintenance — all seven locations',
-      possession: 'Weekend possession (Southwest corridor)',
-      notifiedAt: t - 3 * DAY,
-    },
-  ], 100);
+  return settle(
+    [
+      {
+        id: 'mw-next',
+        from,
+        to: sydneyAt(STORM_DAY, 9 + toSat + 2, 10),
+        scope: 'Annual calibration and preventive maintenance — all seven locations',
+        possession: 'Weekend possession (Southwest corridor)',
+        notifiedAt: t - 3 * DAY,
+      },
+    ],
+    100,
+  );
 }
 
 // ── telemetry, §4 and §8.5 ───────────────────────────────────────────────────
@@ -963,13 +1197,19 @@ export async function telemetryFor(locationId: LocationId): Promise<Telemetry[]>
   const t = now();
   const station = STATIONS_BY_ID[locationId];
   const today = sydneyDayStart(t);
-  const sent = allEvents().filter((e) => e.locationId === locationId && e.t >= today && e.t <= t).length;
+  const sent = allEvents().filter(
+    (e) => e.locationId === locationId && e.t >= today && e.t <= t,
+  ).length;
   return settle(
     station.loggers.map((l) => {
       const levelSensor = station.sensors.find(
-        (s) => s.parameter === 'water_level' && (station.loggers.length === 1 || s.sensorId.startsWith(l.id.replace('-01', ''))),
+        (s) =>
+          s.parameter === 'water_level' &&
+          (station.loggers.length === 1 || s.sensorId.startsWith(l.id.replace('-01', ''))),
       );
-      const level = levelSensor ? valueAt('water_level', locationId, t, levelSensor.sensorId) ?? 0 : 0;
+      const level = levelSensor
+        ? (valueAt('water_level', locationId, t, levelSensor.sensorId) ?? 0)
+        : 0;
       const fast = levelSensor ? level >= THRESHOLDS.flood.standingWaterMm / 2 : false;
       const minutesToday = Math.floor((t - today) / MIN);
       return {
@@ -981,7 +1221,10 @@ export async function telemetryFor(locationId: LocationId): Promise<Telemetry[]>
         eventSendsToday: sent,
         fastReporting: fast,
         bufferedReadings: 0,
-        lastBackfill: l.id === 'LGD-UP-01' ? { at: STORM_DAY - 5 * DAY + 3 * HOUR + MIN, readings: 47, gapMin: 47 } : undefined,
+        lastBackfill:
+          l.id === 'LGD-UP-01'
+            ? { at: STORM_DAY - 5 * DAY + 3 * HOUR + MIN, readings: 47, gapMin: 47 }
+            : undefined,
         messagesToday: Math.floor(minutesToday / 5) + sent,
       };
     }),
@@ -1004,11 +1247,18 @@ export async function staffGaugeChecks(locationId: LocationId): Promise<StaffGau
       .filter((s) => s.parameter === 'water_level')
       .map((s) => {
         const rng = rngFrom(hash(`staff:${s.sensorId}`));
-        const at = sydneyDayStart(t) - Math.floor(4 + rng() * 40) * DAY + (9 * 60 + Math.floor(rng() * 300)) * MIN;
+        const at =
+          sydneyDayStart(t) -
+          Math.floor(4 + rng() * 40) * DAY +
+          (9 * 60 + Math.floor(rng() * 300)) * MIN;
         const radar = valueAt('water_level', locationId, at, s.sensorId) ?? 0;
         return {
           sensorId: s.sensorId,
-          label: s.sensorId.includes('-UP-') ? 'Up tunnel' : s.sensorId.includes('-DN-') ? 'Down tunnel' : station.name,
+          label: s.sensorId.includes('-UP-')
+            ? 'Up tunnel'
+            : s.sensorId.includes('-DN-')
+              ? 'Down tunnel'
+              : station.name,
           at,
           by: people[Math.floor(rng() * people.length)],
           staffMm: Math.round(radar / 10) * 10,
@@ -1030,7 +1280,13 @@ function seededMaintenance(locationId: LocationId): MaintenanceState {
   if (locationId !== 'campsie') return { on: false };
   const since = CAMPSIE_RADAR.onSiteAt;
   return since <= now() && now() < CAMPSIE_RADAR.closedAt
-    ? { on: true, by: 'T. Reilly', since, reason: 'Radar comms fault — technician on site. Float switch remains live; flood alerting continues from it.' }
+    ? {
+        on: true,
+        by: 'T. Reilly',
+        since,
+        reason:
+          'Radar comms fault — technician on site. Float switch remains live; flood alerting continues from it.',
+      }
     : { on: false };
 }
 
@@ -1045,13 +1301,25 @@ export function maintenanceNow(locationId: LocationId): MaintenanceState {
   const set = getStore().maintenance.get(locationId);
   if (set === null) return { on: false };
   if (set) return { on: true, ...set };
-  return seededMaintenance(locationId);
+  // Maintenance mode is not in the proposal's figures, so nothing starts in it.
+  return SHOW_EXTRAS ? seededMaintenance(locationId) : { on: false };
 }
 
-export async function setMaintenance(locationId: LocationId, on: boolean, reason?: string): Promise<void> {
-  recordAudit(on ? 'Maintenance mode on' : 'Maintenance mode off', `${STATIONS_BY_ID[locationId].name}${on && reason ? ` — ${reason}` : ''}`, 'maintenance');
+export async function setMaintenance(
+  locationId: LocationId,
+  on: boolean,
+  reason?: string,
+): Promise<void> {
+  recordAudit(
+    on ? 'Maintenance mode on' : 'Maintenance mode off',
+    `${STATIONS_BY_ID[locationId].name}${on && reason ? ` — ${reason}` : ''}`,
+    'maintenance',
+  );
   mutate((s) =>
-    s.maintenance.set(locationId, on ? { by: DEMO_USER.name, since: now(), reason: reason ?? 'Planned work on site' } : null),
+    s.maintenance.set(
+      locationId,
+      on ? { by: DEMO_USER.name, since: now(), reason: reason ?? 'Planned work on site' } : null,
+    ),
   );
   return settle(undefined, 150);
 }
@@ -1091,14 +1359,18 @@ export async function pipelineStats(): Promise<PipelineStats> {
   const levelLoggers = STATIONS.flatMap((s) =>
     s.loggers.map((l) => ({
       s,
-      sensor: s.sensors.find((x) => x.parameter === 'water_level' && (s.loggers.length === 1 || x.sensorId.startsWith(l.id.replace('-01', '')))),
+      sensor: s.sensors.find(
+        (x) =>
+          x.parameter === 'water_level' &&
+          (s.loggers.length === 1 || x.sensorId.startsWith(l.id.replace('-01', ''))),
+      ),
     })),
   );
   for (let u = start; u <= t; u += step) {
     let routine = 0;
     let fast = 0;
     for (const { s, sensor } of levelLoggers) {
-      const lvl = sensor ? valueAt('water_level', s.id, u, sensor.sensorId) ?? 0 : 0;
+      const lvl = sensor ? (valueAt('water_level', s.id, u, sensor.sensorId) ?? 0) : 0;
       if (sensor && lvl >= THRESHOLDS.flood.standingWaterMm / 2) fast += 30;
       else routine += 6;
     }
@@ -1109,7 +1381,9 @@ export async function pipelineStats(): Promise<PipelineStats> {
   const eventSendsToday = events.filter((e) => e.t >= today && e.t <= t).length;
   const loggers = STATIONS.reduce((a, s) => a + s.loggers.length, 0);
   const channels = STATIONS.reduce((a, s) => a + s.sensors.length, 0);
-  const alertsToday = events.filter((e) => e.t >= today && e.t <= t && e.severity !== 'cleared').length;
+  const alertsToday = events.filter(
+    (e) => e.t >= today && e.t <= t && e.severity !== 'cleared',
+  ).length;
   return settle(
     {
       bins,
@@ -1128,16 +1402,48 @@ export async function pipelineStats(): Promise<PipelineStats> {
   );
 }
 
-
 // ── sensor register (Admin → Sensors) ────────────────────────────────────────
 
 /** What each kind of instrument is, where it is wired and how it is mounted (§4.3, §5). */
-export const INSTRUMENT_CATALOG: Record<InstrumentKind, { label: string; model: string; parameter: ParameterId; code: string; mounting: string }> = {
-  rain: { label: 'Rain gauge', model: 'RIMCO 7499 tipping bucket', parameter: 'rainfall', code: 'RIMCO', mounting: 'Mast, 1.5–2 m, clear of splash' },
-  level: { label: 'Radar water level', model: 'YGRD-65-D radar (mm above datum)', parameter: 'water_level', code: 'YGRD', mounting: '2.5 m aluminium mast over the channel' },
-  float: { label: 'Float switch', model: 'RS PRO RSF80 high-level backup', parameter: 'float_switch', code: 'RSF80', mounting: 'Through-wall, beside the radar' },
-  gmx: { label: 'Temperature / RH / pressure', model: 'Gill GMX300', parameter: 'temperature', code: 'GMX', mounting: '1.5–2 m above rail, shaded' },
-  wind: { label: 'Anemometer', model: 'Gill WindSonic 75 (10 m)', parameter: 'wind_mean', code: 'WS', mounting: '10 m on the VM5F mast' },
+export const INSTRUMENT_CATALOG: Record<
+  InstrumentKind,
+  { label: string; model: string; parameter: ParameterId; code: string; mounting: string }
+> = {
+  rain: {
+    label: 'Rain gauge',
+    model: 'RIMCO 7499 tipping bucket',
+    parameter: 'rainfall',
+    code: 'RIMCO',
+    mounting: 'Mast, 1.5–2 m, clear of splash',
+  },
+  level: {
+    label: 'Radar water level',
+    model: 'YGRD-65-D radar (mm above datum)',
+    parameter: 'water_level',
+    code: 'YGRD',
+    mounting: '2.5 m aluminium mast over the channel',
+  },
+  float: {
+    label: 'Float switch',
+    model: 'RS PRO RSF80 high-level backup',
+    parameter: 'float_switch',
+    code: 'RSF80',
+    mounting: 'Through-wall, beside the radar',
+  },
+  gmx: {
+    label: 'Temperature / RH / pressure',
+    model: 'Gill GMX300',
+    parameter: 'temperature',
+    code: 'GMX',
+    mounting: '1.5–2 m above rail, shaded',
+  },
+  wind: {
+    label: 'Anemometer',
+    model: 'Gill WindSonic 75 (10 m)',
+    parameter: 'wind_mean',
+    code: 'WS',
+    mounting: '10 m on the VM5F mast',
+  },
 };
 
 function kindOf(p: ParameterId): InstrumentKind | undefined {
@@ -1164,7 +1470,9 @@ export function instrumentsNow(): Instrument[] {
       const kind = kindOf(s.parameter);
       if (!kind || seen.has(s.sensorId)) continue;
       seen.add(s.sensorId);
-      const logger = station.loggers.find((l) => s.sensorId.startsWith(l.id.replace(/-\d+$/, '-'))) ?? station.loggers[0];
+      const logger =
+        station.loggers.find((l) => s.sensorId.startsWith(l.id.replace(/-\d+$/, '-'))) ??
+        station.loggers[0];
       const c = calibrationFor(s.sensorId, INSTRUMENT_CATALOG[kind].parameter, t);
       out.push({
         sensorId: s.sensorId,
@@ -1186,7 +1494,10 @@ export function instrumentsNow(): Instrument[] {
       });
     }
   }
-  return [...out, ...store.addedInstruments].map((i) => ({ ...i, ...(store.instrumentEdits.get(i.sensorId) ?? {}) }));
+  return [...out, ...store.addedInstruments].map((i) => ({
+    ...i,
+    ...(store.instrumentEdits.get(i.sensorId) ?? {}),
+  }));
 }
 
 export async function listInstruments(): Promise<Instrument[]> {
@@ -1194,12 +1505,15 @@ export async function listInstruments(): Promise<Instrument[]> {
 }
 
 export async function addInstrument(input: InstrumentInput): Promise<void> {
-  const station = STATIONS_BY_ID[input.locationId];
+  // A station added in this session (Admin → Stations → Add station) is not in the seed.
+  const station =
+    STATIONS_BY_ID[input.locationId] ??
+    getStore().addedStations.find((s) => s.id === input.locationId);
   const kind = INSTRUMENT_CATALOG[input.kind];
   mutate((s) =>
     s.addedInstruments.push({
       ...input,
-      locationName: station.name,
+      locationName: station?.name ?? input.locationId,
       model: kind.model,
       terminal: TERMINAL_FOR[kind.parameter]?.terminal ?? '—',
       installedAt: now(),
@@ -1207,12 +1521,23 @@ export async function addInstrument(input: InstrumentInput): Promise<void> {
       added: true,
     }),
   );
-  recordAudit('Sensor added', `${input.sensorId} — ${kind.label} at ${station.name} (${input.loggerId}), serial ${input.serial}. Commissioning.`, 'maintenance');
+  recordAudit(
+    'Sensor added',
+    `${input.sensorId} — ${kind.label} at ${station?.name ?? input.locationId} (${input.loggerId}), serial ${input.serial}. Commissioning.`,
+    'maintenance',
+  );
   return settle(undefined, 220);
 }
 
-export async function updateInstrument(sensorId: string, patch: Partial<Instrument>, action: string, detail: string): Promise<void> {
-  mutate((s) => s.instrumentEdits.set(sensorId, { ...(s.instrumentEdits.get(sensorId) ?? {}), ...patch }));
+export async function updateInstrument(
+  sensorId: string,
+  patch: Partial<Instrument>,
+  action: string,
+  detail: string,
+): Promise<void> {
+  mutate((s) =>
+    s.instrumentEdits.set(sensorId, { ...(s.instrumentEdits.get(sensorId) ?? {}), ...patch }),
+  );
   recordAudit(action, `${sensorId} — ${detail}`, 'maintenance');
   return settle(undefined, 180);
 }

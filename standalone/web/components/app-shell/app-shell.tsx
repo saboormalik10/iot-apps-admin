@@ -36,7 +36,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
       {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
         <div className="flex h-14 items-center gap-2 border-b px-4">
-          <BrandMark fallbackName={t('shortName')} initial={t('shortName').slice(0, 1)} />
+          <BrandMark fallbackName={t('shortName')} />
         </div>
         <SidebarNav />
       </aside>
@@ -61,7 +61,7 @@ export function AppShell({ user, children }: { user: SessionUser; children: Reac
           <LiveIndicator />
           <UnitsToggle />
           <ThemeToggle />
-          <NotificationBell />
+          {isFeatureEnabled('notifications') && <NotificationBell />}
           <UserMenu user={user} />
         </header>
 

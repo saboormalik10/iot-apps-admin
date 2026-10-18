@@ -9,6 +9,7 @@ import { StatusDot, stationTone } from '@/components/status/status-pill';
 import { useState } from 'react';
 import type { AlertEvent } from '@/lib/api/types';
 import { acknowledgeEvent, cameraEvents, maintenanceNow } from '@/lib/api/endpoints';
+import { SHOW_EXTRAS } from '@/lib/extras';
 import { PtzDialog } from '@/features/alerts/ptz-dialog';
 import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { Wrench } from 'lucide-react';
@@ -52,7 +53,13 @@ const VB_H = 100;
 const NORTHWEST = 'M 6,13 C 22,8 40,6 60,8 C 74,9 84,11 95,14';
 const SOUTHWEST = 'M 4,94 C 18,91 30,90 44,87 C 58,84 72,81 96,76';
 
-export function CorridorMap({ stations, className }: { stations: StationLive[]; className?: string }) {
+export function CorridorMap({
+  stations,
+  className,
+}: {
+  stations: StationLive[];
+  className?: string;
+}) {
   const online = stations.filter((s) => s.status !== 'offline').length;
   const [ptz, setPtz] = useState<AlertEvent | null>(null);
   return (
@@ -73,9 +80,14 @@ export function CorridorMap({ stations, className }: { stations: StationLive[]; 
           strokeLinecap="round"
           opacity="0.8"
         />
-        <path d={SOUTHWEST} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.1" strokeLinecap="round" />
-
-            </svg>
+        <path
+          d={SOUTHWEST}
+          fill="none"
+          stroke="hsl(var(--primary))"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
+      </svg>
 
       <p className="absolute left-3 top-2 hidden text-[11px] uppercase tracking-wide text-muted-foreground sm:block">
         Northwest locations
@@ -94,7 +106,13 @@ export function CorridorMap({ stations, className }: { stations: StationLive[]; 
               the live PTZ feed for that location. */}
           {s.cameraVerification ? (
             <button
-              onClick={() => setPtz(cameraEvents().filter((e) => e.locationId === s.location.id).sort((a, b) => b.t - a.t)[0] ?? null)}
+              onClick={() =>
+                setPtz(
+                  cameraEvents()
+                    .filter((e) => e.locationId === s.location.id)
+                    .sort((a, b) => b.t - a.t)[0] ?? null,
+                )
+              }
               className="absolute z-10 flex h-6 w-6 -translate-y-1/2 translate-x-3 items-center justify-center rounded-full bg-card shadow ring-1 ring-sev-alert/40 hover:bg-sev-alert-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               style={{ left: `${s.location.map.x}%`, top: `${s.location.map.y}%` }}
               aria-label={`Open the PTZ camera at ${s.location.name}`}
@@ -116,7 +134,11 @@ export function CorridorMap({ stations, className }: { stations: StationLive[]; 
       </div>
 
       <Legend online={online} total={stations.length} />
-      <PtzDialog event={ptz} onClose={() => setPtz(null)} onAcknowledge={(id) => acknowledgeEvent(id)} />
+      <PtzDialog
+        event={ptz}
+        onClose={() => setPtz(null)}
+        onAcknowledge={(id) => acknowledgeEvent(id)}
+      />
     </div>
   );
 }
@@ -151,18 +173,27 @@ function StationPin({ station }: { station: StationLive }) {
       {/* Shape, not just hue: an alert carries a triangle a colour-blind reader
           (or a monochrome printout) can still see. */}
       {tone === 'alert' ? (
-        <span className="absolute -left-2.5 -top-1 text-[11px] leading-none text-sev-alert" aria-hidden>
+        <span
+          className="absolute -left-2.5 -top-1 text-[11px] leading-none text-sev-alert"
+          aria-hidden
+        >
           ▲
         </span>
       ) : null}
       {tone === 'offline' ? (
-        <span className="absolute -left-2.5 -top-1 text-[11px] leading-none text-sev-offline" aria-hidden>
+        <span
+          className="absolute -left-2.5 -top-1 text-[11px] leading-none text-sev-offline"
+          aria-hidden
+        >
           ⊘
         </span>
       ) : null}
       {/* A stem pointing at this station's card, so pin and reading read as one. */}
       <span
-        className={cn('absolute left-1/2 hidden w-px -translate-x-1/2 bg-border xl:block', labelSide === 'above' ? 'bottom-7 h-4' : 'top-7 h-4')}
+        className={cn(
+          'absolute left-1/2 hidden w-px -translate-x-1/2 bg-border xl:block',
+          labelSide === 'above' ? 'bottom-7 h-4' : 'top-7 h-4',
+        )}
         aria-hidden
       />
     </Link>
@@ -197,21 +228,31 @@ function StationCard({ station }: { station: StationLive }) {
           {/* Wrapping, not truncating: "Marrickville–Dulwich Hill" was an ellipsis
               on every screen, and a location you cannot name is not on the map. */}
           <span className="text-xs font-semibold leading-tight">
-            <span className="text-muted-foreground">{station.location.ordinal}.</span> {station.location.name}
+            <span className="text-muted-foreground">{station.location.ordinal}.</span>{' '}
+            {station.location.name}
           </span>
           <span className="mt-0.5 flex shrink-0 items-center gap-1">
             {maintenanceNow(station.location.id).on ? (
-              <Wrench className="h-3 w-3 text-sev-warning-strong" aria-label="In maintenance mode" />
+              <Wrench
+                className="h-3 w-3 text-sev-warning-strong"
+                aria-label="In maintenance mode"
+              />
             ) : null}
             {station.cameraVerification ? (
-              <Camera className="h-3 w-3 animate-blink-alert text-sev-alert" aria-label="Camera verification requested" />
+              <Camera
+                className="h-3 w-3 animate-blink-alert text-sev-alert"
+                aria-label="Camera verification requested"
+              />
             ) : null}
             <StatusDot tone={tone} />
           </span>
         </div>
         <dl className="space-y-0.5">
           {shown.map((r) => (
-            <div key={r.sensorId + r.parameter} className="flex items-baseline justify-between gap-2 text-[11px]">
+            <div
+              key={r.sensorId + r.parameter}
+              className="flex items-baseline justify-between gap-2 text-[11px]"
+            >
               <dt className="truncate text-muted-foreground">
                 {shortLabel(r.parameter)}
                 {r.sensorId.includes('-UP-') ? ' up' : r.sensorId.includes('-DN-') ? ' down' : ''}
@@ -235,8 +276,9 @@ function StationCard({ station }: { station: StationLive }) {
           ))}
         </dl>
         <p className="mt-1 truncate text-[11px] text-muted-foreground">
-          batt {station.location.loggers[0].batteryPct}% · {station.location.loggers[0].signal.network}{' '}
-          {station.location.loggers[0].signal.rssiDbm} · {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
+          batt {station.location.loggers[0].batteryPct}% ·{' '}
+          {station.location.loggers[0].signal.network} {station.location.loggers[0].signal.rssiDbm}{' '}
+          · {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
         </p>
       </Link>
     </div>
@@ -272,7 +314,12 @@ function Legend({ online, total }: { online: number; total: number }) {
         <br />
         Rain mm/hr · Wind km/h · Temp °C · Level mm
       </p>
-      <p className="mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground">
+      <p
+        className={cn(
+          'mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground',
+          !SHOW_EXTRAS && 'hidden',
+        )}
+      >
         <Wrench className="h-3 w-3 text-sev-warning-strong" aria-hidden /> maintenance mode
       </p>
     </div>

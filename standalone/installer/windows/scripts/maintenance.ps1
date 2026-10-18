@@ -10,8 +10,12 @@ $log = Join-Path $L.LogDir 'maintenance.log'
 function Log([string]$s) { Add-Content -Path $log -Value ("{0}  {1}" -f (Get-Date -Format 's'), $s) }
 
 try {
-    $folder = Invoke-Backup $L
-    Log "backup ok: $folder"
+    if ((Get-BackupSettings $L).Enabled) {
+        $folder = Invoke-Backup $L
+        Log "backup ok: $folder"
+    } else {
+        Log 'nightly backup off (BACKUP_ENABLED is not true)'
+    }
 } catch {
     Log "BACKUP FAILED: $($_.Exception.Message)"
 }
