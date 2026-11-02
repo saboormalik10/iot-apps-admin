@@ -20,6 +20,7 @@ const TABS: { href: string; label: string; superOnly?: boolean }[] = [
   { href: '/admin/rules', label: 'Alert rules' },
   { href: '/admin/stations', label: 'Stations' },
   { href: '/admin/sensors', label: 'Sensors' },
+  { href: '/admin/rain-test', label: 'Rain rule test' },
   { href: '/admin/recipients', label: 'Recipients' },
   { href: '/admin/audit', label: 'Audit trail' },
   { href: '/admin/system', label: 'System & contract' },
@@ -31,6 +32,8 @@ const PROPOSAL_TABS: Record<string, { title: string; intro?: string }> = {
   '/admin/rules': { title: 'Alert & warning rules — configuration' },
   '/admin/stations': { title: 'Stations' },
   '/admin/sensors': { title: 'Sensors' },
+  // Client, 2 Nov 2026: test cases, a simulation and test data for the 3-day rain rule.
+  '/admin/rain-test': { title: '3-day rainfall rule — simulation and test cases' },
 };
 
 export function AdminShell({ children }: { children: ReactNode }) {

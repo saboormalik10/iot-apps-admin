@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Observator Weather Station — System Guide</title>
+<!-- Source of Observator-Automatic-Weather-Station-System-Guide.pdf.
+     Same layout as the User Manual. Build: node build.cjs (in this folder). -->
+<style>
+  @page { size: A4; margin: 53pt 46pt 60pt 46pt; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Liberation Sans', Arial, sans-serif; font-size: 10.5pt; line-height: 1.55; color: #111827; }
+  h2 { font-size: 16pt; font-weight: 700; margin: 0 0 14pt; break-before: page; break-after: avoid; }
+  h2.first { break-before: auto; }
+  h2.cont { break-before: auto; margin-top: 26pt; }
+  .keep { break-inside: avoid; }
+  h3 { font-size: 10.5pt; font-weight: 700; margin: 16pt 0 6pt; break-after: avoid; }
+  p { margin: 0 0 9pt; }
+  ul, ol { margin: 0 0 9pt; padding-left: 18pt; }
+  li { margin: 0 0 3pt; }
+  code { font-family: 'DejaVu Sans Mono', monospace; font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 12pt; font-size: 9.5pt; line-height: 1.4; break-inside: avoid; }
+  th { background: #f7f8fa; text-align: left; font-weight: 700; padding: 7pt 7pt; border-bottom: 1pt solid #d2d7de; }
+  td { padding: 7pt 7pt; border-bottom: 0.75pt solid #e3e6ea; vertical-align: top; }
+  td:first-child { font-weight: 700; white-space: nowrap; }
+  td:first-child code { font-weight: 400; }
+  figure { margin: 6pt 0 14pt; break-inside: avoid; }
+  figure img, figure svg { display: block; width: 100%; border: 0.75pt solid #e3e6ea; border-radius: 4pt; }
+  figure img.narrow { width: 70%; }
+  figcaption { font-size: 8.5pt; color: #5b6472; margin-top: 6pt; }
+  figcaption b { font-weight: 700; }
+  .contents { list-style: none; padding: 0; margin: 0; }
+  .contents li { display: flex; gap: 14pt; align-items: baseline; padding: 7pt 0; border-bottom: 0.75pt solid #e3e6ea; margin: 0; }
+  .contents .n { font-size: 9pt; color: #5b6472; width: 11pt; }
+</style>
+</head>
+<body>
+
+<p>This guide explains the parts of the <b>Observator Automatic Weather Station</b> system (version 1.0.4) and how to install it: the software on the station PC that receives the GMX551's readings, stores them and serves the portal.</p>
+<p>It is for whoever installs and looks after that PC. Day-to-day use of the portal is in the User Manual.</p>
+
+<h2 class="first" style="margin-top:22pt">Contents</h2>
+<ol class="contents">
+  <li><span class="n">1</span>About this guide</li>
+  <li><span class="n">2</span>The components</li>
+  <li><span class="n">3</span>How they connect</li>
+  <li><span class="n">4</span>Where things are on the PC</li>
+  <li><span class="n">5</span>Before you install</li>
+  <li><span class="n">6</span>Installing step by step</li>
+  <li><span class="n">7</span>After installing</li>
+  <li><span class="n">8</span>Running, upgrading and removing</li>
+</ol>
+
+<h2>1. About this guide</h2>
+<p>The Observator Automatic Weather Station software runs on one Windows PC at the site. That PC receives the GMX551's readings, stores them, and serves the portal that everyone opens in a web browser. No internet connection is needed.</p>
+<p>This guide explains the parts of the system and how they fit together, then walks through the installation. Day-to-day use of the portal is in the User Manual.</p>
+<p>It describes version <b>1.0.4</b>.</p>
+
+<h2 class="cont">2. The components</h2>
+<p>The system has five parts. Three of them are software on the station PC, each running as its own Windows service.</p>
+<table>
+  <tr><th>Component</th><th>Where it runs</th><th>What it does</th></tr>
+  <tr><td>GMX551 sensor</td><td>On the mast</td><td>Measures wind, temperature, humidity, pressure, dew point, solar radiation and rain. Sends one line of readings every second, in Gill ASCII or NMEA 0183</td></tr>
+  <tr><td>Network converter</td><td>Beside the sensor</td><td>Turns the sensor's serial line into a network connection to the station PC</td></tr>
+  <tr><td>API and sensor stream</td><td>Station PC (Windows service)</td><td>Listens for the sensor on port 4000. Checks every reading, builds the one-minute and ten-minute values, stores them, and answers the portal's requests on port 3200</td></tr>
+  <tr><td>Database server</td><td>Station PC (Windows service)</td><td>MongoDB. Keeps every reading, user, setting and audit entry. Readings are never deleted</td></tr>
+  <tr><td>Web server (the portal)</td><td>Station PC (Windows service)</td><td>Serves the portal on port 3201 to any browser on the site network</td></tr>
+</table>
+<p>Nothing else is needed: no internet, no cloud service and no separate server. Everyone else opens the portal in a web browser such as Chrome or Edge.</p>
+
+<h2>3. How they connect</h2>
+<figure>
+<svg viewBox="0 0 760 576" xmlns="http://www.w3.org/2000/svg" font-family="Liberation Sans, Arial, sans-serif" font-size="13">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8b949e"/></marker></defs>
+  <text x="24" y="32" font-size="15" font-weight="700" fill="#111827">Readings travel from the sensor through one PC to every browser</text>
+  <g fill="none" stroke="#8b949e" stroke-width="1.25">
+    <path d="M224 104H286" marker-end="url(#a)"/>
+    <path d="M388 132V214" marker-end="url(#a)"/>
+    <path d="M530 256H566" marker-start="url(#a)" marker-end="url(#a)"/>
+    <path d="M388 358V294" marker-end="url(#a)"/>
+    <path d="M388 496V420" marker-end="url(#a)"/>
+  </g>
+  <rect x="24" y="76" width="200" height="56" rx="8" fill="none" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="36" y="100" font-weight="700" fill="#111827">GMX551 sensor</text>
+  <text x="36" y="116" font-size="11.5" fill="#5b6472">on the mast, 1 reading a second</text>
+  <rect x="288" y="76" width="200" height="56" rx="8" fill="none" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="300" y="100" font-weight="700" fill="#111827">Network converter</text>
+  <text x="300" y="116" font-size="11.5" fill="#5b6472">serial line to the network</text>
+  <text x="256" y="96" text-anchor="middle" font-size="11.5" fill="#5b6472">serial</text>
+  <text x="398" y="158" font-size="11.5" fill="#5b6472">TCP, port 4000</text>
+  <rect x="24" y="176" width="712" height="280" rx="8" fill="#f3f4f6" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="40" y="200" font-weight="700" fill="#111827">Station PC: three Windows services</text>
+  <rect x="248" y="216" width="280" height="80" rx="8" fill="#dbe6fb" stroke="#2563eb" stroke-width="2"/>
+  <text x="260" y="240" font-weight="700" fill="#111827">API and sensor stream</text>
+  <text x="260" y="258" font-size="11.5" fill="#111827">checks, averages and stores every reading</text>
+  <text x="260" y="274" font-size="11.5" fill="#111827">answers the portal on port 3200</text>
+  <rect x="568" y="216" width="152" height="80" rx="8" fill="#ffffff" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="580" y="240" font-weight="700" fill="#111827">Database server</text>
+  <text x="580" y="258" font-size="11.5" fill="#5b6472">MongoDB, port 27017</text>
+  <text x="580" y="274" font-size="11.5" fill="#5b6472">keeps all data</text>
+  <rect x="248" y="360" width="280" height="56" rx="8" fill="#ffffff" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="260" y="384" font-weight="700" fill="#111827">Web server (the portal)</text>
+  <text x="260" y="402" font-size="11.5" fill="#5b6472">serves the portal on port 3201</text>
+  <text x="398" y="330" font-size="11.5" fill="#5b6472">this PC only</text>
+  <rect x="248" y="498" width="280" height="56" rx="8" fill="none" stroke="#8b949e" stroke-width="1.25"/>
+  <text x="260" y="522" font-weight="700" fill="#111827">Web browsers</text>
+  <text x="260" y="538" font-size="11.5" fill="#5b6472">any computer on the site network</text>
+  <text x="398" y="480" font-size="11.5" fill="#5b6472">http://PC-address:3201</text>
+</svg>
+<figcaption><b>Figure 1 —</b> How the components connect</figcaption>
+</figure>
+<p>The sensor's readings enter the PC on port 4000 and are stored by the API. The database (27017) and the API (3200) answer only inside the PC. Only two ports are open to the site network: 4000 for the converter and 3201 for the portal.</p>
+
+<h2>4. Where things are on the PC</h2>
+<p>The program and the data are kept in two separate folders, so an upgrade or an uninstall never touches the readings.</p>
+<table>
+  <tr><th>Folder</th><th>What is in it</th></tr>
+  <tr><td><code>C:\Observator</code></td><td>The program, its tools (<code>status.cmd</code>, <code>backup-now.cmd</code>, <code>upgrade.cmd</code> and others) and a copy of the guides. Replaced by an upgrade</td></tr>
+  <tr><td><code>C:\ObservatorData\config\observator.env</code></td><td>The settings, in one file</td></tr>
+  <tr><td><code>C:\ObservatorData\db</code></td><td>The database</td></tr>
+  <tr><td><code>C:\ObservatorData\logs</code></td><td>Logs from each service and each install, rotated automatically</td></tr>
+  <tr><td><code>C:\ObservatorData\backups</code></td><td>Backups taken with <code>backup-now.cmd</code>, and the one an upgrade takes first</td></tr>
+  <tr><td><code>C:\ObservatorData\uploads</code></td><td>The uploaded logo</td></tr>
+</table>
+<p>The settings and data folders open for administrators only, because the settings file holds the keys that protect sign-in.</p>
+<p>The three services run as Windows' built-in <i>Local Service</i> account, not as an administrator. Each starts with Windows and restarts by itself after a crash.</p>
+
+<h2>5. Before you install</h2>
+<p>Installation takes about 15 minutes, once, on the one PC that will be the station's server.</p>
+<table>
+  <tr><th>You need</th><th>Why</th></tr>
+  <tr><td>Windows 10 or 11, 64-bit</td><td>The software is built for it (Windows Server 2019/2022 also work)</td></tr>
+  <tr><td>An administrator account</td><td>Setup installs Windows services and firewall rules</td></tr>
+  <tr><td>4 GB memory, 20 GB free disk</td><td>Readings are never deleted; the data grows by about 0.5 GB a year</td></tr>
+  <tr><td>A fixed IP address</td><td>The converter, and everyone's browser, find the PC by it</td></tr>
+  <tr><td>Never sleep, time sync on</td><td>Every reading is time-stamped by this PC's clock</td></tr>
+  <tr><td>The setup program</td><td><code>observator-weather-1.0.4-setup.exe</code>. No internet is needed</td></tr>
+</table>
+<p><b>Find the PC's IP address.</b> Press the Windows key, type <code>cmd</code> and press Enter. Type <code>ipconfig</code> and press Enter. The line <b>IPv4 Address</b> is the one, for example <code>192.168.1.20</code>.</p>
+
+<h2>6. Installing step by step</h2>
+<p>The setup program asks four questions, then installs and starts everything by itself. For most sites, keep every default.</p>
+
+<div class="keep"><h3>Step 1 — Start the setup program</h3>
+<p>Double-click <code>observator-weather-1.0.4-setup.exe</code>. Windows asks whether to let it make changes: choose <b>Yes</b>. Then select <b>Next</b>.</p>
+<figure><img class="narrow" src="../img/install-01-welcome.png"><figcaption><b>Figure 2 —</b> The setup wizard opens</figcaption></figure>
+</div>
+
+<div class="keep"><h3>Step 2 — The program folder</h3>
+<p>Where the program goes. Keep the default, <code>C:\Observator</code>, and select <b>Next</b>.</p>
+<figure><img class="narrow" src="../img/install-02-program-folder.png"><figcaption><b>Figure 3 —</b> The program folder</figcaption></figure>
+</div>
+
+<div class="keep"><h3>Step 3 — The data folder</h3>
+<p>Where the readings, settings and logs are kept. Keep the default, <code>C:\ObservatorData</code>, and select <b>Next</b>. Upgrades and uninstalling never touch this folder. It must not be inside the program folder; setup refuses if it is.</p>
+<figure><img class="narrow" src="../img/install-03-data-folder.png"><figcaption><b>Figure 4 —</b> The data folder</figcaption></figure>
+</div>
+
+<div class="keep"><h3>Step 4 — The first administrator</h3>
+<p>Type the email address of the person who will sign in first and set everyone else up. It does not have to be a real mailbox: the PC sends no email. Select <b>Next</b>. The password is asked for later, in its own window, so it is never written down on the PC.</p>
+<figure><img class="narrow" src="../img/install-04-administrator.png"><figcaption><b>Figure 5 —</b> The first administrator</figcaption></figure>
+</div>
+
+<div class="keep"><h3>Step 5 — The sensor and the network</h3>
+<p>How the GMX551's readings reach this PC. For most sites, change nothing and select <b>Next</b>.</p>
+<figure><img class="narrow" src="../img/install-05-sensor.png"><figcaption><b>Figure 6 —</b> The sensor and the network</figcaption></figure>
+<table>
+  <tr><th>Setting</th><th>What to put</th></tr>
+  <tr><td>Sensor port</td><td><code>4000</code>. The converter sends the readings to this port</td></tr>
+  <tr><td>Converter address</td><td>Leave it empty, unless you choose <i>This PC connects to the converter</i></td></tr>
+  <tr><td>Portal port</td><td><code>3201</code>. People open <code>http://&lt;this PC's IP&gt;:3201</code></td></tr>
+  <tr><td>Converter connects to this PC</td><td>The usual choice. Then set the converter to send to this PC's IP, port 4000</td></tr>
+  <tr><td>This PC connects to converter</td><td>Only if the converter can only wait to be called. Then type the converter's IP address</td></tr>
+</table>
+</div>
+
+<div class="keep"><h3>Step 6 — Install</h3>
+<p>The wizard shows where it will install. Select <b>Install</b>. Copying the program takes a minute or two.</p>
+<figure><img class="narrow" src="../img/install-06-ready.png"><figcaption><b>Figure 7 —</b> Ready to install</figcaption></figure>
+<figure><img class="narrow" src="../img/install-07-copying.png"><figcaption><b>Figure 8 —</b> Copying the program</figcaption></figure>
+</div>
+
+<div class="keep"><h3>Step 7 — The administrator's password</h3>
+<p>A blue PowerShell window opens. It checks the PC, then asks for the first administrator's password, <b>at least 8 characters, typed twice</b>.</p>
+<figure><img src="../img/install-08-password.png"><figcaption><b>Figure 9 —</b> The password window</figcaption></figure>
+<ul>
+  <li>Only stars appear while you type. That is normal.</li>
+  <li>If the two do not match, or it is too short, it says so in yellow and asks again.</li>
+  <li>Write the password down somewhere safe. You sign in to the portal with this email and password.</li>
+</ul>
+</div>
+
+<div class="keep"><h3>Step 8 — Setup finishes the work</h3>
+<p>The same window carries on by itself. Do not close it while it is working.</p>
+<figure><img src="../img/install-09-working.png"><figcaption><b>Figure 10 —</b> Setup at work</figcaption></figure>
+<p>It writes the settings, creates the three Windows services (database, API and sensor stream, web portal), starts each one and checks it answers, and opens the two ports in the Windows firewall for the local network. When it is finished, the window closes by itself.</p>
+</div>
+
+<div class="keep"><h3>Step 9 — Done</h3>
+<p>Select <b>Finish</b>. The software is now in <code>C:\Observator</code> and starts by itself whenever the PC starts. The setup program can be deleted.</p>
+<figure><img class="narrow" src="../img/install-10-finished.png"><figcaption><b>Figure 11 —</b> Setup is finished</figcaption></figure>
+</div>
+
+<h2>7. After installing</h2>
+<p>Two things remain: open the portal, and point the converter at the PC.</p>
+<h3>Open the portal</h3>
+<p>On the station PC, or any computer on the same network, open a web browser and go to <code>http://&lt;this PC's IP address&gt;:3201</code>, for example <code>http://192.168.1.20:3201</code>. On the station PC itself, <code>http://localhost:3201</code> works too, and the Start menu has a <b>Weather station portal</b> shortcut.</p>
+<figure><img class="narrow" src="../img/site-00-login.png"><figcaption><b>Figure 12 —</b> Signing in</figcaption></figure>
+<p>Sign in with the email from step 4 and the password from step 7. Then open <b>System</b> in the menu. Everything should be green except the sensor stream, until the converter is set up.</p>
+<figure><img src="../img/site-17-system.png"><figcaption><b>Figure 13 —</b> The System screen</figcaption></figure>
+
+<h3>Point the converter at the PC</h3>
+<p>The GMX551 is wired to a serial-to-network converter. In the converter's own settings page:</p>
+<table>
+  <tr><th>Setting</th><th>Value</th></tr>
+  <tr><td>Mode</td><td><b>TCP Client</b> (sometimes called <i>active</i> or <i>connect</i> mode)</td></tr>
+  <tr><td>Destination IP</td><td>This PC's IP address, for example <code>192.168.1.20</code></td></tr>
+  <tr><td>Destination port</td><td><b>4000</b></td></tr>
+  <tr><td>Serial</td><td>Must match the GMX551. Gill's default is 19200 baud, 8 data bits, no parity, 1 stop bit. A sensor set to NMEA usually uses 4800 or 9600 baud</td></tr>
+</table>
+<p>The software reads Gill ASCII and NMEA 0183, with nothing to set. Within a minute, <b>System</b> shows the sensor stream as <i>Connected</i> with about 60 readings a minute, and the Dashboard's wind dial starts moving every second.</p>
+<p>If the converter can only be a <b>TCP Server</b>, the PC calls it instead. Set the converter to TCP Server on port 4000. Then, in the portal, open <b>System → Sensor stream → Change connection</b>, choose <b>This PC connects to the converter</b>, type the converter's IP address and port, and select <b>Save and connect</b>.</p>
+
+<h2>8. Running, upgrading and removing</h2>
+<h3 style="margin-top:0">Stopping and starting the weather station</h3>
+<p>The master administrator (the one created in step 4) sees <b>Weather station — Stop / Start</b> on the portal's <b>System</b> page.</p>
+<ul>
+  <li><b>Stop</b> closes the sensor connection and stops recording. Stored readings are kept, and the PC and portal stay on. It stays stopped after a PC restart, and the System page says so.</li>
+  <li><b>Start</b> connects to the sensor again. Recording resumes within a minute.</li>
+</ul>
+<p>To restart the services themselves, open <b>Services</b> (Win+R, type <code>services.msc</code>) and restart the three <i>Observator Weather</i> services, or restart the PC.</p>
+
+<h3>Tools in the program folder</h3>
+<table>
+  <tr><th>Tool</th><th>What it does</th></tr>
+  <tr><td><code>status.cmd</code></td><td>Shows whether the services, the sensor and the disk are healthy</td></tr>
+  <tr><td><code>backup-now.cmd</code></td><td>Takes a backup now, into <code>C:\ObservatorData\backups</code></td></tr>
+  <tr><td><code>restore.cmd</code></td><td>Puts a backup back</td></tr>
+  <tr><td><code>reset-password.cmd</code></td><td>Sets a user's password, at this PC</td></tr>
+  <tr><td><code>upgrade.cmd</code></td><td>In a new release's folder: upgrades, keeping all data</td></tr>
+  <tr><td><code>uninstall.cmd</code></td><td>Removes the software, keeping the data</td></tr>
+</table>
+
+<h3>Upgrading</h3>
+<p>Unpack the new release anywhere except <code>C:\Observator</code>, then double-click its <code>upgrade.cmd</code>. It backs up the database first, keeps the old program as <code>C:\Observator.previous</code>, installs the new one and checks it starts. If anything fails, it puts the previous version back and starts it. The data folder is not touched.</p>
+
+<h3>Uninstalling</h3>
+<p>Use <b>Settings → Apps → Observator Weather Station → Uninstall</b>. It removes the services and firewall rules and keeps the data in <code>C:\ObservatorData</code>. Installing again with the same data folder carries on with all of it.</p>
+
+<h3>If setup stops</h3>
+<p>If something is wrong, the PowerShell window stays open with <b>SETUP STOPPED</b> in red and the reason underneath.</p>
+<figure><img src="../img/install-11-stopped.png"><figcaption><b>Figure 14 —</b> Setup stopped, with the reason in red</figcaption></figure>
+<ol>
+  <li>Read the red line: it says what is wrong. Take a photo if you need help.</li>
+  <li>Press Enter to close the window. The wizard then shows the message below.</li>
+  <li>Fix what the red line said. Then open <code>C:\Observator</code>, right-click <code>install.cmd</code> and choose <b>Run as administrator</b>. It carries on from where it stopped, keeping the settings you chose.</li>
+</ol>
+<figure><img class="narrow" src="../img/install-12-not-finished.png"><figcaption><b>Figure 15 —</b> The message after setup stops</figcaption></figure>
+<table>
+  <tr><th>The red line says</th><th>What to do</th></tr>
+  <tr><td><i>Port 3201 … is in use</i></td><td>Another program uses the portal's port. Stop it, or run setup again with another portal port</td></tr>
+  <tr><td><i>Port 4000 … is in use</i></td><td>The same, for the sensor port</td></tr>
+  <tr><td><i>… lacks AVX</i></td><td>The PC's processor is too old for the database. Use a newer PC</td></tr>
+  <tr><td><i>… did not start</i></td><td>The database, API or portal did not start. Send us the log file it names, from <code>C:\ObservatorData\logs</code></td></tr>
+  <tr><td><i>Already installed in …</i></td><td>It is already installed. To update it, use the new release's <code>upgrade.cmd</code></td></tr>
+</table>
+<p>Every run is logged in <code>C:\ObservatorData\logs\install-&lt;date&gt;-&lt;time&gt;.log</code>. Send that file if you ask us for help.</p>
+
+</body>
+</html>

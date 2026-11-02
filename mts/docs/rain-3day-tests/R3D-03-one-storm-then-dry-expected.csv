@@ -1,0 +1,4 @@
+﻿event,time_from_start,timestamp_sydney,why,message
+Alert raised,20:00,2026-11-03 20:00,600th tip: 120.0 mm after 20 h of 6 mm/h.,ALERT — Rainfall ≥ 120 mm in 3 days. Initiate CJC-T front-of-train patrol between Hurlstone Park and Bankstown. Be prepared for network flooding.
+Countdown started,74:02,2026-11-06 02:02,61st tip (02:02) is 72 h old: 132 − 12.2 = 119.8 mm.,3-day total back below 120 mm. 48-hour vigilance in force: demobilise patrols when visibility is limited and implement a 60 kph TSR between Hurlstone Park and Bankstown until cancelled or visibility improves.
+All-clear sent,122:02,2026-11-08 02:02,48 h after the countdown started.,CANCELLED — 48-hour rainfall vigilance ended with no further qualifying rain. Restore normal operations.

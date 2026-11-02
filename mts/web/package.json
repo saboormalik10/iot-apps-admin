@@ -2,7 +2,7 @@
   "name": "mts-portal-prototype",
   "version": "0.1.0",
   "private": true,
-  "description": "Weather Monitoring and Alerting System \u2014 Sydney Metro M1. Design prototype: UI only, demonstration data, no backend.",
+  "description": "Weather Monitoring and Alerting System — Sydney Metro M1. Design prototype: UI only, demonstration data, no backend.",
   "packageManager": "yarn@1.22.22",
   "engines": {
     "node": ">=20"
@@ -13,7 +13,9 @@
     "start": "next start -p 3002",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,css,md}\"",
-    "validate-palette": "node scripts/validate_palette.mjs"
+    "validate-palette": "node scripts/validate_palette.mjs",
+    "test:rain": "tsc -p scripts/tsconfig.rain.json && node .rain-out/scripts/rain-tests.js",
+    "export:rain": "tsc -p scripts/tsconfig.rain.json && node .rain-out/scripts/rain-tests.js --export ../docs/rain-3day-tests"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.3",
