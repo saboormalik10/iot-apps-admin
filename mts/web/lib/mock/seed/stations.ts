@@ -109,7 +109,6 @@ export const STATIONS: StationLocation[] = [
       dutyStandby: true,
       capacityLps: 120,
     },
-    cameraUrl: '#ptz-marrickville',
     map: { x: 10, y: 92, labelSide: 'above' },
   },
   {
@@ -141,7 +140,6 @@ export const STATIONS: StationLocation[] = [
     track: 'both',
     loggers: [logger('CAN-01', 'Canterbury')],
     sensors: [level('CAN-YGRD-01'), float('CAN-RSF80-01')],
-    cameraUrl: '#ptz-canterbury',
     map: { x: 41, y: 86, labelSide: 'above' },
   },
   {

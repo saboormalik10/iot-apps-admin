@@ -8,7 +8,6 @@ import { useTheme } from 'next-themes';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DemoDock } from './demo-dock';
 import { InactivityWarning } from './inactivity-warning';
-import { PtzWatcher } from './ptz-watcher';
 import { NAV_ITEMS } from './nav-config';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useActing, useDataRevision } from '@/lib/use-data';
@@ -266,7 +265,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
       <InactivityWarning />
-      <PtzWatcher />
       {SHOW_EXTRAS ? <DemoDock /> : null}
     </div>
   );

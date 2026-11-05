@@ -75,7 +75,6 @@ interface Seed {
   track?: TrackDirection;
   acknowledged?: { by: string; minutesAfter: number };
   autoCleared?: boolean;
-  camera?: boolean;
   draft?: boolean;
 }
 
@@ -185,16 +184,14 @@ function stormSeeds(): Seed[] {
       track: 'both',
     },
     {
-      /* Marrickville has a camera too, and its water crosses standing water
-         before the pumps start — §7.5 asks for the same verification there. */
+      /* Marrickville's water crosses standing water before the pumps start. */
       id: 'mkv-ptz',
       t: crossing(mkv, F.standingWaterMm),
       severity: 'alert',
-      category: 'camera',
+      category: 'flood',
       location: 'marrickville',
-      message: `Standing water above +${F.standingWaterMm} mm — PTZ verification requested`,
-      detail: 'Verify standing water on the PTZ camera before acting on the reading.',
-      camera: true,
+      message: `Standing water above +${F.standingWaterMm} mm — verify before acting`,
+      detail: 'Information Security Controller: verify standing water before acting on the reading.',
       acknowledged: { by: 'J. Okoro', minutesAfter: 3 },
       track: 'both',
     },
@@ -202,11 +199,10 @@ function stormSeeds(): Seed[] {
       id: 'canterbury-ptz',
       t: canterbury,
       severity: 'alert',
-      category: 'camera',
+      category: 'flood',
       location: 'canterbury',
-      message: `Standing water above +${F.standingWaterMm} mm — PTZ verification requested`,
-      detail: 'Verify standing water on the PTZ camera before acting on the reading.',
-      camera: true,
+      message: `Standing water above +${F.standingWaterMm} mm — verify before acting`,
+      detail: 'Information Security Controller: verify standing water before acting on the reading.',
       track: 'down',
     },
     {
@@ -449,7 +445,6 @@ export function seededEvents(now: number): AlertEvent[] {
         track: s.track ?? station.track,
         rail: s.track ?? station.track,
         chainageLabel: station.chainage.label,
-        cameraUrl: s.camera ? station.cameraUrl : undefined,
         autoCleared: s.autoCleared,
         draftWording: s.draft,
       };

@@ -84,13 +84,13 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
       { req: '§7.2 Rolling 1 h / 3 h / 3-day totals against 25 / 45 / 120 mm', where: [{ label: 'Vigilance board', href: '/' }, { label: 'Rolling totals', href: '/trends' }], status: 'shown' },
       { req: '§7.2 6 / 12 / 48 h vigilance from when rain falls below the line; reset on re-trigger; cancellation alert', where: [{ label: 'Vigilance board', href: '/' }, { label: 'Vigilance timeline', href: '/' }, { label: 'Alert log', href: '/alerts' }], status: 'shown' },
       { req: '§7.2 Patrol, demobilise and 60 kph TSR wording', where: [{ label: 'Rules', href: '/admin/rules' }, { label: 'Alerts', href: '/alerts' }], status: 'pending', note: 'Wording marked "draft" wherever MTS has not supplied it.' },
-      { req: '§7.3 Flood: standing water (PTZ), above rail foot (block the line), trending down (staged reinstatement)', where: [{ label: 'Flood event', href: '/flood' }, { label: 'Reinstatement tracker', href: '/flood' }], status: 'shown' },
+      { req: '§7.3 Flood: standing water, above rail foot (block the line), trending down (staged reinstatement)', where: [{ label: 'Flood event', href: '/flood' }, { label: 'Reinstatement tracker', href: '/flood' }], status: 'shown' },
       { req: '§7.3 Temperature ≥ 38 / ≥ 45 °C rising > 5 min, falling > 10 min', where: [{ label: 'Rules', href: '/admin/rules' }], status: 'shown', note: 'Seasonal — scheduled for summer in the demo.' },
       { req: '§7.3 Wind ≥ 75 / ≥ 85 km/h TSR at listed kilometrages; ≥ 120 km/h block line', where: [{ label: 'Rules', href: '/admin/rules' }], status: 'pending', note: 'The kilometrage list is MTS’s to supply.' },
       { req: '§7.3 One configurable threshold table: add, edit, enable, disable, schedule; validated, versioned and logged', where: [{ label: 'Rules', href: '/admin/rules' }, { label: 'Version history', href: '/admin/rules' }, { label: 'Audit trail', href: '/admin/audit' }], status: 'shown' },
       { req: '§7.3 Validation before a change takes effect', where: [{ label: 'Rule drawer → test against 24 h', href: '/admin/rules' }], status: 'shown', note: 'The draft is dry-run against stored readings at every location it covers; a warning set above its alert is flagged.' },
       { req: '§7.4 Automatic fallback to the designated alternate source, with the wording rewritten', where: [{ label: 'Redundancy table + wording', href: '/health' }], status: 'pending', note: 'Normal and fallback wording shown side by side. Two pairings need MTS to confirm — flagged on the table.' },
-      { req: '§7.5 Standing water: pop-up, blinking camera on the map, one-click live PTZ feed', where: [{ label: 'Map camera', href: '/' }, { label: 'Station button', href: '/stations/canterbury' }, { label: 'Alerts', href: '/alerts' }], status: 'pending', note: 'The pop-up appears by itself when the alert is raised (try the demo clock → "PTZ check — Canterbury"). The feed is simulated; camera URLs come from MTS (§15).' },
+      { req: '§7.5 PTZ camera verification link', where: [], status: 'deviation', note: 'Removed: there is no integration between the system and the cameras (client, 5 Nov 2026). The standing-water alert remains, with its verification wording.' },
       { req: '§7.6 Searchable history: filter by severity, acknowledgement, location, date; named acknowledgement; CSV', where: [{ label: 'Alerts', href: '/alerts' }], status: 'shown' },
     ],
   },
@@ -160,7 +160,6 @@ const SECTIONS: { id: string; title: string; items: Item[] }[] = [
       { req: 'Nominated alert recipients and the 20-login user list', where: [{ label: 'Recipients', href: '/admin/recipients' }, { label: 'Users', href: '/admin/users' }], status: 'pending' },
       { req: '240 V GPO supply and the existing PVC outfall at Marrickville', where: [{ label: 'Marrickville elevation', href: '/stations/marrickville/installation' }], status: 'pending' },
       { req: 'Annexure A track diagrams and Annexure B documentation', where: [{ label: 'Corridor map', href: '/' }], status: 'pending', note: 'The map is schematic until the track diagrams are in hand.' },
-      { req: 'PTZ camera live-feed URLs, authentication and network access', where: [{ label: 'PTZ feed', href: '/stations/canterbury' }], status: 'pending', note: 'The feed in the prototype is drawn, and says so.' },
       { req: 'Datasheet items: rainfall accuracy certificate, GMX300 +70 °C and IP ratings', where: [{ label: 'Installation → compliance', href: '/stations/belmore/installation' }], status: 'pending' },
       { req: 'YGRD-65-D rail EMC compliance; existing pump-panel interface points', where: [{ label: 'Equipment', href: '/stations/marrickville/installation' }, { label: 'Pump logic', href: '/stations/marrickville' }], status: 'pending' },
       { req: 'Cloud region, availability zones and data residency', where: [{ label: 'Hosting panel', href: '/health/pipeline' }], status: 'pending' },
@@ -188,7 +187,7 @@ export function CoveragePage() {
         </p>
         <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
           The demo opens at 14:32 with the storm at its height. The <strong>demo time</strong> control (bottom right) plays it
-          forward or jumps to each moment — the PTZ pop-up, the water trending down, the pumps stopping, the rain all-clear.
+          forward or jumps to each moment — standing water at Canterbury, the water trending down, the pumps stopping, the rain all-clear.
         </p>
       </div>
 

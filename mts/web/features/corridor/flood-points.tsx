@@ -171,7 +171,7 @@ export function FloodPointsPanel({ stations, minuteKey }: { stations: StationLiv
             <span className="h-2.5 w-3.5 rounded-sm bg-band-warning" aria-hidden /> approaching (+{F.approachMm})
           </li>
           <li className="flex items-center gap-1">
-            <span className="h-2.5 w-3.5 rounded-sm bg-band-alert" aria-hidden /> standing water (+{F.standingWaterMm}) — PTZ check
+            <span className="h-2.5 w-3.5 rounded-sm bg-band-alert" aria-hidden /> standing water (+{F.standingWaterMm}) — verify
           </li>
           <li className="flex items-center gap-1">
             <span className="h-2.5 w-3.5 rounded-sm bg-sev-alert/40" aria-hidden /> over the rail foot (+{F.railFootMm}) — block the line

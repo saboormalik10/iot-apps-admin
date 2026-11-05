@@ -44,7 +44,7 @@ export function levelThresholds(station: StationLocation): ThresholdMark[] {
       ]
     : [
         { value: F.railFootMm, label: THRESHOLD_LABELS.railFoot, tone: 'critical' },
-        { value: F.standingWaterMm, label: `standing water +${F.standingWaterMm} mm (PTZ check)`, tone: 'setpoint' },
+        { value: F.standingWaterMm, label: `standing water +${F.standingWaterMm} mm (verify)`, tone: 'setpoint' },
       ];
 }
 

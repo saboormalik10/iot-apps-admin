@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Camera, ChevronLeft, Play, Square, Wrench } from 'lucide-react';
+import { ChevronLeft, Play, Square, Wrench } from 'lucide-react';
 import type {
-  AlertEvent,
   LocationId,
   MaintenanceState,
   PumpCommandResult,
@@ -13,8 +12,6 @@ import type {
 } from '@/lib/api/types';
 import {
   DEMO_USER,
-  acknowledgeEvent,
-  cameraEvents,
   commandPump,
   getMaintenance,
   getPumpStation,
@@ -45,7 +42,6 @@ import { StationTabs } from './station-tabs';
 import { ReadingCard, pointLabel } from './reading-card';
 import { StationCharts } from './station-charts';
 import { PowerPanel, PumpHistoryPanel, PumpProtectionPanel } from './station-insights';
-import { PtzDialog } from '@/features/alerts/ptz-dialog';
 
 /**
  * A station, and — where one is fitted — its pump plant.
@@ -69,7 +65,6 @@ export function StationPage({ id }: { id: LocationId }) {
   const [confirm, setConfirm] = useState<'start' | 'stop' | null>(null);
   const [result, setResult] = useState<PumpCommandResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ptz, setPtz] = useState<AlertEvent | null>(null);
 
   const load = () => {
     getStation(id)
@@ -176,30 +171,6 @@ export function StationPage({ id }: { id: LocationId }) {
           <p className="tabular text-xs text-muted-foreground">
             Last update {fmtTime(station.updatedAt)} · auto-refresh 30 s
           </p>
-          {/* §7.5: where standing water wants verifying, the camera is one click from the station too. */}
-          {station.location.cameraUrl && (SHOW_EXTRAS || station.cameraVerification) ? (
-            <Button
-              size="sm"
-              variant={station.cameraVerification ? 'default' : 'outline'}
-              className={cn(
-                'mt-1',
-                station.cameraVerification && 'bg-sev-alert text-white hover:bg-sev-alert/90',
-              )}
-              onClick={() =>
-                setPtz(
-                  cameraEvents()
-                    .filter((e) => e.locationId === id)
-                    .sort((a, b) => b.t - a.t)[0] ?? null,
-                )
-              }
-            >
-              <Camera
-                className={cn('h-4 w-4', station.cameraVerification && 'motion-safe:animate-pulse')}
-                aria-hidden
-              />
-              {station.cameraVerification ? 'Verify on PTZ camera' : 'PTZ camera'}
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -537,11 +508,6 @@ export function StationPage({ id }: { id: LocationId }) {
       {/* Drawings, wiring and the equipment list are on the Installation tab. */}
       {SHOW_EXTRAS ? <TelemetryPanel locationId={id} now={now} /> : null}
 
-      <PtzDialog
-        event={ptz}
-        onClose={() => setPtz(null)}
-        onAcknowledge={(eid) => acknowledgeEvent(eid).then(load)}
-      />
 
       {/* Confirmation. The dialog carries the prototype notice in its own body:
           this is the one screenshot that must never look like a real command. */}

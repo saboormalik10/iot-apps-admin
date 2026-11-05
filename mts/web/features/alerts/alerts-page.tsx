@@ -3,7 +3,7 @@
 import { SHOW_EXTRAS } from '@/lib/extras';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Camera, Check, Download } from 'lucide-react';
+import { Check, Download } from 'lucide-react';
 import type { AlertEvent, LocationId, Severity } from '@/lib/api/types';
 import {
   acknowledgeAll,
@@ -15,7 +15,6 @@ import {
 import { EmptyState, ErrorState, LoadingState } from '@/components/screen-states';
 import { StatusPill, severityTone } from '@/components/status/status-pill';
 import { Button } from '@/components/ui/button';
-import { PtzDialog } from '@/features/alerts/ptz-dialog';
 import { AlertAnalytics } from './alert-analytics';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useDataRevision } from '@/lib/use-data';
@@ -64,7 +63,6 @@ export function AlertsPage() {
   const [events, setEvents] = useState<AlertEvent[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState(false);
-  const [camera, setCamera] = useState<AlertEvent | null>(null);
 
   const load = useCallback(() => {
     listEvents({
@@ -257,11 +255,6 @@ export function AlertsPage() {
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
-                    {e.cameraUrl ? (
-                      <Button size="sm" variant="outline" onClick={() => setCamera(e)}>
-                        <Camera className="h-3.5 w-3.5" /> PTZ
-                      </Button>
-                    ) : null}
                     <time
                       className="tabular whitespace-nowrap text-muted-foreground"
                       dateTime={new Date(e.t).toISOString()}
@@ -303,11 +296,6 @@ export function AlertsPage() {
         </footer>
       </section>
 
-      <PtzDialog
-        event={camera}
-        onClose={() => setCamera(null)}
-        onAcknowledge={(id) => acknowledgeEvent(id).then(load)}
-      />
     </div>
   );
 }

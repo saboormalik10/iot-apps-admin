@@ -78,7 +78,7 @@ export default function Page() {
                     (c.id === 'push'
                       ? 'Arrives on your lock screen and opens straight to the event. On iPhone and iPad, add the portal to your Home Screen once to enable it.'
                       : c.id === 'email'
-                        ? 'A copy of the alert with the same event and camera links.'
+                        ? 'A copy of the alert with the same event link.'
                         : 'Pop-up in the portal, with an audible option for control-room screens.')}
                 </p>
               </div>

@@ -149,7 +149,7 @@ function thresholdLabelFor(parameter: ParameterId, station: StationLocation): st
          on standing water and the rail foot; only Marrickville has a pump-start. */
       return station.pumpStation
         ? `Standing water +${F.standingWaterMm} · pump-start +${F.pumpStartMm} · rail foot +${F.railFootMm} mm`
-        : `Standing water +${F.standingWaterMm} (PTZ check) · rail foot +${F.railFootMm} mm (block line)`;
+        : `Standing water +${F.standingWaterMm} (verify) · rail foot +${F.railFootMm} mm (block line)`;
     case 'temperature':
       return `Threshold ${THRESHOLD_LABELS.tempHeat1} · alert ${THRESHOLD_LABELS.tempHeat2} (rising > 5 min)`;
     case 'wind_gust':
@@ -307,18 +307,6 @@ function withLivePower(station: (typeof STATIONS)[number], t: number) {
   };
 }
 
-/**
- * §7.5: when standing water is detected the affected station is flagged for PTZ
- * verification. Derived from the level, not pinned to one station — a badge that
- * blinks on a location reading well under its threshold is exactly the kind of
- * thing that teaches a control room to ignore badges.
- */
-function cameraVerificationFor(station: StationLocation, readings: LiveReading[]): boolean {
-  if (!station.cameraUrl) return false;
-  return readings.some(
-    (r) => r.parameter === 'water_level' && (r.value ?? 0) >= THRESHOLDS.flood.standingWaterMm,
-  );
-}
 
 export async function listStations(): Promise<StationLive[]> {
   const t = now();
@@ -330,7 +318,6 @@ export async function listStations(): Promise<StationLive[]> {
         location: withLivePower(station, t),
         status: stationStatusFrom(readings, online),
         readings,
-        cameraVerification: cameraVerificationFor(station, readings),
         updatedAt: t,
       };
     }),
@@ -345,7 +332,6 @@ export async function getStation(id: LocationId): Promise<StationLive> {
     location: withLivePower(station, t),
     status: stationStatusFrom(readings, station.loggers.every((l) => l.online)),
     readings,
-    cameraVerification: cameraVerificationFor(station, readings),
     updatedAt: t,
   });
 }
@@ -511,10 +497,6 @@ export async function listEvents(q: EventsQuery = {}): Promise<Paged<AlertEvent>
   });
 }
 
-/** Every standing-water event with a camera, for the map and the PTZ pop-up. */
-export function cameraEvents(): AlertEvent[] {
-  return allEvents().filter((e) => e.cameraUrl);
-}
 
 export async function getEvent(id: string): Promise<AlertEvent | undefined> {
   return settle(allEvents().find((e) => e.id === id));

@@ -184,7 +184,6 @@ export function EquipmentPanel({ station }: { station: StationLocation }) {
         {has('water_level') ? (
           <Fact label="Manual staff gauge" value="Beside each radar, 10 mm graduations, same datum (§5.2)" />
         ) : null}
-        {station.cameraUrl ? <Fact label="Camera" value="CIDS PTZ — linked in standing-water alerts (§7.5)" /> : null}
         <Fact label="Lightning & earthing" value="Air terminal, bonding to AS 1768, surge protection" />
         <Fact label="Siting" value="Clear of KE + 200 mm, outside transit space" />
       </dl>

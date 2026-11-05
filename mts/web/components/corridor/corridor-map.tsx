@@ -1,16 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { Camera } from 'lucide-react';
 import type { StationLive } from '@/lib/api/types';
 import { fmtInt, fmtRelative, fmtSigned, fmtValue } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { StatusDot, stationTone } from '@/components/status/status-pill';
-import { useState } from 'react';
-import type { AlertEvent } from '@/lib/api/types';
-import { acknowledgeEvent, cameraEvents, maintenanceNow } from '@/lib/api/endpoints';
+import { maintenanceNow } from '@/lib/api/endpoints';
 import { SHOW_EXTRAS } from '@/lib/extras';
-import { PtzDialog } from '@/features/alerts/ptz-dialog';
 import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { Wrench } from 'lucide-react';
 
@@ -61,7 +57,6 @@ export function CorridorMap({
   className?: string;
 }) {
   const online = stations.filter((s) => s.status !== 'offline').length;
-  const [ptz, setPtz] = useState<AlertEvent | null>(null);
   return (
     <div className={cn('relative w-full overflow-hidden rounded-lg border bg-muted/40', className)}>
       <svg
@@ -101,26 +96,6 @@ export function CorridorMap({
       {stations.map((s) => (
         <div key={s.location.id} className="contents">
           <StationPin station={s} />
-          {/* §7.5: the affected station is flagged with a small red blinking
-              camera the moment its threshold is reached — and clicking it opens
-              the live PTZ feed for that location. */}
-          {s.cameraVerification ? (
-            <button
-              onClick={() =>
-                setPtz(
-                  cameraEvents()
-                    .filter((e) => e.locationId === s.location.id)
-                    .sort((a, b) => b.t - a.t)[0] ?? null,
-                )
-              }
-              className="absolute z-10 flex h-6 w-6 -translate-y-1/2 translate-x-3 items-center justify-center rounded-full bg-card shadow ring-1 ring-sev-alert/40 hover:bg-sev-alert-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              style={{ left: `${s.location.map.x}%`, top: `${s.location.map.y}%` }}
-              aria-label={`Open the PTZ camera at ${s.location.name}`}
-              title="Standing water — check the PTZ camera"
-            >
-              <Camera className="h-3.5 w-3.5 animate-blink-alert text-sev-alert" aria-hidden />
-            </button>
-          ) : null}
         </div>
       ))}
 
@@ -134,11 +109,6 @@ export function CorridorMap({
       </div>
 
       <Legend online={online} total={stations.length} />
-      <PtzDialog
-        event={ptz}
-        onClose={() => setPtz(null)}
-        onAcknowledge={(id) => acknowledgeEvent(id)}
-      />
     </div>
   );
 }
@@ -238,12 +208,6 @@ function StationCard({ station }: { station: StationLive }) {
                 aria-label="In maintenance mode"
               />
             ) : null}
-            {station.cameraVerification ? (
-              <Camera
-                className="h-3 w-3 animate-blink-alert text-sev-alert"
-                aria-label="Camera verification requested"
-              />
-            ) : null}
             <StatusDot tone={tone} />
           </span>
         </div>
@@ -304,9 +268,6 @@ function Legend({ online, total }: { online: number; total: number }) {
         </li>
         <li className="flex items-center gap-2">
           <StatusDot tone="offline" /> Sensor offline
-        </li>
-        <li className="flex items-center gap-2 pt-1">
-          <Camera className="h-3 w-3 text-sev-alert" /> red camera — check PTZ feed
         </li>
       </ul>
       <p className="mt-2 border-t pt-1.5 text-muted-foreground">

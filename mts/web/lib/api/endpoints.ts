@@ -17,7 +17,6 @@ export {
   commandPump,
   listEvents,
   getEvent,
-  cameraEvents,
   acknowledgeEvent,
   acknowledgeAll,
   unacknowledgedCount,

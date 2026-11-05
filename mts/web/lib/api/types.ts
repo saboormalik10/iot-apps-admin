@@ -105,8 +105,6 @@ export interface StationLocation {
   sensors: SensorFit[];
   /** Marrickville only, in this scheme. */
   pumpStation?: PumpStationRef;
-  /** A PTZ camera the "standing water" alert links to. */
-  cameraUrl?: string;
   /** Where the pin sits on the schematic. */
   map: { x: number; y: number; labelSide: 'above' | 'below' };
 }
@@ -141,8 +139,6 @@ export interface StationLive {
   location: StationLocation;
   status: StationStatus;
   readings: LiveReading[];
-  /** Set when a "standing water" alert wants camera verification. */
-  cameraVerification?: boolean;
   updatedAt: number;
 }
 
@@ -221,7 +217,6 @@ export type AlertCategory =
   | 'pump'
   | 'temperature'
   | 'wind'
-  | 'camera'
   | 'fault'
   | 'power';
 
@@ -239,7 +234,6 @@ export interface AlertEvent {
   track: TrackDirection;
   rail: TrackDirection;
   chainageLabel: string;
-  cameraUrl?: string;
   acknowledgement?: { by: string; at: number };
   autoCleared?: boolean;
   /** True where our own wording stands in for MTS-approved wording. */

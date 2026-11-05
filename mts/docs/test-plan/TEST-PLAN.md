@@ -34,7 +34,7 @@ Each test has an ID, the steps, the expected result, where it can run, and a res
 
 ## Feature list
 
-The proposal promises 31 features. Each is covered by the tests named in the last column.
+The proposal promises 30 features in scope. Each is covered by the tests named in the last column.
 
 | # | Feature | Proposal | Where | Tests |
 | --- | --- | --- | --- | --- |
@@ -52,27 +52,28 @@ The proposal promises 31 features. Each is covered by the tests named in the las
 | 12 | Alert delivery by screen, email and SMS: weather within 5 min, faults within 30 min, required content | §7.1 | System | ALR-10 to 13 |
 | 13 | Alert and notification history: filter, acknowledge, badge, CSV export | §7.6, Fig 15 | Prototype, System | ALR-14 to 18 |
 | 14 | Annotate alerts | §8.1 | Prototype, System | ALR-19 |
-| 15 | PTZ verification: pop-up, blinking camera icon, one-click live feed, link in email and SMS | §7.5 | Prototype, System | PTZ-01 to 05 |
-| 16 | Rules engine: edit, add, enable, disable, schedule; validated, versioned and audited | §7.3, Fig 17 | Prototype, System | RUL-01 to 07 |
-| 17 | Redundancy and fallback: alternate source, reworded coverage, fault alert | §7.4 | System | FBK-01 to 04 |
-| 18 | Historical query by location, parameter, dates and interval; paged, sortable; CSV | §8.3, Fig 10 | Prototype, System | HIS-01 to 05 |
-| 19 | User management: add with invitation, edit, suspend, remove, station scope | §8.4, Fig 14 | Prototype, System | USR-01 to 05 |
-| 20 | Roles: six standard roles, several per user, custom roles, least privilege | §8.4 | System | USR-06 to 08 |
-| 21 | Sign-in security: password policy, lockout, inactivity timeout, optional MFA, re-check on every action, encrypted sessions | §8.4 | System | USR-09 to 14 |
-| 22 | 20 or more concurrent named logins | §8.1, §8.4 | System | NFR-01 |
-| 23 | Audit trail: users, roles, thresholds, acknowledgements, pump actions; queryable, exportable | §8.4 | System | AUD-01 to 03 |
-| 24 | System health: inoperable, unresponsive, missing sensor or pump data, low battery; refreshed ≤ 10 min; maintenance mode | §8.1, §9 | Prototype, System | HLT-01 to 04, 07 |
-| 25 | Power telemetry: state of charge, PV input, charge/discharge, fault flags, alarmed | §8.6 | System, Site | HLT-05, 06 |
-| 26 | Data ingest: timestamping, event-triggered messages, store-and-forward with no data loss | §8.2a, §8.5 | System | ACQ-01 to 03 |
-| 27 | Data validation: range and rate limits, quarantine, data-quality alert, radar–float cross-check | §8.2b | System | ACQ-04 to 06 |
-| 28 | Processing: 10-min, hourly and multi-day totals | §8.2c | System | ACQ-07 |
-| 29 | Responsive portal: phone, tablet, laptop; pump screen on a phone | §8.1, Fig 9, Fig 13 | Prototype, System | RSP-01 to 04 |
-| 30 | Availability, 48 h maintenance notice, cloud hosting with backups | §8.1, §9 | System | NFR-02 to 04 |
-| 31 | Permanent data retention | §8.3 | System | NFR-05 |
+| 15 | Rules engine: edit, add, enable, disable, schedule; validated, versioned and audited | §7.3, Fig 17 | Prototype, System | RUL-01 to 07 |
+| 16 | Redundancy and fallback: alternate source, reworded coverage, fault alert | §7.4 | System | FBK-01 to 04 |
+| 17 | Historical query by location, parameter, dates and interval; paged, sortable; CSV | §8.3, Fig 10 | Prototype, System | HIS-01 to 05 |
+| 18 | User management: add with invitation, edit, suspend, remove, station scope | §8.4, Fig 14 | Prototype, System | USR-01 to 05 |
+| 19 | Roles: six standard roles, several per user, custom roles, least privilege | §8.4 | System | USR-06 to 08 |
+| 20 | Sign-in security: password policy, lockout, inactivity timeout, optional MFA, re-check on every action, encrypted sessions | §8.4 | System | USR-09 to 14 |
+| 21 | 20 or more concurrent named logins | §8.1, §8.4 | System | NFR-01 |
+| 22 | Audit trail: users, roles, thresholds, acknowledgements, pump actions; queryable, exportable | §8.4 | System | AUD-01 to 03 |
+| 23 | System health: inoperable, unresponsive, missing sensor or pump data, low battery; refreshed ≤ 10 min; maintenance mode | §8.1, §9 | Prototype, System | HLT-01 to 04, 07 |
+| 24 | Power telemetry: state of charge, PV input, charge/discharge, fault flags, alarmed | §8.6 | System, Site | HLT-05, 06 |
+| 25 | Data ingest: timestamping, event-triggered messages, store-and-forward with no data loss | §8.2a, §8.5 | System | ACQ-01 to 03 |
+| 26 | Data validation: range and rate limits, quarantine, data-quality alert, radar–float cross-check | §8.2b | System | ACQ-04 to 06 |
+| 27 | Processing: 10-min, hourly and multi-day totals | §8.2c | System | ACQ-07 |
+| 28 | Responsive portal: phone, tablet, laptop; pump screen on a phone | §8.1, Fig 9, Fig 13 | Prototype, System | RSP-01 to 04 |
+| 29 | Availability, 48 h maintenance notice, cloud hosting with backups | §8.1, §9 | System | NFR-02 to 04 |
+| 30 | Permanent data retention | §8.3 | System | NFR-05 |
 
 **Proven at site acceptance, not in this plan:** sensor accuracy and ranges (§5.1–5.4), the manual staff gauge (§5.2), mast, enclosure and KE+200 clearance (§5.5, §5.7), solar autonomy (§8.6), EMC (§8.5), calibration certificates (§11.1).
 
-**To confirm with MTS:** the proposal lists SMS as an alert channel; the agreed development scope (Rev B) delivers screen, email and web push instead. Tests ALR-10 to 13 and PTZ-05 assume the confirmed channels. The proposal also mentions sending alerts to other connected systems, such as operational displays or third-party interfaces (§8.2d); MTS to name any it needs, and a test is added for each.
+**Removed by MTS (5 Nov 2026):** the PTZ camera verification link (§7.5). There is no integration between the system and the cameras, so the portal has no camera pop-up, icon or feed link. The standing-water alert remains (ALR-06).
+
+**To confirm with MTS:** the proposal lists SMS as an alert channel; the agreed development scope (Rev B) delivers screen, email and web push instead. Tests ALR-10 to 13 assume the confirmed channels. The proposal also mentions sending alerts to other connected systems, such as operational displays or third-party interfaces (§8.2d); MTS to name any it needs, and a test is added for each.
 
 ## Test cases — map, trends and flood event
 
@@ -135,7 +136,7 @@ The proposal promises 31 features. Each is covered by the tests named in the las
 | PMP-13 | Standby cut-in | Trip the duty pump while it runs | Standby starts by itself; a pump-fault alert is raised | Site | |
 | PMP-14 | Float fail-safe | Wet the float while the radar reads below L-start | Pump starts anyway and a discrepancy alarm is raised | Site | |
 
-## Test cases — alerts, PTZ verification and rules
+## Test cases — alerts and rules
 
 ### Alert logic, delivery and history (ALR)
 
@@ -146,7 +147,7 @@ The proposal promises 31 features. Each is covered by the tests named in the las
 | ALR-03 | Vigilance countdown | Let rain fall back below each threshold | Alert stays in force for 6 h, 12 h or 48 h from when rain fell below the line | System | |
 | ALR-04 | Reset on re-trigger | Add a qualifying burst inside the countdown | The full countdown restarts from the beginning | System | |
 | ALR-05 | All-clear | Let a countdown reach zero | A cancellation alert is sent and the whole sequence is in the event history | System | |
-| ALR-06 | Flood: standing water | Raise level above the standing-water set point | Immediate alert with the PTZ verification prompt | System | |
+| ALR-06 | Flood: standing water | Raise level above the standing-water set point | Immediate alert with the verification wording; no camera link | System | |
 | ALR-07 | Flood: above rail foot and trending down | Raise above rail foot, then let it fall | "Block the line" at once; on the fall, system checks, track inspection, staged 25 → 60 kph → unrestricted | System | |
 | ALR-08 | Heat | Hold 38 °C then 45 °C for over 5 min; fall back for over 10 min | 60 / 40 kph TSR and heat-patrol wording on the rise; each stands down only after 10 min below | System | |
 | ALR-09 | Wind | Gusts 75, 85 and 120 kph | TSR wording at the listed kilometrages at 75 and 85; block-line wording on external track at 120 | System | |
@@ -156,20 +157,10 @@ The proposal promises 31 features. Each is covered by the tests named in the las
 | ALR-13 | Recipients and retries | Make one recipient's email fail | Others receive it; the failed one is retried and the failure recorded | System | |
 | ALR-14 | Alerts panel | Open **Alerts** | Tiles for active, unacknowledged, today and last 7 days; event log newest first | Prototype, System | |
 | ALR-15 | Filters | Filter by severity, unacknowledged, location, date range | The list and counts match the filter | Prototype, System | |
-| ALR-16 | Every event type | Generate one of each | Rain, flood, pump, temperature, wind, camera, sensor fault, data quality and power events all logged | System | |
+| ALR-16 | Every event type | Generate one of each | Rain, flood, pump, temperature, wind, sensor fault, data quality and power events all logged | System | |
 | ALR-17 | Acknowledge | Acknowledge one alert, then **Mark all** | Each shows who and when; header badge and counts drop at once | Prototype, System | |
 | ALR-18 | Export | **Export CSV** | The filtered events with acknowledgement details | Prototype, System | |
 | ALR-19 | Annotate | Add a note to an event | Note saved with name and time, shown on the event | Prototype, System | |
-
-### PTZ camera verification (PTZ)
-
-| ID | Test | Steps | Expected result | Where | Result |
-| --- | --- | --- | --- | --- | --- |
-| PTZ-01 | Pop-up | Trigger standing water at Canterbury | Pop-up "Flood verification required" with location, kilometrage and **View live PTZ feed** | Prototype, System | |
-| PTZ-02 | Acknowledge or snooze | In the pop-up, select **Acknowledge**; trigger again and select **Snooze 10 min** | Acknowledge closes it with name and time recorded; snooze hides it and it returns after 10 minutes if still active | Prototype, System | |
-| PTZ-03 | Blinking camera icon | Look at the map | Red blinking camera on the station; clicking it opens the feed | Prototype, System | |
-| PTZ-04 | Right camera | Trigger at two locations in turn | Each opens the camera for its own location (Annexure C) | System | |
-| PTZ-05 | Link in messages | Open the alert email (and SMS, if confirmed) | The same live-feed link opens in the browser | System | |
 
 ### Rules engine (RUL)
 
@@ -284,13 +275,12 @@ Availability over time (not inoperable more than 12 h in any 6 months, ≤ 24 h 
 
 ## Sign-off
 
-The plan has 112 tests across 16 areas. A release is accepted when every test has run and no Critical or Major defect is open.
+The plan has 107 tests across 15 areas. A release is accepted when every test has run and no Critical or Major defect is open.
 
 ### Before testing starts
 
 - MTS has confirmed the thresholds, alert wording, recipients and alert channels marked *(pending)*.
 - The server is built and loaded with the station simulator; test accounts exist for each of the six roles.
-- PTZ camera links for each flood location are provided by MTS (proposal §7.5).
 
 ### Testing is complete when
 

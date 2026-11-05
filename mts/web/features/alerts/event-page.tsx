@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Camera, ChevronLeft, Printer } from 'lucide-react';
+import { ChevronLeft, Printer } from 'lucide-react';
 import type { AlertEvent } from '@/lib/api/types';
 import { acknowledgeEvent, buildSeries, getEvent } from '@/lib/api/endpoints';
 import { ChartFrame } from '@/components/charts/chart-frame';
@@ -10,7 +10,6 @@ import { SeriesChart } from '@/components/charts/series';
 import { EmptyState, LoadingState } from '@/components/screen-states';
 import { StatusPill, severityTone } from '@/components/status/status-pill';
 import { Button } from '@/components/ui/button';
-import { PtzDialog } from './ptz-dialog';
 import { Annotations, DeliveryRecord } from './event-extras';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useDataRevision } from '@/lib/use-data';
@@ -29,7 +28,6 @@ import { THRESHOLDS, THRESHOLD_LABELS } from '@/lib/mock/seed/thresholds';
 export function EventPage({ id }: { id: string }) {
   const now = useDemoClock();
   const [event, setEvent] = useState<AlertEvent | null | undefined>(undefined);
-  const [camera, setCamera] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const load = () => getEvent(id).then(setEvent);
@@ -106,11 +104,6 @@ export function EventPage({ id }: { id: string }) {
           ) : (
             <Button onClick={() => acknowledgeEvent(event.id).then(load)}>Acknowledge this alert</Button>
           )}
-          {event.cameraUrl ? (
-            <Button variant="outline" onClick={() => setCamera(true)}>
-              <Camera className="h-4 w-4" /> View live PTZ feed
-            </Button>
-          ) : null}
           <Button variant="outline" asChild>
             <Link href={`/stations/${event.locationId}`}>Open the station</Link>
           </Button>
@@ -146,7 +139,6 @@ export function EventPage({ id }: { id: string }) {
         <Annotations eventId={event.id} />
       </div>
 
-      <PtzDialog event={camera ? event : null} onClose={() => setCamera(false)} onAcknowledge={(i) => acknowledgeEvent(i).then(load)} />
     </div>
   );
 }

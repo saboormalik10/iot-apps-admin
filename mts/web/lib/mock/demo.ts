@@ -8,7 +8,7 @@ import { mutate } from './store';
  * The demo opens at 14:32, at the height of the storm, which means that a
  * reviewer never sees what the proposal says happens next: the vigilance
  * countdown running out (§7.2), the water trending down and the staged
- * reinstatement (§7.3), the pumps stopping at L-stop (§5.6), the PTZ prompt at
+ * reinstatement (§7.3), the pumps stopping at L-stop (§5.6), the standing-water alert at
  * Canterbury (§7.5). These controls play time forward or jump to those moments.
  *
  * The jump targets come from the event log itself, so they cannot drift from it.
@@ -19,7 +19,7 @@ const STORY: { id: string; label: string }[] = [
   { id: 'evt-rain-alert', label: 'Rainfall alert — patrol' },
   { id: 'evt-standby-start', label: 'Standby pump assists' },
   { id: 'evt-rail-foot', label: 'Block the line' },
-  { id: 'evt-canterbury-ptz', label: 'PTZ check — Canterbury' },
+  { id: 'evt-canterbury-ptz', label: 'Standing water — Canterbury' },
   { id: 'evt-trending-down', label: 'Trending down' },
   { id: 'evt-rail-foot-clear', label: 'Below rail foot' },
   { id: 'evt-pumps-off', label: 'Pumps stop' },
