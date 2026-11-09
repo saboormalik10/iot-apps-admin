@@ -104,3 +104,72 @@ export function simulatePumps(t: number, days = 30): PumpSim {
   memo = { key, sim };
   return sim;
 }
+
+/**
+ * The pump run log (client, 9 Nov 2026): the portal does not control the pumps.
+ * It receives each pump's run signal from the existing panel and records every run
+ * with its start and stop time, and the water level at each.
+ *
+ * Simulated minute by minute, the way the panel runs the pumps today: duty on at
+ * pump-start, standby on at high-high, both off at the stop level. Minute steps
+ * keep the start times on the same minute the alert log reports.
+ */
+export interface PumpRunRecord {
+  pump: 'duty' | 'standby';
+  start: number;
+  /** Absent while the pump is still running. */
+  stop?: number;
+  levelStartMm: number;
+  levelStopMm?: number;
+  /** The weekly exercise run, not a flood. */
+  exercise?: boolean;
+}
+
+let runMemo: { key: number; runs: PumpRunRecord[] } | null = null;
+
+export function pumpRunLog(t: number, days = 7): PumpRunRecord[] {
+  const key = Math.floor(t / MIN) * 100 + days;
+  if (runMemo?.key === key) return runMemo.runs;
+  const F = THRESHOLDS.flood;
+  const level = (u: number) => Math.round(waterLevelMm('marrickville', u));
+  const runs: PumpRunRecord[] = [];
+  let duty: PumpRunRecord | null = null;
+  let standby: PumpRunRecord | null = null;
+
+  const start = Math.floor((t - days * DAY) / MIN) * MIN;
+  for (let u = start; u <= t; u += MIN) {
+    const mm = level(u);
+    if (!duty && mm >= F.pumpStartMm) {
+      duty = { pump: 'duty', start: u, levelStartMm: mm };
+      runs.push(duty);
+    }
+    if (duty && !standby && mm >= F.highHighMm) {
+      standby = { pump: 'standby', start: u, levelStartMm: mm };
+      runs.push(standby);
+    }
+    if (duty && mm < F.pumpStopMm) {
+      for (const r of [duty, standby]) {
+        if (r) {
+          r.stop = u;
+          r.levelStopMm = mm;
+        }
+      }
+      duty = null;
+      standby = null;
+    }
+  }
+
+  // The weekly exercise: both pumps for two minutes at 10:00, as simulatePumps has it.
+  const today = sydneyDayStart(t);
+  for (let d = -2; d > -days; d -= 7) {
+    const at = today + d * DAY + 10 * 60 * MIN;
+    if (at < start || at + 2 * MIN > t) continue;
+    for (const pump of ['duty', 'standby'] as const) {
+      runs.push({ pump, start: at, stop: at + 2 * MIN, levelStartMm: level(at), levelStopMm: level(at + 2 * MIN), exercise: true });
+    }
+  }
+
+  runs.sort((a, b) => b.start - a.start || (a.pump === 'duty' ? -1 : 1));
+  runMemo = { key, runs };
+  return runs;
+}

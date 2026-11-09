@@ -1,12 +1,15 @@
 'use client';
 
-import { Wrench } from 'lucide-react';
+import { Activity, Wrench } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { StationLive } from '@/lib/api/types';
 import { listStations, maintenanceNow } from '@/lib/api/endpoints';
 import { CorridorMap } from '@/components/corridor/corridor-map';
+import { GeoMap } from '@/components/corridor/geo-map';
+import { StationQuickView } from './station-quick-view';
 import { ExceedancePanel } from './exceedance-panel';
 import { FloodPointsPanel } from './flood-points';
 import { VigilancePanel } from './vigilance-panel';
@@ -30,11 +33,52 @@ import { SHOW_EXTRAS } from '@/lib/extras';
  * The threshold in each column heading comes from the one file that holds those
  * numbers, so the heading can never drift from the rule that is actually applied.
  */
+type MapView = 'plain' | 'map' | 'satellite';
+const VIEW_KEY = 'mts.map-view';
+const HEALTH_KEY = 'mts.show-station-health';
+const VIEWS: { id: MapView; label: string }[] = [
+  { id: 'plain', label: 'Plain' },
+  { id: 'map', label: 'Map' },
+  { id: 'satellite', label: 'Satellite' },
+];
+
 export function CorridorPage() {
   const now = useDemoClock();
   const revision = useDataRevision();
   const [stations, setStations] = useState<StationLive[] | null>(null);
   const [error, setError] = useState(false);
+  /* Plain schematic, street map or satellite (client, 9 Nov 2026), remembered in
+     this browser. Storage can be blocked; the plain view is the safe default. */
+  const [view, setView] = useState<MapView>('plain');
+  /* Battery and signal stay off the main page until asked for (client, 9 Nov 2026). */
+  const [showHealth, setShowHealth] = useState(false);
+  /* Clicking a station on the map opens its quick view (client, 9 Nov 2026). */
+  const [selected, setSelected] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY);
+      if (saved === 'map' || saved === 'satellite' || saved === 'plain') setView(saved);
+      setShowHealth(localStorage.getItem(HEALTH_KEY) === 'true');
+    } catch {
+      /* stay on plain, health hidden */
+    }
+  }, []);
+  const toggleHealth = () => {
+    setShowHealth(!showHealth);
+    try {
+      localStorage.setItem(HEALTH_KEY, String(!showHealth));
+    } catch {
+      /* not remembered, still toggled */
+    }
+  };
+  const chooseView = (v: MapView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* not remembered, still switched */
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -69,10 +113,41 @@ export function CorridorPage() {
         </p>
       </div>
 
-      <CorridorMap
-        stations={stations}
-        className="aspect-[5/4] max-h-[560px] sm:aspect-[16/10] lg:aspect-[16/8]"
-      />
+      <div className="space-y-2">
+        <div className="flex justify-end">
+          <div className="inline-flex overflow-hidden rounded-md border bg-card" role="group" aria-label="Map background">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => chooseView(v.id)}
+                aria-pressed={view === v.id}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-colors',
+                  view === v.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+                )}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {view === 'plain' ? (
+          <CorridorMap
+            stations={stations}
+            showHealth={showHealth}
+            onSelect={setSelected}
+            className="aspect-[5/4] max-h-[560px] sm:aspect-[16/10] lg:aspect-[16/8]"
+          />
+        ) : (
+          <GeoMap
+            stations={stations}
+            mapStyle={view}
+            onSelect={setSelected}
+            className="aspect-[5/4] max-h-[560px] sm:aspect-[16/10] lg:aspect-[16/8]"
+          />
+        )}
+      </div>
 
       {/* On a phone the schematic is unreadable; the same stations as a list is
           what an on-call person actually needs at 2 a.m. */}
@@ -145,7 +220,13 @@ export function CorridorPage() {
           <h2 className="text-sm font-semibold">
             Station status — live readings vs alert thresholds
           </h2>
-          <span className="text-xs text-muted-foreground">{stations.length} locations</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">{stations.length} locations</span>
+            <Button size="sm" variant="outline" onClick={toggleHealth} aria-pressed={showHealth}>
+              <Activity className="h-4 w-4" aria-hidden />
+              {showHealth ? 'Hide station health' : 'Show station health'}
+            </Button>
+          </div>
         </header>
         <div className="scroll-x-hint overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
@@ -158,8 +239,7 @@ export function CorridorPage() {
                   STATUS_COLUMNS.temp,
                   'Water level',
                   'Pump',
-                  'Battery',
-                  'Signal',
+                  ...(showHealth ? ['Battery', 'Signal'] : []),
                   'Updated',
                   'Status',
                 ].map((h) => (
@@ -197,10 +277,14 @@ export function CorridorPage() {
                         <span className="text-muted-foreground">–</span>
                       )}
                     </td>
-                    <td className="tabular whitespace-nowrap px-3 py-2">{logger.batteryPct}%</td>
-                    <td className="tabular whitespace-nowrap px-3 py-2 text-muted-foreground">
-                      {logger.signal.network} {logger.signal.rssiDbm}
-                    </td>
+                    {showHealth ? (
+                      <>
+                        <td className="tabular whitespace-nowrap px-3 py-2">{logger.batteryPct}%</td>
+                        <td className="tabular whitespace-nowrap px-3 py-2 text-muted-foreground">
+                          {logger.signal.network} {logger.signal.rssiDbm}
+                        </td>
+                      </>
+                    ) : null}
                     <td className="tabular whitespace-nowrap px-3 py-2 text-muted-foreground">
                       {fmtRelative(s.updatedAt, now)}
                     </td>
@@ -229,6 +313,11 @@ export function CorridorPage() {
           </table>
         </div>
       </section>
+      <StationQuickView
+        station={stations.find((x) => x.location.id === selected) ?? null}
+        now={now}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

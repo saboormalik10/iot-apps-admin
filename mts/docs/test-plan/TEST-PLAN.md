@@ -34,7 +34,7 @@ Each test has an ID, the steps, the expected result, where it can run, and a res
 
 ## Feature list
 
-The proposal promises 30 features in scope. Each is covered by the tests named in the last column.
+The proposal promises 30 features in scope, and MTS has asked for 7 more (9 Nov 2026, marked *MTS request*). Each is covered by the tests named in the last column.
 
 | # | Feature | Proposal | Where | Tests |
 | --- | --- | --- | --- | --- |
@@ -44,9 +44,9 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | 4 | Trends: wind mean and gust, rainfall, temperature, humidity, with dashed thresholds | Fig 7 | Prototype, System | TRD-01 to 04 |
 | 5 | Flood-event screen: two-location level series, pumps, vicinity inset, event log | Fig 8 | Prototype, System | FLD-01 to 03 |
 | 6 | Station page: live readings, station health, level trend against thresholds | §5.6, Fig 12 | Prototype, System | STN-01 to 03 |
-| 7 | Pump status: duty and standby, run and fault, condition monitoring | §5.5 | Prototype, System | PMP-01, 02 |
-| 8 | Supervised manual pump control: AUTO/MANUAL, START/STOP with confirmation, logged | §5.6, §8.4 | Prototype, System | PMP-03 to 06 |
-| 9 | Local pump control on the OMC-048: start, lag, stop levels, float backup and fail-safe, alternation, anti-cycling, standby cut-in, pump alarms | §5.6 | Site | PMP-07 to 14 |
+| 7 | Pump status from the pump panel's run signal: ON in green, OFF, since when, today's run time | §5.5, MTS request | Prototype, System | PMP-01, 04, 05 |
+| 8 | Pump run log: start and stop time, water level at start and at stop, last 7 days | MTS request | Prototype, System | PMP-02, 03, 07 |
+| 9 | Pumps monitored only: no control in the portal; run signal wired from the existing panel | MTS request | Prototype, Site | PMP-06, 08 |
 | 10 | Rainfall vigilance: 25 mm/1 h, 45 mm/3 h, 120 mm/3 days, countdown, reset, all-clear | §7.2 | System | ALR-01 to 05 |
 | 11 | Flood, temperature and wind alerts with the required wording | §7.3 | System | ALR-06 to 09 |
 | 12 | Alert delivery by screen, email and SMS: weather within 5 min, faults within 30 min, required content | §7.1 | System | ALR-10 to 13 |
@@ -59,7 +59,7 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | 19 | Roles: six standard roles, several per user, custom roles, least privilege | §8.4 | System | USR-06 to 08 |
 | 20 | Sign-in security: password policy, lockout, inactivity timeout, optional MFA, re-check on every action, encrypted sessions | §8.4 | System | USR-09 to 14 |
 | 21 | 20 or more concurrent named logins | §8.1, §8.4 | System | NFR-01 |
-| 22 | Audit trail: users, roles, thresholds, acknowledgements, pump actions; queryable, exportable | §8.4 | System | AUD-01 to 03 |
+| 22 | Audit trail: users, roles, thresholds, acknowledgements, recipient groups; queryable, exportable | §8.4 | System | AUD-01 to 03 |
 | 23 | System health: inoperable, unresponsive, missing sensor or pump data, low battery; refreshed ≤ 10 min; maintenance mode | §8.1, §9 | Prototype, System | HLT-01 to 04, 07 |
 | 24 | Power telemetry: state of charge, PV input, charge/discharge, fault flags, alarmed | §8.6 | System, Site | HLT-05, 06 |
 | 25 | Data ingest: timestamping, event-triggered messages, store-and-forward with no data loss | §8.2a, §8.5 | System | ACQ-01 to 03 |
@@ -68,8 +68,17 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | 28 | Responsive portal: phone, tablet, laptop; pump screen on a phone | §8.1, Fig 9, Fig 13 | Prototype, System | RSP-01 to 04 |
 | 29 | Availability, 48 h maintenance notice, cloud hosting with backups | §8.1, §9 | System | NFR-02 to 04 |
 | 30 | Permanent data retention | §8.3 | System | NFR-05 |
+| 31 | Station menu: a list of every station to go straight to | MTS request | Prototype, System | MAP-09 |
+| 32 | Map backgrounds: plain schematic, street map or satellite (Mapbox) | MTS request | Prototype, System | MAP-10, 11 |
+| 33 | Station quick view over the map | MTS request | Prototype, System | MAP-12 |
+| 34 | Map legend that minimises and expands | MTS request | Prototype, System | MAP-13 |
+| 35 | Battery and signal shown on demand, not by default | MTS request | Prototype, System | MAP-14 |
+| 36 | Station health: last connected time; "no data" after 15 minutes | MTS request | Prototype, System | STN-04, 05 |
+| 37 | Recipient groups: add, edit members and channels, remove | §7.3, MTS request | Prototype, System | RCP-01 to 04 |
 
 **Proven at site acceptance, not in this plan:** sensor accuracy and ranges (§5.1–5.4), the manual staff gauge (§5.2), mast, enclosure and KE+200 clearance (§5.5, §5.7), solar autonomy (§8.6), EMC (§8.5), calibration certificates (§11.1).
+
+**Removed by MTS (9 Nov 2026):** pump control (§5.6 local control on the OMC-048, §8.4 supervised manual start/stop). The existing pump panel runs the pumps; the portal receives each pump's run signal and monitors only.
 
 **Removed by MTS (5 Nov 2026):** the PTZ camera verification link (§7.5). There is no integration between the system and the cameras, so the portal has no camera pop-up, icon or feed link. The standing-water alert remains (ALR-06).
 
@@ -85,10 +94,16 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | MAP-02 | Readings against thresholds | Compare each card with the station's latest readings | Each card shows only the sensors fitted there (§4.3), as value / threshold with units; Lady Game Drive shows both its up and down tunnel readings | Prototype, System | |
 | MAP-03 | Status colours | Drive one station to warning, one to alert, stop one logger | Pins and cards turn amber, red and grey; each colour also has a word or icon | System | |
 | MAP-04 | Map refresh | Change a reading at the simulator | The map shows the new value within the refresh interval, without reloading the page | System | |
-| MAP-05 | Status table contents | Read the table under the map | One row per location: rain, wind, temperature, level, pump, battery, signal, updated, status | Prototype, System | |
+| MAP-05 | Status table contents | Read the table under the map | One row per location: rain, wind, temperature, level, pump, updated, status | Prototype, System | |
 | MAP-06 | Missing values | Check a station without a sensor | Shows "–", never 0 | Prototype, System | |
 | MAP-07 | Header | Read the top bar | Sydney time with AEST/AEDT, active-alert count, stations online | Prototype, System | |
 | MAP-08 | Alert banner | Raise an alert | The banner under the header shows the alert's instruction; **Open** goes to it | Prototype, System | |
+| MAP-09 | Station menu | Open **Station** in the top menu; pick Canterbury. On a phone, open the menu | All seven stations listed; it opens Canterbury; the current station is highlighted; the phone menu lists them too | Prototype, System | |
+| MAP-10 | Map backgrounds | Choose **Plain**, **Map**, then **Satellite**; reload | Schematic, street map and satellite each show all seven stations; the choice is remembered | Prototype, System | |
+| MAP-11 | Pins on the map | On Map, hover a pin, then click it | Pins carry the station number in its status colour; hover shows the live readings; click opens the quick view | Prototype, System | |
+| MAP-12 | Station quick view | Click a station on any map view; select **Open station page**; Ctrl-click a station | A panel over the map: readings, pumps, last connected, latest alerts; the button opens the station; Ctrl-click opens it in a new tab | Prototype, System | |
+| MAP-13 | Legend | Minimise the legend; reload; switch view; expand it | It shrinks to a "Legend" tab, stays minimised after reload and across views, and opens again | Prototype, System | |
+| MAP-14 | Battery and signal on demand | Open the map; select **Show station health**; reload | Hidden at first; the button adds Battery and Signal to the table and the map cards; the choice is remembered | Prototype, System | |
 
 ### Trends (TRD)
 
@@ -107,34 +122,30 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | FLD-02 | Pumps and vicinity | During the event | Duty then standby shown running; the vicinity inset marks the affected location | Prototype, System | |
 | FLD-03 | Event log | Read the log | Every step timestamped in order: rate of rise, standing water, pump starts, block line | Prototype, System | |
 
-## Test cases — station page and pump control
+## Test cases — station page and pumps
 
 ### Station page (STN)
 
 | ID | Test | Steps | Expected result | Where | Result |
 | --- | --- | --- | --- | --- | --- |
 | STN-01 | Live sensor readings | Open **Station** for Marrickville | Rainfall, water level and float switch cards, each with value, model, threshold and status pill | Prototype, System | |
-| STN-02 | Station health | Read the health card | Battery and charging, cellular signal, enclosure, logger state | Prototype, System | |
+| STN-02 | Station health | Read the health card | Battery and charging, and cellular signal | Prototype, System | |
 | STN-03 | Level trend | Read the 3-hour chart | Level against pump-start (+100 mm) and high-high (+180 mm) *(pending)*, pump starts marked | Prototype, System | |
+| STN-04 | Last connected | Read the card on each station | **Last connected** date and time for each logger; no enclosure line | Prototype, System | |
+| STN-05 | No data | Stop a logger's telemetry for over 15 minutes | Shows "No data since [time] — logger or network" and the card's badge changes to **No data** | System | |
 
-### Pump status and manual control (PMP)
+### Pump monitoring (PMP)
 
 | ID | Test | Steps | Expected result | Where | Result |
 | --- | --- | --- | --- | --- | --- |
-| PMP-01 | Pump status | Run the duty pump, then trip it | Duty and standby each show Running, Ready or Fault, with run time and flow | Prototype, System | |
-| PMP-02 | Pump condition | Raise a condition signal from the panel | Stator temperature, water-in-oil, insulation and bearing temperature shown; a fault turns its tile red and alerts | System | |
-| PMP-03 | Manual needs MANUAL mode | In AUTO, try **Start** | START and STOP are disabled until MANUAL is chosen | Prototype, System | |
-| PMP-04 | Confirmation | In MANUAL, select **Start duty pump** | A dialog says which pump, what will happen and on whose authority; nothing happens until confirmed | Prototype, System | |
-| PMP-05 | Command outcome | Confirm a start; repeat with the logger offline | Success shows the pump running; offline shows pending, then failed or timed out, never false success | System | |
-| PMP-06 | Only authorised roles | Sign in as Operator, then Pump Controller | Operator cannot start a pump; Pump Controller can, at permitted stations only; every action logged with name and time | System | |
-| PMP-07 | Lead pump start and lag | Raise level past L-start, then L-lag | Lead pump starts after the debounce; standby joins at high-high; both events alert | Site | |
-| PMP-08 | Stop, anti-cycling and run-dry | Lower level past L-stop | Pumps stop only after the minimum run time; no restart before minimum rest; starts per hour capped; pumps cannot run below L-stop | Site | |
-| PMP-09 | Alternation | Run two cycles | Lead and lag swap each cycle; run hours logged per pump | Site | |
-| PMP-10 | Float backup | Make the radar invalid, then wet the float | Control moves to float only; pump starts on wet; a system-fault alert says so | Site | |
-| PMP-11 | Works without the server | Cut the cellular link during a rise | Pumps still start and stop; buffered events reach the server when the link returns | Site | |
-| PMP-12 | Pump alarms sent at once | Cause a pump fail, a no-flow and a high-high level | Each alarm reaches the alert engine immediately, not on the 5-minute cycle | System, Site | |
-| PMP-13 | Standby cut-in | Trip the duty pump while it runs | Standby starts by itself; a pump-fault alert is raised | Site | |
-| PMP-14 | Float fail-safe | Wet the float while the radar reads below L-start | Pump starts anyway and a discrepancy alarm is raised | Site | |
+| PMP-01 | Pump ON and OFF | Switch the duty pump's run signal ON, then OFF | ON shows the pump in green with the time it started; OFF shows grey with the time it last stopped | Prototype, System | |
+| PMP-02 | Run log: start | Switch a pump's run signal ON | A new row in the run log with the start time and the water level at that moment | Prototype, System | |
+| PMP-03 | Run log: stop | Switch it OFF again | The row gets the stop time, how long it ran and the water level at stop | Prototype, System | |
+| PMP-04 | Both pumps | Run duty and standby together | Both green; the card header says RUNNING; each has its own row in the log | Prototype, System | |
+| PMP-05 | Today's totals | Compare the card with the log | Today's run time and number of starts on each pump match its runs in the log | Prototype, System | |
+| PMP-06 | No pump control | Look for pump controls as every role, Administrator included | There is no AUTO/MANUAL switch and no Start or Stop button anywhere | Prototype, System | |
+| PMP-07 | Run history | Open the log after several runs | Last 7 days, newest first; **Show all** reveals older runs; weekly exercise runs are labelled | Prototype, System | |
+| PMP-08 | Run signal from the panel | Run each pump from the existing panel on site | The portal shows it ON within the reporting interval and OFF when it stops, with the matching log rows | Site | |
 
 ## Test cases — alerts and rules
 
@@ -161,6 +172,8 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 | ALR-17 | Acknowledge | Acknowledge one alert, then **Mark all** | Each shows who and when; header badge and counts drop at once | Prototype, System | |
 | ALR-18 | Export | **Export CSV** | The filtered events with acknowledgement details | Prototype, System | |
 | ALR-19 | Annotate | Add a note to an event | Note saved with name and time, shown on the event | Prototype, System | |
+
+The 3-day rainfall rule also has six detailed scenarios with test data (R3D-01 to 06: the portal's **Admin → Rain rule test**, and `mts/docs/rain-3day-tests`).
 
 ### Rules engine (RUL)
 
@@ -211,9 +224,18 @@ The proposal promises 30 features in scope. Each is covered by the tests named i
 
 | ID | Test | Steps | Expected result | Where | Result |
 | --- | --- | --- | --- | --- | --- |
-| AUD-01 | Everything recorded | Add a user, change a role, edit a threshold, acknowledge an alert, start a pump | Each recorded with user, time and detail | System | |
+| AUD-01 | Everything recorded | Add a user, change a role, edit a threshold, acknowledge an alert, edit a recipient group | Each recorded with user, time and detail | System | |
 | AUD-02 | Query | Filter the audit trail by user, action and date | Only matching entries | System | |
 | AUD-03 | Export, no editing | Export to CSV; try to change an entry | The export matches the filter; entries cannot be edited or deleted | System | |
+
+### Recipient groups (RCP)
+
+| ID | Test | Steps | Expected result | Where | Result |
+| --- | --- | --- | --- | --- | --- |
+| RCP-01 | Add a group | **Admin → Recipients → Add group**; save with no name, then with a name, members and channels | Refused until it has a name, a member and a channel; then listed with its members and channels | Prototype, System | |
+| RCP-02 | Edit a group | Change its members and channels | The list shows the new members and channels; recorded in the audit trail | Prototype, System | |
+| RCP-03 | Remove a group in use | Remove a group that alert rules send to | Warned which rules use it before removal; after it, those rules no longer send to it | Prototype, System | |
+| RCP-04 | Rules use the groups | Open a rule's **Recipients & channels** | Shows the current groups, including new and renamed ones | Prototype, System | |
 
 ## Test cases — system health, data and fallback
 
@@ -275,7 +297,7 @@ Availability over time (not inoperable more than 12 h in any 6 months, ≤ 24 h 
 
 ## Sign-off
 
-The plan has 107 tests across 15 areas. A release is accepted when every test has run and no Critical or Major defect is open.
+The plan has 113 tests across 16 areas. A release is accepted when every test has run and no Critical or Major defect is open.
 
 ### Before testing starts
 
@@ -286,7 +308,7 @@ The plan has 107 tests across 15 areas. A release is accepted when every test ha
 
 - Every test is marked Pass, or Fail with a logged defect.
 - No Critical or Major defect is open; Minor defects have an agreed fix date.
-- Site tests (PMP-07 to 14, HLT-05 and 06, ACQ-03 and 06) have passed at each location during the site acceptance test.
+- Site tests (PMP-08, HLT-05 and 06, ACQ-03 and 06) have passed at each location during the site acceptance test.
 
 | Role | Name | Date | Signature |
 | --- | --- | --- | --- |

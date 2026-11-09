@@ -1,4 +1,4 @@
-import type { Role, User } from '@/lib/api/types';
+import type { Role, User, RecipientGroup } from '@/lib/api/types';
 
 /**
  * The people on the user-management screen. The first eight are the client's
@@ -240,10 +240,34 @@ export const OTHER_ORG_USERS: User[] = [
   { id: 'u-trial-admin', name: 'Trial Administrator', email: 'admin@trial.example', initials: 'TA', roles: ['administrator'], stationAccess: 'all', orgId: 'trial', status: 'invited' },
 ];
 
-/** Named recipient groups, as the rule drawer's chips refer to them. */
-export const RECIPIENT_GROUPS = [
-  { id: 'ops-controllers', label: 'Ops controllers', members: 6, description: 'OCC duty controllers, 24/7 roster' },
-  { id: 'cjc-t', label: 'CJC-T', members: 4, description: 'Front-of-train patrol coordinators' },
-  { id: 'maintenance', label: 'Maintenance', members: 3, description: 'Field technicians — faults and power' },
-  { id: 'engineering', label: 'Engineering', members: 5, description: 'Reporting and post-event analysis' },
+/** Named recipient groups, as the rule drawer's chips refer to them. Editable under Admin → Recipients. */
+export const RECIPIENT_GROUPS: RecipientGroup[] = [
+  {
+    id: 'ops-controllers',
+    label: 'Ops controllers',
+    description: 'OCC duty controllers, 24/7 roster',
+    memberIds: ['u-okoro', 'u-nair', 'u-hale', 'u-diaz', 'u-novak', 'u-brooks'],
+    channels: ['screen', 'push', 'email'],
+  },
+  {
+    id: 'cjc-t',
+    label: 'CJC-T',
+    description: 'Front-of-train patrol coordinators',
+    memberIds: ['u-lee', 'u-shaw', 'u-berg', 'u-quinn'],
+    channels: ['screen', 'push', 'email'],
+  },
+  {
+    id: 'maintenance',
+    label: 'Maintenance',
+    description: 'Field technicians — faults and power',
+    memberIds: ['u-reilly', 'u-obrien', 'u-tanaka'],
+    channels: ['screen', 'push', 'email'],
+  },
+  {
+    id: 'engineering',
+    label: 'Engineering',
+    description: 'Reporting and post-event analysis',
+    memberIds: ['u-khan', 'u-patel', 'u-mensah', 'u-fraser', 'u-chen'],
+    channels: ['screen', 'email'],
+  },
 ];

@@ -30,6 +30,8 @@ const TABS: { href: string; label: string; superOnly?: boolean }[] = [
 const PROPOSAL_TABS: Record<string, { title: string; intro?: string }> = {
   '/admin/users': { title: 'User management' },
   '/admin/rules': { title: 'Alert & warning rules — configuration' },
+  // Client, 9 Nov 2026: "Where do I define these recipients?" — the groups an alert rule sends to.
+  '/admin/recipients': { title: 'Recipients' },
   '/admin/stations': { title: 'Stations' },
   '/admin/sensors': { title: 'Sensors' },
   // Client, 2 Nov 2026: test cases, a simulation and test data for the 3-day rain rule.

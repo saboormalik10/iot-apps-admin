@@ -2,46 +2,35 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Play, Square, Wrench } from 'lucide-react';
+import { ChevronLeft, Wrench } from 'lucide-react';
 import type {
   LocationId,
+  Logger,
   MaintenanceState,
-  PumpCommandResult,
   PumpStationLive,
   StationLive,
 } from '@/lib/api/types';
 import {
-  DEMO_USER,
-  commandPump,
   getMaintenance,
   getPumpStation,
   getStation,
   setMaintenance,
-  setPumpMode,
 } from '@/lib/api/endpoints';
 import { ErrorState, LoadingState } from '@/components/screen-states';
 import { StatusPill, stationTone } from '@/components/status/status-pill';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useDataRevision } from '@/lib/use-data';
 import { toast } from '@/lib/hooks/use-toast';
-import { fmtDuration, fmtSigned, fmtTime } from '@/lib/format';
-import { ROLES_BY_ID } from '@/lib/mock/seed/people';
+import { fmtDateTime, fmtTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { SHOW_EXTRAS } from '@/lib/extras';
-import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { TelemetryPanel } from './equipment-panel';
+import { PumpRunLog, PumpStatusCard } from './pump-panels';
 import { StationTabs } from './station-tabs';
 import { ReadingCard, pointLabel } from './reading-card';
 import { StationCharts } from './station-charts';
-import { PowerPanel, PumpHistoryPanel, PumpProtectionPanel } from './station-insights';
+import { PowerPanel, PumpProtectionPanel } from './station-insights';
 
 /**
  * A station, and — where one is fitted — its pump plant.
@@ -51,10 +40,9 @@ import { PowerPanel, PumpHistoryPanel, PumpProtectionPanel } from './station-ins
  * (the plant column), what has the weather been doing (the charts), and is the
  * station itself healthy (telemetry, power, equipment).
  *
- * On a desk the plant sits in its own column beside the readings. On a phone it
- * comes straight after them — §8.1 and Figure 13 put pump control in the hands of
- * on-call staff, and a pump button below four charts and a power graph is a pump
- * button nobody finds in time.
+ * On a desk the pumps sit in their own column beside the readings. The portal
+ * monitors them only (client, 9 Nov 2026): ON/OFF from each pump's run signal and
+ * a log of every run — the pump panel on site starts and stops them.
  */
 export function StationPage({ id }: { id: LocationId }) {
   const now = useDemoClock();
@@ -62,9 +50,6 @@ export function StationPage({ id }: { id: LocationId }) {
   const [pump, setPump] = useState<PumpStationLive | null>(null);
   const [maintenance, setMaint] = useState<MaintenanceState | null>(null);
   const [error, setError] = useState(false);
-  const [confirm, setConfirm] = useState<'start' | 'stop' | null>(null);
-  const [result, setResult] = useState<PumpCommandResult | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = () => {
     getStation(id)
@@ -84,25 +69,8 @@ export function StationPage({ id }: { id: LocationId }) {
   if (!station || !now) return <LoadingState label="Loading the station…" />;
 
   const hasPump = Boolean(station.location.pumpStation);
-  const dutyRunning = pump?.pumps.find((p) => p.role === 'duty')?.state === 'running';
-  const level = station.readings.find((r) => r.parameter === 'water_level');
   const anyRunning = pump?.pumps.some((p) => p.state === 'running');
-  const roleNames = DEMO_USER.roles.map((r) => ROLES_BY_ID[r].name).join(', ');
   const minute = Math.floor(now / 60_000);
-
-  const runCommand = async (action: 'start' | 'stop') => {
-    setBusy(true);
-    const res = await commandPump({
-      pumpId: 'MKV-PUMP-DUTY',
-      action,
-      mode: 'manual',
-      confirmedBy: DEMO_USER.name,
-    });
-    setResult(res);
-    setBusy(false);
-    setConfirm(null);
-    load();
-  };
 
   const toggleMaintenance = async () => {
     const on = !maintenance?.on;
@@ -230,7 +198,11 @@ export function StationPage({ id }: { id: LocationId }) {
             >
               <header className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-medium">Station health</h3>
-                <StatusPill tone="normal" size="sm" />
+                {station.location.loggers.some((l) => silent(l, now)) ? (
+                  <StatusPill tone="warning" label="No data" size="sm" />
+                ) : (
+                  <StatusPill tone="normal" size="sm" />
+                )}
               </header>
               <div className="space-y-2">
                 {!SHOW_EXTRAS && station.readings.length % 2 === 1
@@ -241,19 +213,9 @@ export function StationPage({ id }: { id: LocationId }) {
                             {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
                           </p>
                         ) : null}
-                        <Row
-                          label="Battery"
-                          value={`${l.batteryPct} % · ${l.charging ? 'solar charging' : 'on battery'}`}
-                        />
-                        <Row
-                          label="Cellular"
-                          value={`${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`}
-                        />
-                        <Row
-                          label="Enclosure"
-                          value={`${l.enclosure.closed ? 'closed' : 'OPEN'} · ${l.enclosure.internalC} °C internal`}
-                        />
-                        <Row label="Logger" value={`${l.model} · online`} />
+                        {loggerFacts(l, now).map((f) => (
+                          <Row key={f.label} label={f.label} value={f.value} alert={f.alert} />
+                        ))}
                       </dl>
                     ))
                   : null}
@@ -261,26 +223,16 @@ export function StationPage({ id }: { id: LocationId }) {
                   station.location.loggers.map((l) => (
                     <dl
                       key={l.id}
-                      className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4"
+                      className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3"
                     >
                       {station.location.loggers.length > 1 ? (
-                        <p className="col-span-2 font-medium sm:col-span-4">
+                        <p className="col-span-2 font-medium sm:col-span-3">
                           {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
                         </p>
                       ) : null}
-                      <Fact
-                        label="Battery"
-                        value={`${l.batteryPct}% · ${l.charging ? 'charging' : 'on battery'}`}
-                      />
-                      <Fact
-                        label="Cellular"
-                        value={`${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`}
-                      />
-                      <Fact
-                        label="Enclosure"
-                        value={`${l.enclosure.closed ? 'closed' : 'OPEN'} · ${l.enclosure.internalC} °C internal`}
-                      />
-                      <Fact label="Logger" value={`${l.model} · ${l.id} · online`} />
+                      {loggerFacts(l, now).map((f) => (
+                        <Fact key={f.label} label={f.label} value={f.value} alert={f.alert} />
+                      ))}
                     </dl>
                   ))}
               </div>
@@ -290,209 +242,12 @@ export function StationPage({ id }: { id: LocationId }) {
 
         {hasPump && pump ? (
           <div className="order-3 min-w-0 space-y-4 xl:order-none xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            <section className="rounded-lg border bg-card p-3">
-              <header className="mb-2 flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-semibold">Pump station</h2>
-                  <p className="text-xs text-muted-foreground">
-                    1 duty + 1 standby · rotating pumps · up to{' '}
-                    {station.location.pumpStation!.capacityLps} L/s
-                  </p>
-                </div>
-                <StatusPill
-                  tone={pump.state === 'running' ? 'normal' : 'information'}
-                  label={pump.state.toUpperCase()}
-                  size="sm"
-                />
-              </header>
-              <ul className="space-y-2">
-                {pump.pumps.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium capitalize">{p.role} pump</p>
-                      <p className="tabular text-xs text-muted-foreground">
-                        {p.since
-                          ? `since ${fmtTime(p.since)} · run ${fmtDuration(now - p.since)}`
-                          : p.lastRun
-                            ? `${p.note ?? 'armed'} · last run ${fmtTime(p.lastRun)}`
-                            : p.note}
-                        {' · '}
-                        {p.runHoursToday} h today · {p.starts} {p.starts === 1 ? 'start' : 'starts'}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold',
-                          p.state === 'running'
-                            ? 'bg-op-running-tint text-op-running'
-                            : 'bg-op-ready-tint text-op-ready',
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'h-1.5 w-1.5 rounded-full',
-                            p.state === 'running' ? 'bg-op-running' : 'bg-op-ready',
-                          )}
-                        />
-                        {p.state.toUpperCase()}
-                      </span>
-                      <p className="tabular mt-0.5 text-xs text-muted-foreground">
-                        {p.flowLps} L/s
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {/* Volume moved is what a duty manager asks after an event: run time
-                  × the pumps' rated 60 L/s, from the same run hours as the cards. */}
-              <p className="mt-2 flex flex-wrap justify-between gap-2 rounded-md bg-muted/50 px-3 py-1.5 text-xs">
-                <span className="text-muted-foreground">Pumped today, approximately</span>
-                <span className="tabular font-semibold">
-                  {Math.round(
-                    pump.pumps.reduce((a, p) => a + p.runHoursToday * 3600 * 60, 0) / 1000,
-                  ).toLocaleString('en-AU')}{' '}
-                  m³
-                </span>
-              </p>
-            </section>
-
-            <section className="rounded-lg border bg-card p-3">
-              <h2 className="mb-2 text-sm font-semibold">Pump condition (existing pumps)</h2>
-              <div className="grid grid-cols-2 gap-2">
-                <ConditionTile label="Stator temp" value={`${pump.condition.statorTempC} °C`} />
-                <ConditionTile label="Water-in-oil" value={pump.condition.waterInOil} />
-                <ConditionTile label="Insulation" value={`> ${pump.condition.insulationMohm} MΩ`} />
-                <ConditionTile label="Bearing temp" value={`${pump.condition.bearingTempC} °C`} />
-              </div>
-            </section>
-
-            <section className="rounded-lg border bg-card p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">Control mode</h2>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="inline-flex overflow-hidden rounded-md border"
-                    role="group"
-                    aria-label="Control mode"
-                  >
-                    {(['auto', 'manual'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setPumpMode(m).then(load)}
-                        aria-pressed={pump.mode === m}
-                        className={cn(
-                          'px-3 py-1.5 text-xs font-semibold uppercase transition-colors',
-                          pump.mode === m
-                            ? m === 'manual'
-                              ? 'bg-op-manual text-black/80'
-                              : 'bg-primary text-primary-foreground'
-                            : 'bg-card text-muted-foreground hover:bg-muted',
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              {pump.mode === 'auto' ? (
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Switch to MANUAL to operate the pumps.
-                </p>
-              ) : (
-                <p className="mb-3 text-xs font-medium text-op-manual">
-                  MANUAL — automatic control is overridden. It returns to AUTO after the configured
-                  period.
-                </p>
-              )}
-
-              {/* Start is offered only when the duty pump is stopped and stop only
-                  when it is running. Offering both at all times meant confirming a
-                  start on a pump that was already running, watching a command be
-                  "accepted", and seeing nothing change — the one impression a
-                  plant-control screen must never give. */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  disabled={pump.mode !== 'manual' || busy || dutyRunning}
-                  onClick={() => setConfirm('start')}
-                  className="bg-op-running text-white hover:bg-op-running/90"
-                >
-                  <Play className="h-4 w-4" /> Start duty pump
-                </Button>
-                <Button
-                  disabled={pump.mode !== 'manual' || busy || !dutyRunning}
-                  onClick={() => setConfirm('stop')}
-                  className="bg-sev-alert text-white hover:bg-sev-alert/90"
-                >
-                  <Square className="h-4 w-4" /> Stop duty pump
-                </Button>
-              </div>
-              {pump.mode === 'manual' ? (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  {dutyRunning
-                    ? 'The duty pump is running, so only STOP is available.'
-                    : 'The duty pump is stopped, so only START is available.'}
-                </p>
-              ) : null}
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Manual start/stop requires MANUAL mode and a confirmation. The action is
-                authenticated, timestamped and logged.
-              </p>
-            </section>
-
-            {SHOW_EXTRAS ? <PumpHistoryPanel minuteKey={Math.floor(now / 60_000)} /> : null}
-
-            {/* Figure 13 leaves the activity list off the phone layout. */}
-            <section
-              className={cn('rounded-lg border bg-card p-3', !SHOW_EXTRAS && 'hidden sm:block')}
-            >
-              <h2 className="mb-2 text-sm font-semibold">Recent activity</h2>
-              <ol className="space-y-2">
-                {pump.activity.slice(0, 7).map((a, i) => (
-                  <li key={i} className="flex gap-2 text-xs">
-                    <span
-                      className={cn(
-                        'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
-                        a.severity === 'alert'
-                          ? 'bg-sev-alert'
-                          : a.severity === 'warning'
-                            ? 'bg-sev-warning'
-                            : 'bg-sev-info',
-                      )}
-                    />
-                    <span className="tabular shrink-0 text-muted-foreground">{fmtTime(a.t)}</span>
-                    <span className="min-w-0">
-                      {a.text}
-                      {a.simulated ? (
-                        <span className="ml-1 rounded bg-muted px-1 text-[11px] uppercase text-muted-foreground">
-                          simulated
-                        </span>
-                      ) : null}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
+            <PumpStatusCard pump={pump} now={now} />
+            <PumpRunLog runs={pump.runs} now={now} />
           </div>
         ) : null}
 
         <div className="order-2 min-w-0 space-y-4 xl:order-none xl:col-start-1 xl:row-start-2">
-          {/* What the logger is doing, from the logger's own set points. */}
-          {/* Figure 12 has a short text box for the local logic; the full
-              diagram is an extra. */}
-          {hasPump && !SHOW_EXTRAS ? (
-            <LocalLogicNote
-              levelMm={station.readings.find((r) => r.parameter === 'water_level')?.value ?? null}
-              floatWet={station.readings.some(
-                (r) => r.parameter === 'float_switch' && r.value === 1,
-              )}
-              dutyRunning={dutyRunning}
-            />
-          ) : null}
           {hasPump && SHOW_EXTRAS ? (
             <PumpProtectionPanel
               minuteKey={minute}
@@ -509,169 +264,50 @@ export function StationPage({ id }: { id: LocationId }) {
       {SHOW_EXTRAS ? <TelemetryPanel locationId={id} now={now} /> : null}
 
 
-      {/* Confirmation. The dialog carries the prototype notice in its own body:
-          this is the one screenshot that must never look like a real command. */}
-      <Dialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirm === 'start' ? 'Start the duty pump?' : 'Stop the duty pump?'}
-            </DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-3 text-sm">
-                <dl className="rounded-md border bg-muted/50 p-3 text-xs">
-                  <Row label="Plant" value="Marrickville trackside pumps — DUTY" />
-                  <Row
-                    label="Action"
-                    value={confirm === 'start' ? 'START (manual)' : 'STOP (manual)'}
-                  />
-                  <Row label="Mode" value="MANUAL — automatic control overridden" />
-                  <Row label="Authorised by" value={`${DEMO_USER.name} · ${roleNames}`} />
-                  <Row label="Water level now" value={`${fmtSigned(level?.value ?? null)} mm`} />
-                </dl>
-                <p className="rounded-md border border-sev-info/40 bg-sev-info-tint p-2 text-xs text-sev-info-strong">
-                  Prototype — no command is sent to any plant. In the delivered system this action
-                  is authenticated, timestamped, written to the audit trail and alarmed to the
-                  control room.
-                </p>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirm(null)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => runCommand(confirm!)}
-              disabled={busy}
-              className={
-                confirm === 'start'
-                  ? 'bg-op-running text-white hover:bg-op-running/90'
-                  : 'bg-sev-alert text-white hover:bg-sev-alert/90'
-              }
-            >
-              {busy ? 'Sending…' : confirm === 'start' ? 'Start pump' : 'Stop pump'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* The supervisory chain the real system will have. Showing it turns a fake
-          button into a specification, and makes "it started" impossible to claim. */}
-      <Dialog open={result !== null} onOpenChange={(o) => !o && setResult(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Command issued (simulated)</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-3">
-                <p className="text-sm">{result?.message}</p>
-                <ol className="space-y-1.5">
-                  {result?.steps.map((s) => (
-                    <li
-                      key={s.step}
-                      className="flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-xs"
-                    >
-                      <span className="capitalize">{stepLabel(s.step)}</span>
-                      <span
-                        className={cn(
-                          'rounded px-1.5 py-0.5 text-[11px] font-medium',
-                          s.state === 'done'
-                            ? 'bg-sev-normal-tint text-sev-normal-strong'
-                            : 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {s.state === 'done'
-                          ? `done ${s.at ? fmtTime(s.at) : ''}`
-                          : 'awaiting integration'}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end">
-            <Button onClick={() => setResult(null)}>Close</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
 
-/** Figure 12's "Local pump-control logic" box: what the logger is doing, in three lines. */
-function LocalLogicNote({
-  levelMm,
-  floatWet,
-  dutyRunning,
-}: {
-  levelMm: number | null;
-  floatWet: boolean;
-  dutyRunning: boolean | undefined;
-}) {
-  const f = THRESHOLDS.flood;
-  const above = levelMm !== null && levelMm > f.pumpStartMm;
-  return (
-    <section className="hidden rounded-lg border bg-primary/5 p-3 text-xs sm:block">
-      <h2 className="mb-1.5 text-sm font-semibold">
-        Local pump-control logic (runs on the OMC-048 — independent of the cellular link)
-      </h2>
-      <p>
-        Radar {levelMm === null ? '–' : fmtSigned(levelMm)} mm {above ? '>' : '≤'} pump-start +
-        {f.pumpStartMm} mm
-        {above && dutyRunning ? ' → DUTY pump started; STANDBY armed' : ' → pumps stopped'}
-        {floatWet ? '. Float = WET confirms high level.' : '.'}
-      </p>
-      <p>
-        Mode: AUTO. Min run-time and anti-cycle active. Standby armed on duty-pump fault. High-high
-        alarm at +{f.highHighMm} mm.
-      </p>
-      <p className="mt-1 text-muted-foreground">
-        All start/stop actions — automatic or manual — are timestamped and logged, and alarmed to
-        the central server.
-      </p>
-    </section>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
     <div>
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+      <dd className={cn('font-medium', alert && 'text-sev-warning-strong')}>{value}</dd>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+/**
+ * A logger that has sent nothing for 15 minutes. From the server a logger that is
+ * down and a network that is down look the same, so the card says so rather than
+ * claiming either (client, 9 Nov 2026).
+ */
+const SILENT_MS = 15 * 60_000;
+function silent(l: Logger, now: number): boolean {
+  return now - l.lastSeen > SILENT_MS;
+}
+
+/** What the health card says about one logger: battery, signal, and when it was last heard from. */
+function loggerFacts(l: Logger, now: number): { label: string; value: string; alert?: boolean }[] {
+  const quiet = silent(l, now);
+  return [
+    { label: 'Battery', value: `${l.batteryPct}% · ${l.charging ? 'solar charging' : 'on battery'}` },
+    {
+      label: 'Cellular',
+      value: `${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`,
+    },
+    quiet
+      ? { label: 'Last connected', value: `No data since ${fmtDateTime(l.lastSeen)} — logger or network`, alert: true }
+      : { label: 'Last connected', value: fmtDateTime(l.lastSeen) },
+  ];
+}
+
+function Row({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
     <div className="flex justify-between gap-3 py-0.5">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium text-foreground">{value}</dd>
+      <dd className={cn('text-right font-medium text-foreground', alert && 'text-sev-warning-strong')}>{value}</dd>
     </div>
-  );
-}
-
-function ConditionTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-md border border-sev-normal/30 bg-sev-normal-tint px-2.5 py-2">
-      <div>
-        <p className="text-[11px] text-sev-normal-strong/80">{label}</p>
-        <p className="text-sm font-semibold capitalize text-sev-normal-strong">{value}</p>
-      </div>
-      <span className="h-2 w-2 rounded-full bg-sev-normal" aria-hidden />
-    </div>
-  );
-}
-
-function stepLabel(step: string): string {
-  return (
-    {
-      issued: 'Command issued',
-      acknowledged: 'Received by the OMC-048',
-      contactor: 'Pump-panel contactor energised',
-      flow: 'Run confirmation and flow',
-    }[step] ?? step
   );
 }
 

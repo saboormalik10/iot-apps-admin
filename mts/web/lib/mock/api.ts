@@ -24,9 +24,9 @@ import type {
   Unit,
   User,
 } from '@/lib/api/types';
-import { STORM_DAY, now, sydneyAt } from './clock';
+import { STORM_DAY, now, sydneyAt, sydneyDayStart } from './clock';
 import { batteryPct, solarInputW, valueAt } from './generate/profiles';
-import { simulatePumps } from './generate/pump-sim';
+import { pumpRunLog } from './generate/pump-sim';
 import { hash } from './generate/rng';
 import { seededEvents } from './seed/events';
 import { DEMO_USER, OTHER_ORG_USERS, ROLES, SUPER_USER, USERS } from './seed/people';
@@ -49,19 +49,6 @@ import { getStore, mutate, stationName } from './store';
  *
  * Nothing under `features/` or `components/` may import this module directly.
  */
-
-/** When the level first crossed a set point, walking back over the same series. */
-function findCrossing(locationId: LocationId, level: number, t: number): number | undefined {
-  /* Whole minutes, one-minute steps — the same grid the event log searches, so
-     the pump panel's "since 13:09" and the log's pump-start entry are the same
-     minute rather than a minute apart. */
-  const step = 60_000;
-  const start = Math.floor((t - 6 * 3_600_000) / step) * step;
-  for (let u = start; u <= t; u += step) {
-    if ((valueAt('water_level', locationId, u) ?? 0) >= level) return u;
-  }
-  return undefined;
-}
 
 /** A little latency, so loading states are real rather than theoretical. */
 function settle<T>(value: T, ms = 90 + Math.random() * 140): Promise<T> {
@@ -346,74 +333,63 @@ export async function getPumpStation(): Promise<PumpStationLive> {
   const t = now();
   const store = getStore();
   const duty = store.pumps.get('MKV-PUMP-DUTY')!;
-  const standby = store.pumps.get('MKV-PUMP-STANDBY')!;
 
   /**
-   * Unless someone has taken manual control, the pumps follow the water — duty
-   * from pump-start, standby from high-high — because that is what the logic on
-   * the OMC-048 does. Deriving it rather than storing it is what keeps this
-   * screen, the flood screen and the event log telling the same story.
+   * The portal does not control the pumps (client, 9 Nov 2026): it reads each
+   * pump's run signal from the existing panel. ON/OFF, "since", today's run time
+   * and starts all come from the one run log, so the cards and the log agree.
    */
-  const level = valueAt('water_level', 'marrickville', t) ?? 0;
-  const autoDuty = level >= THRESHOLDS.flood.pumpStartMm;
-  const autoStandby = level >= THRESHOLDS.flood.highHighMm;
-  const dutyState = duty.lastCommand ? duty.state : autoDuty ? 'running' : 'ready';
-  const standbyState = standby.lastCommand ? standby.state : autoStandby ? 'running' : 'ready';
-  const dutySince = findCrossing('marrickville', THRESHOLDS.flood.pumpStartMm, t);
-  const standbySince = findCrossing('marrickville', THRESHOLDS.flood.highHighMm, t);
+  const runs = pumpRunLog(t);
+  const today = sydneyDayStart(t);
+  const open = (role: 'duty' | 'standby') => runs.find((r) => r.pump === role && r.stop === undefined);
+  const lastStop = (role: 'duty' | 'standby') => runs.find((r) => r.pump === role && r.stop !== undefined)?.stop;
+  const minutesToday = (role: 'duty' | 'standby') =>
+    runs
+      .filter((r) => r.pump === role)
+      .reduce((m, r) => m + Math.max(0, Math.min(r.stop ?? t, t) - Math.max(r.start, today)) / 60_000, 0);
+  const startsToday = (role: 'duty' | 'standby') => runs.filter((r) => r.pump === role && r.start >= today).length;
+  const dutyRun = open('duty');
+  const standbyRun = open('standby');
 
-  /* The activity feed reads the event log and the pump simulation; it used to
-     carry its own "rainfall 14 minutes ago" line that contradicted both. */
-  const sim = simulatePumps(t);
-  const todayRun = sim.days[sim.days.length - 1];
+  /* The activity feed reads the event log and the run log; it used to carry its
+     own "rainfall 14 minutes ago" line that contradicted both. */
   const rainAlert = allEvents().find((e) => e.id === 'evt-rain-alert');
+  const exercise = runs.find((r) => r.exercise);
   const candidates: (ActivityEntry | null)[] = [
-    standbySince
-      ? { t: standbySince, text: `STANDBY pump started — level reached high-high +${THRESHOLDS.flood.highHighMm} mm`, severity: 'alert' as const }
+    standbyRun
+      ? { t: standbyRun.start, text: `STANDBY pump ON — level +${standbyRun.levelStartMm} mm`, severity: 'alert' as const }
       : null,
-    dutySince
-      ? { t: dutySince, text: `DUTY pump started — level crossed pump-start +${THRESHOLDS.flood.pumpStartMm} mm`, severity: 'alert' as const }
-      : null,
+    dutyRun ? { t: dutyRun.start, text: `DUTY pump ON — level +${dutyRun.levelStartMm} mm`, severity: 'alert' as const } : null,
     rainAlert ? { t: rainAlert.t, text: `Rainfall ≥ ${THRESHOLDS.rainfall.intensity.value} mm/hr — patrol alert issued`, severity: 'warning' as const } : null,
-    sim.lastExercise
-      ? { t: sim.lastExercise, text: 'Weekly exercise — both pumps ran for 2 minutes, run and flow confirmed', severity: 'information' as const }
-      : null,
+    exercise ? { t: exercise.start, text: 'Weekly exercise — both pumps ran for 2 minutes', severity: 'information' as const } : null,
   ];
   const activity: ActivityEntry[] = candidates.filter((a): a is ActivityEntry => a !== null);
-  if (duty.lastCommand) {
-    activity.unshift({
-      t: duty.lastCommand.at,
-      text: `DUTY pump ${duty.lastCommand.action === 'start' ? 'START' : 'STOP'} issued manually by ${duty.lastCommand.by}`,
-      severity: 'information',
-      simulated: true,
-    });
-  }
 
   return settle({
     id: 'MKV-PUMP',
     label: 'Pump station',
     mode: duty.mode,
-    state: dutyState === 'running' || standbyState === 'running' ? 'running' : dutyState,
+    state: dutyRun || standbyRun ? 'running' : 'ready',
     pumps: [
       {
         id: 'MKV-PUMP-DUTY',
         role: 'duty',
-        state: dutyState,
-        flowLps: dutyState === 'running' ? 60 : 0,
-        runHoursToday: Math.round((todayRun.leadMin / 60) * 10) / 10,
-        starts: todayRun.leadStarts,
-        since: dutyState === 'running' ? dutySince ?? t - 6 * 60_000 : undefined,
+        state: dutyRun ? 'running' : 'ready',
+        flowLps: dutyRun ? 60 : 0,
+        runHoursToday: Math.round((minutesToday('duty') / 60) * 10) / 10,
+        starts: startsToday('duty'),
+        since: dutyRun?.start,
+        lastRun: dutyRun ? undefined : lastStop('duty'),
       },
       {
         id: 'MKV-PUMP-STANDBY',
         role: 'standby',
-        state: standbyState,
-        flowLps: standbyState === 'running' ? 60 : 0,
-        runHoursToday: Math.round((todayRun.lagMin / 60) * 10) / 10,
-        starts: todayRun.lagStarts,
-        since: standbyState === 'running' ? standbySince ?? undefined : undefined,
-        lastRun: sim.lastExercise,
-        note: standbyState === 'ready' ? 'armed' : 'assisting',
+        state: standbyRun ? 'running' : 'ready',
+        flowLps: standbyRun ? 60 : 0,
+        runHoursToday: Math.round((minutesToday('standby') / 60) * 10) / 10,
+        starts: startsToday('standby'),
+        since: standbyRun?.start,
+        lastRun: standbyRun ? undefined : lastStop('standby'),
       },
     ],
     condition: { statorTempC: 78, waterInOil: 'dry', insulationMohm: 20, bearingTempC: 52 },
@@ -423,6 +399,7 @@ export async function getPumpStation(): Promise<PumpStationLive> {
       railFootMm: THRESHOLDS.flood.railFootMm,
     },
     activity: activity.sort((a, b) => b.t - a.t),
+    runs,
   });
 }
 

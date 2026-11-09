@@ -1,5 +1,6 @@
 import type { AlertEvent, AlertRule, Annotation, AuditEntry, ControlMode, Organization, OrgRight, OrgRightState, PumpState, Role, RoleId, RuleVersion, StationRecord, User } from '@/lib/api/types';
 import { STATIONS_BY_ID } from './seed/stations';
+import { RECIPIENT_GROUPS } from './seed/people';
 
 /**
  * The prototype's entire mutable surface.
@@ -47,6 +48,8 @@ interface Store {
   ruleVersions: RuleVersion[];
   /** Roles created from the roles screen — §8.4 promises custom roles. */
   addedRoles: Role[];
+  /** Recipient groups as edited under Admin → Recipients. */
+  recipientGroups: import('@/lib/api/types').RecipientGroup[];
   /** Notes controllers add to an event — §8.1 "interrogate, annotate and acknowledge". */
   annotations: Annotation[];
   /** Locations a technician has put into maintenance mode (§8.4). */
@@ -81,6 +84,7 @@ function initial(): Store {
     addedInstruments: [],
     instrumentEdits: new Map(),
     addedRoles: [],
+    recipientGroups: RECIPIENT_GROUPS.map((g) => ({ ...g, memberIds: [...g.memberIds], channels: [...g.channels] })),
     annotations: [],
     maintenance: new Map(),
     audit: [],

@@ -82,6 +82,7 @@ export {
   INSTRUMENT_CATALOG,
 } from '@/lib/mock/insights';
 export type { PipelineStats } from '@/lib/mock/insights';
+export type { RecipientGroupInput } from '@/lib/mock/orgs';
 export { compass } from '@/lib/mock/api';
 
 /** Change notification. In the real build this is the realtime channel. */
@@ -98,6 +99,10 @@ export {
   setOrgRight,
   listStationRecords,
   addStation,
+  recipientGroupsNow,
+  listRecipientGroups,
+  saveRecipientGroup,
+  removeRecipientGroup,
 } from '@/lib/mock/orgs';
 export { actingUser } from '@/lib/mock/api';
 export { RIGHT_LABELS } from '@/lib/mock/seed/orgs';

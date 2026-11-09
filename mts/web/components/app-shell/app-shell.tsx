@@ -3,12 +3,13 @@
 import { SHOW_EXTRAS } from '@/lib/extras';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AlertTriangle, CalendarClock, LogOut, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
+import { AlertTriangle, CalendarClock, ChevronDown, LogOut, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DemoDock } from './demo-dock';
 import { InactivityWarning } from './inactivity-warning';
 import { NAV_ITEMS } from './nav-config';
+import { STATIONS } from '@/lib/mock/seed/stations';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useActing, useDataRevision } from '@/lib/use-data';
 import type { MaintenanceWindow } from '@/lib/api/types';
@@ -105,6 +106,44 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav aria-label="Primary" className="ml-4 hidden items-center gap-0.5 lg:flex">
             {NAV_ITEMS.map((item) => {
               const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+              if (item.stations) {
+                return (
+                  <DropdownMenu key={item.href}>
+                    <DropdownMenuTrigger
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'flex items-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70',
+                        active
+                          ? 'bg-white/15 font-medium text-white'
+                          : 'text-header-muted hover:bg-white/10 hover:text-white',
+                      )}
+                    >
+                      {item.label}
+                      <ChevronDown className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                      <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                        Go to a station
+                      </DropdownMenuLabel>
+                      {STATIONS.map((st) => {
+                        const here = pathname.startsWith(`/stations/${st.id}`);
+                        return (
+                          <DropdownMenuItem key={st.id} asChild>
+                            <Link
+                              href={`/stations/${st.id}`}
+                              aria-current={here ? 'page' : undefined}
+                              className={cn('cursor-pointer', here && 'font-semibold text-primary-strong')}
+                            >
+                              <span className="tabular w-5 text-muted-foreground">{st.ordinal}.</span>
+                              {st.name}
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
               return (
                 <Link
                   key={item.href}
@@ -228,7 +267,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {menuOpen ? (
           <nav aria-label="Primary" className="border-t border-header-border px-3 pb-3 lg:hidden">
             <ul className="grid grid-cols-2 gap-1 pt-2">
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.filter((item) => !item.stations).map((item) => (
                 <li key={item.href}>
                   <Link
                     href={item.href}
@@ -236,6 +275,25 @@ export function AppShell({ children }: { children: ReactNode }) {
                     className="block rounded-md px-3 py-2 text-sm text-header-muted hover:bg-white/10 hover:text-white"
                   >
                     {item.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 border-t border-header-border px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-header-muted">
+              Stations
+            </p>
+            <ul className="grid grid-cols-2 gap-1 pt-1">
+              {STATIONS.map((st) => (
+                <li key={st.id}>
+                  <Link
+                    href={`/stations/${st.id}`}
+                    onClick={() => setMenuOpen(false)}
+                    className={cn(
+                      'block rounded-md px-3 py-2 text-sm hover:bg-white/10 hover:text-white',
+                      pathname.startsWith(`/stations/${st.id}`) ? 'bg-white/15 text-white' : 'text-header-muted',
+                    )}
+                  >
+                    {st.ordinal}. {st.name}
                   </Link>
                 </li>
               ))}

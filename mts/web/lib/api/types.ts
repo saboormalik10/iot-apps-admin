@@ -168,6 +168,20 @@ export interface PumpCondition {
   bearingTempC: number;
 }
 
+/**
+ * One pump run, from the pump panel's run signal: when it started and stopped, and
+ * the water level at each (client, 9 Nov 2026). No stop while it is still running.
+ */
+export interface PumpRun {
+  pump: PumpRole;
+  start: number;
+  stop?: number;
+  levelStartMm: number;
+  levelStopMm?: number;
+  /** The weekly exercise run, not a flood. */
+  exercise?: boolean;
+}
+
 export interface PumpStationLive {
   id: string;
   label: string;
@@ -177,6 +191,8 @@ export interface PumpStationLive {
   condition: PumpCondition;
   setpoints: { pumpStartMm: number; highHighMm: number; railFootMm: number };
   activity: ActivityEntry[];
+  /** Every run in the last 7 days, newest first. */
+  runs: PumpRun[];
 }
 
 export interface ActivityEntry {
@@ -396,6 +412,19 @@ export interface RuleSimulation {
 
 export type ChannelId = 'screen' | 'push' | 'email' | 'sms';
 
+/**
+ * A named group an alert rule sends to (Admin → Recipients): who is in it and how
+ * they hear (client, 9 Nov 2026: "Where do I define these recipients?").
+ */
+export interface RecipientGroup {
+  id: string;
+  label: string;
+  description: string;
+  /** Users in the group, by id. */
+  memberIds: string[];
+  channels: ChannelId[];
+}
+
 export interface Channel {
   id: ChannelId;
   label: string;
@@ -511,7 +540,7 @@ export interface AuditEntry {
   actor: string;
   action: string;
   detail: string;
-  category: 'user' | 'role' | 'rule' | 'alert' | 'pump' | 'auth' | 'maintenance' | 'organisation' | 'station';
+  category: 'user' | 'role' | 'rule' | 'alert' | 'pump' | 'auth' | 'maintenance' | 'organisation' | 'station' | 'recipients';
 }
 
 // ── health ──────────────────────────────────────────────────────────────────

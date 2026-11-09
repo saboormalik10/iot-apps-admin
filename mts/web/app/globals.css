@@ -60,3 +60,31 @@
     break-inside: avoid;
   }
 }
+
+/* The map's hover card (Mapbox popup) in the portal's own colours, so it reads in
+   light and dark themes — Mapbox paints it white whatever the theme, and its stylesheet loads after
+   this one, hence the .mapboxgl-map prefix. */
+.mapboxgl-map .mapboxgl-popup-content {
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  padding: 10px 12px;
+}
+.mapboxgl-map .mapboxgl-popup-anchor-top .mapboxgl-popup-tip,
+.mapboxgl-map .mapboxgl-popup-anchor-top-left .mapboxgl-popup-tip,
+.mapboxgl-map .mapboxgl-popup-anchor-top-right .mapboxgl-popup-tip {
+  border-bottom-color: hsl(var(--popover));
+}
+.mapboxgl-map .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip,
+.mapboxgl-map .mapboxgl-popup-anchor-bottom-left .mapboxgl-popup-tip,
+.mapboxgl-map .mapboxgl-popup-anchor-bottom-right .mapboxgl-popup-tip {
+  border-top-color: hsl(var(--popover));
+}
+.mapboxgl-map .mapboxgl-popup-anchor-left .mapboxgl-popup-tip {
+  border-right-color: hsl(var(--popover));
+}
+.mapboxgl-map .mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
+  border-left-color: hsl(var(--popover));
+}

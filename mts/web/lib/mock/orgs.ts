@@ -1,5 +1,6 @@
 import type {
   Organization,
+  RecipientGroup,
   OrgRight,
   StationInput,
   StationMeasure,
@@ -191,4 +192,51 @@ export async function addStation(input: StationInput): Promise<string> {
     'station',
   );
   return settle(id, 240);
+}
+
+// ── recipient groups (Admin → Recipients) ───────────────────────────────────
+
+/** The groups as they stand in this session, for the rule editor's chips. */
+export function recipientGroupsNow(): RecipientGroup[] {
+  return getStore().recipientGroups;
+}
+
+export async function listRecipientGroups(): Promise<RecipientGroup[]> {
+  return settle(recipientGroupsNow().map((g) => ({ ...g, memberIds: [...g.memberIds], channels: [...g.channels] })));
+}
+
+export interface RecipientGroupInput {
+  id?: string;
+  label: string;
+  description: string;
+  memberIds: string[];
+  channels: RecipientGroup['channels'];
+}
+
+/** Adds a group, or saves changes to one. Returns its id. */
+export async function saveRecipientGroup(input: RecipientGroupInput): Promise<string> {
+  const store = getStore();
+  const existing = input.id ? store.recipientGroups.find((g) => g.id === input.id) : undefined;
+  const id = existing?.id ?? `grp-${input.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${store.recipientGroups.length + 1}`;
+  const group: RecipientGroup = { id, label: input.label, description: input.description, memberIds: input.memberIds, channels: input.channels };
+  mutate((s) => {
+    const i = s.recipientGroups.findIndex((g) => g.id === id);
+    if (i >= 0) s.recipientGroups[i] = group;
+    else s.recipientGroups.push(group);
+  });
+  recordAudit(
+    existing ? 'Recipient group edited' : 'Recipient group added',
+    `${input.label} — ${input.memberIds.length} member${input.memberIds.length === 1 ? '' : 's'} · ${input.channels.join(', ')}`,
+    'recipients',
+  );
+  return settle(id, 220);
+}
+
+export async function removeRecipientGroup(id: string): Promise<void> {
+  const group = getStore().recipientGroups.find((g) => g.id === id);
+  mutate((s) => {
+    s.recipientGroups = s.recipientGroups.filter((g) => g.id !== id);
+  });
+  recordAudit('Recipient group removed', group?.label ?? id, 'recipients');
+  return settle(undefined, 220);
 }

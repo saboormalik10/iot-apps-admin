@@ -9,6 +9,7 @@ import { maintenanceNow } from '@/lib/api/endpoints';
 import { SHOW_EXTRAS } from '@/lib/extras';
 import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { Wrench } from 'lucide-react';
+import { MapLegend } from './map-legend';
 
 /**
  * The corridor, drawn as a schematic.
@@ -52,9 +53,15 @@ const SOUTHWEST = 'M 4,94 C 18,91 30,90 44,87 C 58,84 72,81 96,76';
 export function CorridorMap({
   stations,
   className,
+  showHealth = false,
+  onSelect,
 }: {
   stations: StationLive[];
   className?: string;
+  /** Open the station's quick view instead of its page (client, 9 Nov 2026). */
+  onSelect?: (id: StationLive['location']['id']) => void;
+  /** Battery and signal on each card — off unless asked for (client, 9 Nov 2026). */
+  showHealth?: boolean;
 }) {
   const online = stations.filter((s) => s.status !== 'offline').length;
   return (
@@ -95,7 +102,7 @@ export function CorridorMap({
           the schematic readable on a phone, where the cards move to the list. */}
       {stations.map((s) => (
         <div key={s.location.id} className="contents">
-          <StationPin station={s} />
+          <StationPin station={s} onSelect={onSelect} />
         </div>
       ))}
 
@@ -104,13 +111,27 @@ export function CorridorMap({
           pins and the cards become the list underneath. */}
       <div className="pointer-events-none absolute inset-0 hidden xl:block">
         {stations.map((s) => (
-          <StationCard key={s.location.id} station={s} />
+          <StationCard key={s.location.id} station={s} showHealth={showHealth} onSelect={onSelect} />
         ))}
       </div>
 
       <Legend online={online} total={stations.length} />
     </div>
   );
+}
+
+type Select = (id: StationLive['location']['id']) => void;
+
+/**
+ * A plain click opens the quick view over the map; a modified click (new tab,
+ * new window) still follows the link to the station page.
+ */
+function quickView(station: StationLive, onSelect?: Select) {
+  return (e: React.MouseEvent) => {
+    if (!onSelect || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    onSelect(station.location.id);
+  };
 }
 
 const TONE_RING: Record<string, string> = {
@@ -120,12 +141,13 @@ const TONE_RING: Record<string, string> = {
   normal: 'border-sev-normal text-sev-normal-strong',
 };
 
-function StationPin({ station }: { station: StationLive }) {
+function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Select }) {
   const tone = stationTone(station.status);
   const { x, y, labelSide } = station.location.map;
   return (
     <Link
       href={`/stations/${station.location.id}`}
+      onClick={quickView(station, onSelect)}
       title={station.location.name}
       className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{ left: `${x}%`, top: `${y}%` }}
@@ -170,7 +192,15 @@ function StationPin({ station }: { station: StationLive }) {
   );
 }
 
-function StationCard({ station }: { station: StationLive }) {
+function StationCard({
+  station,
+  showHealth,
+  onSelect,
+}: {
+  station: StationLive;
+  showHealth: boolean;
+  onSelect?: Select;
+}) {
   const { x, y, labelSide } = station.location.map;
   const tone = stationTone(station.status);
   /* The order the client's Figure 6 lists them in, and never more than four —
@@ -192,6 +222,7 @@ function StationCard({ station }: { station: StationLive }) {
     >
       <Link
         href={`/stations/${station.location.id}`}
+        onClick={quickView(station, onSelect)}
         className="block rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="mb-1 flex items-start justify-between gap-1">
@@ -240,9 +271,10 @@ function StationCard({ station }: { station: StationLive }) {
           ))}
         </dl>
         <p className="mt-1 truncate text-[11px] text-muted-foreground">
-          batt {station.location.loggers[0].batteryPct}% ·{' '}
-          {station.location.loggers[0].signal.network} {station.location.loggers[0].signal.rssiDbm}{' '}
-          · {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
+          {showHealth
+            ? `batt ${station.location.loggers[0].batteryPct}% · ${station.location.loggers[0].signal.network} ${station.location.loggers[0].signal.rssiDbm} · `
+            : 'updated '}
+          {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
         </p>
       </Link>
     </div>
@@ -251,38 +283,39 @@ function StationCard({ station }: { station: StationLive }) {
 
 function Legend({ online, total }: { online: number; total: number }) {
   return (
-    <div className="absolute right-3 top-3 hidden rounded-md border bg-card/95 p-3 text-[11px] shadow-sm backdrop-blur-sm xl:block">
-      <p className="font-semibold">Legend</p>
-      <p className="mb-1.5 text-muted-foreground">
-        {online}/{total} locations reporting · refresh 10 min
-      </p>
-      <ul className="space-y-1">
-        <li className="flex items-center gap-2">
-          <StatusDot tone="normal" /> Normal — within thresholds
-        </li>
-        <li className="flex items-center gap-2">
-          <StatusDot tone="warning" /> Approaching threshold
-        </li>
-        <li className="flex items-center gap-2">
-          <StatusDot tone="alert" /> Alert active
-        </li>
-        <li className="flex items-center gap-2">
-          <StatusDot tone="offline" /> Sensor offline
-        </li>
-      </ul>
-      <p className="mt-2 border-t pt-1.5 text-muted-foreground">
-        Readings shown as value /threshold
-        <br />
-        Rain mm/hr · Wind km/h · Temp °C · Level mm
-      </p>
-      <p
-        className={cn(
-          'mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground',
-          !SHOW_EXTRAS && 'hidden',
-        )}
-      >
-        <Wrench className="h-3 w-3 text-sev-warning-strong" aria-hidden /> maintenance mode
-      </p>
+    <div className="absolute right-3 top-3 z-10 hidden xl:block">
+      <MapLegend>
+        <p className="mb-1.5 text-muted-foreground">
+          {online}/{total} locations reporting · refresh 10 min
+        </p>
+        <ul className="space-y-1">
+          <li className="flex items-center gap-2">
+            <StatusDot tone="normal" /> Normal — within thresholds
+          </li>
+          <li className="flex items-center gap-2">
+            <StatusDot tone="warning" /> Approaching threshold
+          </li>
+          <li className="flex items-center gap-2">
+            <StatusDot tone="alert" /> Alert active
+          </li>
+          <li className="flex items-center gap-2">
+            <StatusDot tone="offline" /> Sensor offline
+          </li>
+        </ul>
+        <p className="mt-2 border-t pt-1.5 text-muted-foreground">
+          Readings shown as value /threshold
+          <br />
+          Rain mm/hr · Wind km/h · Temp °C · Level mm
+        </p>
+        <p
+          className={cn(
+            'mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground',
+            !SHOW_EXTRAS && 'hidden',
+          )}
+        >
+          <Wrench className="h-3 w-3 text-sev-warning-strong" aria-hidden /> maintenance mode
+        </p>
+      </MapLegend>
     </div>
   );
 }

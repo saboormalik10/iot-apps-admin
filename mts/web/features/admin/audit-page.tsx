@@ -26,6 +26,7 @@ const CATEGORY_STYLE: Record<AuditEntry['category'], string> = {
   auth: 'bg-muted text-muted-foreground',
   organisation: 'bg-header text-header-foreground',
   station: 'bg-primary/10 text-primary-strong',
+  recipients: 'bg-sev-info-tint text-sev-info-strong',
 };
 
 export function AuditPage() {

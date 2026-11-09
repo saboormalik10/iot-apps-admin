@@ -11,6 +11,7 @@ import {
   listRules,
   saveRule,
   setRuleEnabled,
+  recipientGroupsNow,
 } from '@/lib/api/endpoints';
 import { LoadingState } from '@/components/screen-states';
 import { StatusPill, severityTone } from '@/components/status/status-pill';
@@ -20,7 +21,6 @@ import { Switch } from '@/components/ui/switch';
 import { useDemoClock } from '@/lib/demo-clock';
 import { fmtRelative } from '@/lib/format';
 import { CHANNELS } from '@/lib/mock/seed/rules';
-import { RECIPIENT_GROUPS } from '@/lib/mock/seed/people';
 import { STATIONS } from '@/lib/mock/seed/stations';
 import { stationName } from '@/lib/mock/store';
 import { toast } from '@/lib/hooks/use-toast';
@@ -625,7 +625,8 @@ function RuleDrawer({
 
         <Section title="Recipients & channels">
           <div className="flex flex-wrap gap-1.5">
-            {RECIPIENT_GROUPS.map((g) => {
+            {/* The groups as edited under Admin → Recipients. */}
+            {recipientGroupsNow().map((g) => {
               const on = draft.recipients.includes(g.id);
               return (
                 <button
