@@ -3,7 +3,7 @@
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Map as MapboxMap, Marker, Popup } from 'mapbox-gl';
+import type { Map as MapboxMap, Marker, Popup, StyleSpecification } from 'mapbox-gl';
 import type { StationLive } from '@/lib/api/types';
 import { PARAMETER_LABELS } from '@/lib/api/endpoints';
 import { DEMO_COORDINATES } from '@/lib/map/demo-coordinates';
@@ -13,17 +13,42 @@ import { fmtValue } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * The corridor on a real map — street or satellite (client, 9 Nov 2026), from
- * Mapbox. Stations sit at demo coordinates until MTS supplies surveyed positions.
+ * The corridor on a real map — street or satellite (client, 9 Nov 2026). The
+ * street map is Mapbox's. The satellite photos are Esri World Imagery, with Esri's
+ * road and place-name overlays: Mapbox refused satellite tiles for this account
+ * (429 on the first request), and Esri's tiles need no key. Esri's terms are to be
+ * confirmed before the delivered system uses them. Stations sit at demo coordinates until MTS supplies surveyed positions.
  * Each pin carries its number and its status colour; hovering shows the live
  * readings, clicking opens the station, the same as the plain schematic.
  */
 
 export type GeoStyle = 'map' | 'satellite';
 
-const STYLE_URL: Record<GeoStyle, string> = {
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
+const esriLayer = (path: string) => ({
+  type: 'raster' as const,
+  tiles: [`${ESRI}/${path}/MapServer/tile/{z}/{y}/{x}`],
+  tileSize: 256,
+  maxzoom: 19,
+});
+
+const SATELLITE: StyleSpecification = {
+  version: 8,
+  sources: {
+    imagery: { ...esriLayer('World_Imagery'), attribution: 'Imagery © Esri, Maxar, Earthstar Geographics' },
+    roads: esriLayer('Reference/World_Transportation'),
+    places: esriLayer('Reference/World_Boundaries_and_Places'),
+  },
+  layers: [
+    { id: 'imagery', type: 'raster', source: 'imagery' },
+    { id: 'roads', type: 'raster', source: 'roads' },
+    { id: 'places', type: 'raster', source: 'places' },
+  ],
+};
+
+const STYLE_URL: Record<GeoStyle, string | StyleSpecification> = {
   map: 'mapbox://styles/mapbox/streets-v12',
-  satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+  satellite: SATELLITE,
 };
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
