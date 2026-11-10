@@ -144,6 +144,7 @@ export function CorridorPage() {
             stations={stations}
             mapStyle={view}
             onSelect={setSelected}
+            showHealth={showHealth}
             className="aspect-[5/4] max-h-[560px] sm:aspect-[16/10] lg:aspect-[16/8]"
           />
         )}

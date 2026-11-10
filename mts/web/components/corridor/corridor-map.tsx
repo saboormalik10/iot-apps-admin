@@ -111,7 +111,12 @@ export function CorridorMap({
           pins and the cards become the list underneath. */}
       <div className="pointer-events-none absolute inset-0 hidden xl:block">
         {stations.map((s) => (
-          <StationCard key={s.location.id} station={s} showHealth={showHealth} onSelect={onSelect} />
+          <StationCard
+            key={s.location.id}
+            station={s}
+            showHealth={showHealth}
+            onSelect={onSelect}
+          />
         ))}
       </div>
 
@@ -120,13 +125,13 @@ export function CorridorMap({
   );
 }
 
-type Select = (id: StationLive['location']['id']) => void;
+export type Select = (id: StationLive['location']['id']) => void;
 
 /**
  * A plain click opens the quick view over the map; a modified click (new tab,
  * new window) still follows the link to the station page.
  */
-function quickView(station: StationLive, onSelect?: Select) {
+export function quickView(station: StationLive, onSelect?: Select) {
   return (e: React.MouseEvent) => {
     if (!onSelect || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
@@ -141,18 +146,11 @@ const TONE_RING: Record<string, string> = {
   normal: 'border-sev-normal text-sev-normal-strong',
 };
 
-function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Select }) {
+/** The numbered ring in the station's status colour — the same on every map view. */
+export function PinFace({ station }: { station: StationLive }) {
   const tone = stationTone(station.status);
-  const { x, y, labelSide } = station.location.map;
   return (
-    <Link
-      href={`/stations/${station.location.id}`}
-      onClick={quickView(station, onSelect)}
-      title={station.location.name}
-      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      style={{ left: `${x}%`, top: `${y}%` }}
-    >
-      <span className="sr-only">{station.location.name}</span>
+    <>
       <span
         className={cn(
           'flex h-7 w-7 items-center justify-center rounded-full border-2 bg-card text-xs font-bold shadow-sm',
@@ -163,7 +161,7 @@ function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Se
         {station.location.ordinal}
       </span>
       {/* Shape, not just hue: an alert carries a triangle a colour-blind reader
-          (or a monochrome printout) can still see. */}
+        (or a monochrome printout) can still see. */}
       {tone === 'alert' ? (
         <span
           className="absolute -left-2.5 -top-1 text-[11px] leading-none text-sev-alert"
@@ -180,6 +178,22 @@ function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Se
           ⊘
         </span>
       ) : null}
+    </>
+  );
+}
+
+function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Select }) {
+  const { x, y, labelSide } = station.location.map;
+  return (
+    <Link
+      href={`/stations/${station.location.id}`}
+      onClick={quickView(station, onSelect)}
+      title={station.location.name}
+      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ left: `${x}%`, top: `${y}%` }}
+    >
+      <span className="sr-only">{station.location.name}</span>
+      <PinFace station={station} />
       {/* A stem pointing at this station's card, so pin and reading read as one. */}
       <span
         className={cn(
@@ -202,6 +216,30 @@ function StationCard({
   onSelect?: Select;
 }) {
   const { x, y, labelSide } = station.location.map;
+  return (
+    <div
+      className="pointer-events-auto absolute w-[168px]"
+      style={{
+        left: `${x}%`,
+        top: `${y}%`,
+        transform: `translate(-50%, ${labelSide === 'above' ? 'calc(-100% - 22px)' : '22px'})`,
+      }}
+    >
+      <StationCardBody station={station} showHealth={showHealth} onSelect={onSelect} />
+    </div>
+  );
+}
+
+/** The reading card itself — the same on the plain, map and satellite views. */
+export function StationCardBody({
+  station,
+  showHealth,
+  onSelect,
+}: {
+  station: StationLive;
+  showHealth: boolean;
+  onSelect?: Select;
+}) {
   const tone = stationTone(station.status);
   /* The order the client's Figure 6 lists them in, and never more than four —
      a card that grows past that stops being glanceable. */
@@ -212,72 +250,60 @@ function StationCard({
     .slice(0, 4);
 
   return (
-    <div
-      className="pointer-events-auto absolute w-[168px]"
-      style={{
-        left: `${x}%`,
-        top: `${y}%`,
-        transform: `translate(-50%, ${labelSide === 'above' ? 'calc(-100% - 22px)' : '22px'})`,
-      }}
+    <Link
+      href={`/stations/${station.location.id}`}
+      onClick={quickView(station, onSelect)}
+      className="block rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Link
-        href={`/stations/${station.location.id}`}
-        onClick={quickView(station, onSelect)}
-        className="block rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <div className="mb-1 flex items-start justify-between gap-1">
-          {/* Wrapping, not truncating: "Marrickville–Dulwich Hill" was an ellipsis
-              on every screen, and a location you cannot name is not on the map. */}
-          <span className="text-xs font-semibold leading-tight">
-            <span className="text-muted-foreground">{station.location.ordinal}.</span>{' '}
-            {station.location.name}
-          </span>
-          <span className="mt-0.5 flex shrink-0 items-center gap-1">
-            {maintenanceNow(station.location.id).on ? (
-              <Wrench
-                className="h-3 w-3 text-sev-warning-strong"
-                aria-label="In maintenance mode"
-              />
-            ) : null}
-            <StatusDot tone={tone} />
-          </span>
-        </div>
-        <dl className="space-y-0.5">
-          {shown.map((r) => (
-            <div
-              key={r.sensorId + r.parameter}
-              className="flex items-baseline justify-between gap-2 text-[11px]"
+      <div className="mb-1 flex items-start justify-between gap-1">
+        {/* Wrapping, not truncating: "Marrickville–Dulwich Hill" was an ellipsis
+          on every screen, and a location you cannot name is not on the map. */}
+        <span className="text-xs font-semibold leading-tight">
+          <span className="text-muted-foreground">{station.location.ordinal}.</span>{' '}
+          {station.location.name}
+        </span>
+        <span className="mt-0.5 flex shrink-0 items-center gap-1">
+          {maintenanceNow(station.location.id).on ? (
+            <Wrench className="h-3 w-3 text-sev-warning-strong" aria-label="In maintenance mode" />
+          ) : null}
+          <StatusDot tone={tone} />
+        </span>
+      </div>
+      <dl className="space-y-0.5">
+        {shown.map((r) => (
+          <div
+            key={r.sensorId + r.parameter}
+            className="flex items-baseline justify-between gap-2 text-[11px]"
+          >
+            <dt className="truncate text-muted-foreground">
+              {shortLabel(r.parameter)}
+              {r.sensorId.includes('-UP-') ? ' up' : r.sensorId.includes('-DN-') ? ' down' : ''}
+            </dt>
+            <dd
+              className={cn(
+                'tabular font-medium',
+                r.status === 'alert' && 'text-sev-alert-strong',
+                r.status === 'warning' && 'text-sev-warning-strong',
+              )}
             >
-              <dt className="truncate text-muted-foreground">
-                {shortLabel(r.parameter)}
-                {r.sensorId.includes('-UP-') ? ' up' : r.sensorId.includes('-DN-') ? ' down' : ''}
-              </dt>
-              <dd
-                className={cn(
-                  'tabular font-medium',
-                  r.status === 'alert' && 'text-sev-alert-strong',
-                  r.status === 'warning' && 'text-sev-warning-strong',
-                )}
-              >
-                {renderValue(r.parameter, r.value)}
-                {/* Figure 6: each reading is shown against its line. */}
-                {LINE[r.parameter] !== undefined ? (
-                  <span className="font-normal text-muted-foreground"> /{LINE[r.parameter]}</span>
-                ) : null}
-                <span className="ml-0.5 font-normal text-muted-foreground">{r.unit}</span>
-                {r.status === 'alert' ? ' ▲' : ''}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-1 truncate text-[11px] text-muted-foreground">
-          {showHealth
-            ? `batt ${station.location.loggers[0].batteryPct}% · ${station.location.loggers[0].signal.network} ${station.location.loggers[0].signal.rssiDbm} · `
-            : 'updated '}
-          {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
-        </p>
-      </Link>
-    </div>
+              {renderValue(r.parameter, r.value)}
+              {/* Figure 6: each reading is shown against its line. */}
+              {LINE[r.parameter] !== undefined ? (
+                <span className="font-normal text-muted-foreground"> /{LINE[r.parameter]}</span>
+              ) : null}
+              <span className="ml-0.5 font-normal text-muted-foreground">{r.unit}</span>
+              {r.status === 'alert' ? ' ▲' : ''}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">
+        {showHealth
+          ? `batt ${station.location.loggers[0].batteryPct}% · ${station.location.loggers[0].signal.network} ${station.location.loggers[0].signal.rssiDbm} · `
+          : 'updated '}
+        {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
+      </p>
+    </Link>
   );
 }
 
@@ -285,38 +311,47 @@ function Legend({ online, total }: { online: number; total: number }) {
   return (
     <div className="absolute right-3 top-3 z-10 hidden xl:block">
       <MapLegend>
-        <p className="mb-1.5 text-muted-foreground">
-          {online}/{total} locations reporting · refresh 10 min
-        </p>
-        <ul className="space-y-1">
-          <li className="flex items-center gap-2">
-            <StatusDot tone="normal" /> Normal — within thresholds
-          </li>
-          <li className="flex items-center gap-2">
-            <StatusDot tone="warning" /> Approaching threshold
-          </li>
-          <li className="flex items-center gap-2">
-            <StatusDot tone="alert" /> Alert active
-          </li>
-          <li className="flex items-center gap-2">
-            <StatusDot tone="offline" /> Sensor offline
-          </li>
-        </ul>
-        <p className="mt-2 border-t pt-1.5 text-muted-foreground">
-          Readings shown as value /threshold
-          <br />
-          Rain mm/hr · Wind km/h · Temp °C · Level mm
-        </p>
-        <p
-          className={cn(
-            'mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground',
-            !SHOW_EXTRAS && 'hidden',
-          )}
-        >
-          <Wrench className="h-3 w-3 text-sev-warning-strong" aria-hidden /> maintenance mode
-        </p>
+        <LegendBody online={online} total={total} />
       </MapLegend>
     </div>
+  );
+}
+
+/** What the legend says — shared by the plain, map and satellite views. */
+export function LegendBody({ online, total }: { online: number; total: number }) {
+  return (
+    <>
+      <p className="mb-1.5 text-muted-foreground">
+        {online}/{total} locations reporting · refresh 10 min
+      </p>
+      <ul className="space-y-1">
+        <li className="flex items-center gap-2">
+          <StatusDot tone="normal" /> Normal — within thresholds
+        </li>
+        <li className="flex items-center gap-2">
+          <StatusDot tone="warning" /> Approaching threshold
+        </li>
+        <li className="flex items-center gap-2">
+          <StatusDot tone="alert" /> Alert active
+        </li>
+        <li className="flex items-center gap-2">
+          <StatusDot tone="offline" /> Sensor offline
+        </li>
+      </ul>
+      <p className="mt-2 border-t pt-1.5 text-muted-foreground">
+        Readings shown as value /threshold
+        <br />
+        Rain mm/hr · Wind km/h · Temp °C · Level mm
+      </p>
+      <p
+        className={cn(
+          'mt-2 flex items-center gap-1.5 border-t pt-1.5 text-muted-foreground',
+          !SHOW_EXTRAS && 'hidden',
+        )}
+      >
+        <Wrench className="h-3 w-3 text-sev-warning-strong" aria-hidden /> maintenance mode
+      </p>
+    </>
   );
 }
 
