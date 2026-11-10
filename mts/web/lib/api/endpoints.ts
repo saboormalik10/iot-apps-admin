@@ -45,6 +45,7 @@ export {
   stationStatusFrom,
   PARAMETER_LABELS,
   PARAMETER_UNITS,
+  rainTotalsNow,
 } from '@/lib/mock/api';
 
 /** The operational charts' data — derived from the same curves as everything else. */

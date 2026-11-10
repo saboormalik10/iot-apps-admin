@@ -295,6 +295,22 @@ function withLivePower(station: (typeof STATIONS)[number], t: number) {
 }
 
 
+/** The rain gauge's rolling totals, mm — the 10-minute, 1, 6 and 24-hour windows of §5.1. */
+export function rainTotalsNow(locationId: LocationId): {
+  m10: number | null;
+  h1: number | null;
+  h6: number | null;
+  h24: number | null;
+} {
+  const t = now();
+  return {
+    m10: valueAt('rain_10m', locationId, t),
+    h1: valueAt('rain_1h', locationId, t),
+    h6: valueAt('rain_6h', locationId, t),
+    h24: valueAt('rain_24h', locationId, t),
+  };
+}
+
 export async function listStations(): Promise<StationLive[]> {
   const t = now();
   return settle(

@@ -43,7 +43,7 @@ The proposal promises 30 features in scope, and MTS has asked for 7 more (9 Nov 
 | 3 | Live header: Sydney time, active-alert count, stations online, alert banner | Fig 6 | Prototype, System | MAP-07, 08 |
 | 4 | Trends: wind mean and gust, rainfall, temperature, humidity, with dashed thresholds | Fig 7 | Prototype, System | TRD-01 to 04 |
 | 5 | Flood-event screen: two-location level series, pumps, vicinity inset, event log | Fig 8 | Prototype, System | FLD-01 to 03 |
-| 6 | Station page: live readings, station health, level trend against thresholds | §5.6, Fig 12 | Prototype, System | STN-01 to 03 |
+| 6 | Station page: status summary, readings grouped by theme with charts, station health, level trend against thresholds | §5.6, Fig 12 | Prototype, System | STN-01 to 03 |
 | 7 | Pump status from the pump panel's run signal: ON in green, OFF, since when, today's run time | §5.5, MTS request | Prototype, System | PMP-01, 04, 05 |
 | 8 | Pump run log: start and stop time, water level at start and at stop, last 7 days | MTS request | Prototype, System | PMP-02, 03, 07 |
 | 9 | Pumps monitored only: no control in the portal; run signal wired from the existing panel | MTS request | Prototype, Site | PMP-06, 08 |
@@ -128,11 +128,11 @@ The proposal promises 30 features in scope, and MTS has asked for 7 more (9 Nov 
 
 | ID | Test | Steps | Expected result | Where | Result |
 | --- | --- | --- | --- | --- | --- |
-| STN-01 | Live sensor readings | Open **Station** for Marrickville | Rainfall, water level and float switch cards, each with value, model, threshold and status pill | Prototype, System | |
-| STN-02 | Station health | Read the health card | Battery and charging, and cellular signal | Prototype, System | |
-| STN-03 | Level trend | Read the 3-hour chart | Level against pump-start (+100 mm) and high-high (+180 mm) *(pending)*, pump starts marked | Prototype, System | |
-| STN-04 | Last connected | Read the card on each station | **Last connected** date and time for each logger; no enclosure line | Prototype, System | |
-| STN-05 | No data | Stop a logger's telemetry for over 15 minutes | Shows "No data since [time] — logger or network" and the card's badge changes to **No data** | System | |
+| STN-01 | Status summary | Open **Station** for Marrickville, then for Campsie | Marrickville: a red line at the top lists rainfall, water level and float switch as over threshold, each linking to its panel. Campsie: "All readings within their thresholds" | Prototype, System | |
+| STN-02 | Readings grouped by theme | Open each of the 7 stations | Only the panels for the sensors fitted, always in the order Flood, Rain, Wind, Weather (Marrickville adds Pumps). Each shows its main value, status and a 3 h or 24 h chart with the threshold drawn; a panel over threshold has a red edge; rain shows the 1 h / 3 h / 3 day rules as bars; sensor model is behind the ⓘ | Prototype, System | |
+| STN-03 | Level trend | Read the 3-hour chart in the Flood panel | Level against pump-start (+100 mm) and high-high (+180 mm) *(pending)*, pump starts marked | Prototype, System | |
+| STN-04 | Station health and last connected | Read the **Station health** line under the summary on each station | Battery and charging, cellular signal and **Last connected** date and time for each logger; no enclosure line | Prototype, System | |
+| STN-05 | No data | Stop a logger's telemetry for over 15 minutes | The health line shows "No data since [time] — logger or network", the summary names the logger, and the station's badge changes to **No data** | System | |
 
 ### Pump monitoring (PMP)
 

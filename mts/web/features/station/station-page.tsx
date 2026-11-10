@@ -3,42 +3,31 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ChevronLeft, Wrench } from 'lucide-react';
-import type {
-  LocationId,
-  Logger,
-  MaintenanceState,
-  PumpStationLive,
-  StationLive,
-} from '@/lib/api/types';
-import {
-  getMaintenance,
-  getPumpStation,
-  getStation,
-  setMaintenance,
-} from '@/lib/api/endpoints';
+import type { LocationId, MaintenanceState, PumpStationLive, StationLive } from '@/lib/api/types';
+import { getMaintenance, getPumpStation, getStation, setMaintenance } from '@/lib/api/endpoints';
 import { ErrorState, LoadingState } from '@/components/screen-states';
 import { StatusPill, stationTone } from '@/components/status/status-pill';
 import { Button } from '@/components/ui/button';
 import { useDemoClock } from '@/lib/demo-clock';
 import { useDataRevision } from '@/lib/use-data';
 import { toast } from '@/lib/hooks/use-toast';
-import { fmtDateTime, fmtTime } from '@/lib/format';
+import { fmtTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { SHOW_EXTRAS } from '@/lib/extras';
 import { TelemetryPanel } from './equipment-panel';
 import { PumpRunLog, PumpStatusCard } from './pump-panels';
 import { StationTabs } from './station-tabs';
-import { ReadingCard, pointLabel } from './reading-card';
-import { StationCharts } from './station-charts';
+import { FloodPanel, RainPanel, StatusSummary, WeatherPanel, WindPanel } from './station-panels';
 import { PowerPanel, PumpProtectionPanel } from './station-insights';
 
 /**
  * A station, and — where one is fitted — its pump plant.
  *
- * Read top to bottom it answers the questions an operator arrives with, in
- * order: is anything over its line (the reading cards), what are the pumps doing
- * (the plant column), what has the weather been doing (the charts), and is the
- * station itself healthy (telemetry, power, equipment).
+ * Read top to bottom it answers the questions an operator arrives with (client,
+ * 10 Nov 2026: "put some thought on this screen"): is this station OK and, if not,
+ * what is wrong (the summary); is the station itself healthy (the strip under it);
+ * then flood, rain, wind and weather, each a panel with its status, its numbers,
+ * its line and one chart (station-panels.tsx).
  *
  * On a desk the pumps sit in their own column beside the readings. The portal
  * monitors them only (client, 9 Nov 2026): ON/OFF from each pump's run signal and
@@ -71,6 +60,13 @@ export function StationPage({ id }: { id: LocationId }) {
   const hasPump = Boolean(station.location.pumpStation);
   const anyRunning = pump?.pumps.some((p) => p.state === 'running');
   const minute = Math.floor(now / 60_000);
+  const has = (...ps: string[]) => station.location.sensors.some((x) => ps.includes(x.parameter));
+  const panels = [
+    has('water_level', 'float_switch'),
+    has('rainfall'),
+    has('wind_mean', 'wind_gust'),
+    has('temperature', 'humidity', 'pressure'),
+  ].filter(Boolean).length;
 
   const toggleMaintenance = async () => {
     const on = !maintenance?.on;
@@ -176,78 +172,27 @@ export function StationPage({ id }: { id: LocationId }) {
         </div>
       ) : null}
 
+      <StatusSummary station={station} now={now} />
+
       <div
         className={cn(
-          'grid min-w-0 gap-4',
+          'grid min-w-0 items-start gap-4',
           hasPump && 'xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]',
         )}
       >
-        <section className="order-1 min-w-0 xl:order-none xl:col-start-1 xl:row-start-1">
-          <h2 className="mb-2 text-sm font-semibold">Live sensor readings</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {station.readings.map((r) => (
-              <ReadingCard key={r.sensorId + r.parameter} reading={r} station={station.location} />
-            ))}
-
-            {/* Figure 12: station health is the fourth card of the grid, as rows. */}
-            <article
-              className={cn(
-                'rounded-lg border bg-card p-3',
-                (SHOW_EXTRAS || station.readings.length % 2 === 0) && 'sm:col-span-2',
-              )}
-            >
-              <header className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-medium">Station health</h3>
-                {station.location.loggers.some((l) => silent(l, now)) ? (
-                  <StatusPill tone="warning" label="No data" size="sm" />
-                ) : (
-                  <StatusPill tone="normal" size="sm" />
-                )}
-              </header>
-              <div className="space-y-2">
-                {!SHOW_EXTRAS && station.readings.length % 2 === 1
-                  ? station.location.loggers.map((l) => (
-                      <dl key={l.id} className="text-xs">
-                        {station.location.loggers.length > 1 ? (
-                          <p className="font-medium">
-                            {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
-                          </p>
-                        ) : null}
-                        {loggerFacts(l, now).map((f) => (
-                          <Row key={f.label} label={f.label} value={f.value} alert={f.alert} />
-                        ))}
-                      </dl>
-                    ))
-                  : null}
-                {(SHOW_EXTRAS || station.readings.length % 2 === 0) &&
-                  station.location.loggers.map((l) => (
-                    <dl
-                      key={l.id}
-                      className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3"
-                    >
-                      {station.location.loggers.length > 1 ? (
-                        <p className="col-span-2 font-medium sm:col-span-3">
-                          {pointLabel(`-${l.id.includes('UP') ? 'UP' : 'DN'}-`) ?? l.label}
-                        </p>
-                      ) : null}
-                      {loggerFacts(l, now).map((f) => (
-                        <Fact key={f.label} label={f.label} value={f.value} alert={f.alert} />
-                      ))}
-                    </dl>
-                  ))}
-              </div>
-            </article>
-          </div>
-        </section>
-
-        {hasPump && pump ? (
-          <div className="order-3 min-w-0 space-y-4 xl:order-none xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            <PumpStatusCard pump={pump} now={now} />
-            <PumpRunLog runs={pump.runs} now={now} />
-          </div>
-        ) : null}
-
-        <div className="order-2 min-w-0 space-y-4 xl:order-none xl:col-start-1 xl:row-start-2">
+        {/* Flood, rain, wind, weather — always in that order, only what is fitted.
+            Side by side on a wide screen; an odd one out takes the full row. */}
+        <div
+          className={cn(
+            'grid min-w-0 items-start gap-4',
+            !hasPump && panels > 1 && 'xl:grid-cols-2',
+            !hasPump && panels % 2 === 1 && panels > 1 && 'xl:[&>section:first-child]:col-span-2',
+          )}
+        >
+          <FloodPanel station={station} now={now} />
+          <RainPanel station={station} now={now} />
+          <WindPanel station={station} now={now} />
+          <WeatherPanel station={station} now={now} />
           {hasPump && SHOW_EXTRAS ? (
             <PumpProtectionPanel
               minuteKey={minute}
@@ -255,58 +200,19 @@ export function StationPage({ id }: { id: LocationId }) {
               rainMm={station.readings.find((r) => r.parameter === 'rainfall')?.value}
             />
           ) : null}
-          <StationCharts station={station.location} now={now} />
           {SHOW_EXTRAS ? <PowerPanel locationId={id} minuteKey={minute} /> : null}
         </div>
+
+        {hasPump && pump ? (
+          <div className="min-w-0 space-y-4">
+            <PumpStatusCard pump={pump} now={now} />
+            <PumpRunLog runs={pump.runs} now={now} />
+          </div>
+        ) : null}
       </div>
 
       {/* Drawings, wiring and the equipment list are on the Installation tab. */}
       {SHOW_EXTRAS ? <TelemetryPanel locationId={id} now={now} /> : null}
-
-
-    </div>
-  );
-}
-
-function Fact({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
-  return (
-    <div>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={cn('font-medium', alert && 'text-sev-warning-strong')}>{value}</dd>
-    </div>
-  );
-}
-
-/**
- * A logger that has sent nothing for 15 minutes. From the server a logger that is
- * down and a network that is down look the same, so the card says so rather than
- * claiming either (client, 9 Nov 2026).
- */
-const SILENT_MS = 15 * 60_000;
-function silent(l: Logger, now: number): boolean {
-  return now - l.lastSeen > SILENT_MS;
-}
-
-/** What the health card says about one logger: battery, signal, and when it was last heard from. */
-function loggerFacts(l: Logger, now: number): { label: string; value: string; alert?: boolean }[] {
-  const quiet = silent(l, now);
-  return [
-    { label: 'Battery', value: `${l.batteryPct}% · ${l.charging ? 'solar charging' : 'on battery'}` },
-    {
-      label: 'Cellular',
-      value: `${l.signal.network} · ${l.signal.rssiDbm} dBm (${l.signal.rssiDbm >= -85 ? 'good' : l.signal.rssiDbm >= -100 ? 'fair' : 'poor'})`,
-    },
-    quiet
-      ? { label: 'Last connected', value: `No data since ${fmtDateTime(l.lastSeen)} — logger or network`, alert: true }
-      : { label: 'Last connected', value: fmtDateTime(l.lastSeen) },
-  ];
-}
-
-function Row({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
-  return (
-    <div className="flex justify-between gap-3 py-0.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={cn('text-right font-medium text-foreground', alert && 'text-sev-warning-strong')}>{value}</dd>
     </div>
   );
 }
