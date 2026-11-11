@@ -10,7 +10,7 @@ import { SHOW_EXTRAS } from '@/lib/extras';
 import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { Wrench } from 'lucide-react';
 import { MapLegend } from './map-legend';
-import { CardsToggle, useCardsOpen } from './map-cards';
+import { CardClose, CardsToggle, pinClick, useCards, type Cards } from './map-cards';
 
 /**
  * The corridor, drawn as a schematic.
@@ -65,7 +65,8 @@ export function CorridorMap({
   showHealth?: boolean;
 }) {
   const online = stations.filter((s) => s.status !== 'offline').length;
-  const [cardsOpen, toggleCards] = useCardsOpen();
+  const cards = useCards();
+  const ids = stations.map((s) => s.location.id);
   return (
     <div className={cn('relative w-full overflow-hidden rounded-lg border bg-muted/40', className)}>
       <svg
@@ -104,27 +105,28 @@ export function CorridorMap({
           the schematic readable on a phone, where the cards move to the list. */}
       {stations.map((s) => (
         <div key={s.location.id} className="contents">
-          <StationPin station={s} onSelect={onSelect} stem={cardsOpen} />
+          <StationPin station={s} onSelect={onSelect} cards={cards} />
         </div>
       ))}
 
       {/* Reading cards, positioned from the same percentages. Below `xl` there is
           not room for seven of them without overlap, so the map keeps the numbered
           pins and the cards become the list underneath. */}
-      {cardsOpen ? (
-        <div className="pointer-events-none absolute inset-0 hidden xl:block">
-          {stations.map((s) => (
+      <div className="pointer-events-none absolute inset-0 hidden xl:block">
+        {stations
+          .filter((s) => cards.isOpen(s.location.id))
+          .map((s) => (
             <StationCard
               key={s.location.id}
               station={s}
               showHealth={showHealth}
               onSelect={onSelect}
+              onClose={() => cards.close(s.location.id)}
             />
           ))}
-        </div>
-      ) : null}
+      </div>
 
-      <MapControls cardsOpen={cardsOpen} onToggleCards={toggleCards}>
+      <MapControls anyOpen={ids.some(cards.isOpen)} onToggleAll={() => cards.toggleAll(ids)}>
         <LegendBody online={online} total={stations.length} />
       </MapControls>
     </div>
@@ -191,17 +193,18 @@ export function PinFace({ station }: { station: StationLive }) {
 function StationPin({
   station,
   onSelect,
-  stem,
+  cards,
 }: {
   station: StationLive;
   onSelect?: Select;
-  stem: boolean;
+  cards: Cards;
 }) {
   const { x, y, labelSide } = station.location.map;
+  const stem = cards.isOpen(station.location.id);
   return (
     <Link
       href={`/stations/${station.location.id}`}
-      onClick={quickView(station, onSelect)}
+      onClick={pinClick(station.location.id, cards, quickView(station, onSelect))}
       title={station.location.name}
       className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{ left: `${x}%`, top: `${y}%` }}
@@ -226,10 +229,12 @@ function StationCard({
   station,
   showHealth,
   onSelect,
+  onClose,
 }: {
   station: StationLive;
   showHealth: boolean;
   onSelect?: Select;
+  onClose: () => void;
 }) {
   const { x, y, labelSide } = station.location.map;
   return (
@@ -241,7 +246,12 @@ function StationCard({
         transform: `translate(-50%, ${labelSide === 'above' ? 'calc(-100% - 22px)' : '22px'})`,
       }}
     >
-      <StationCardBody station={station} showHealth={showHealth} onSelect={onSelect} />
+      <StationCardBody
+        station={station}
+        showHealth={showHealth}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
     </div>
   );
 }
@@ -251,10 +261,13 @@ export function StationCardBody({
   station,
   showHealth,
   onSelect,
+  onClose,
 }: {
   station: StationLive;
   showHealth: boolean;
   onSelect?: Select;
+  /** The card's ×, on the map views (client, 11 Nov 2026). */
+  onClose?: () => void;
 }) {
   const tone = stationTone(station.status);
   /* The order the client's Figure 6 lists them in, and never more than four —
@@ -266,77 +279,83 @@ export function StationCardBody({
     .slice(0, 4);
 
   return (
-    <Link
-      href={`/stations/${station.location.id}`}
-      onClick={quickView(station, onSelect)}
-      className="block rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="mb-1 flex items-start justify-between gap-1">
-        {/* Wrapping, not truncating: "Marrickville–Dulwich Hill" was an ellipsis
+    <div className="relative">
+      {onClose ? <CardClose name={station.location.name} onClose={onClose} /> : null}
+      <Link
+        href={`/stations/${station.location.id}`}
+        onClick={quickView(station, onSelect)}
+        className="block rounded-md border bg-card/95 p-2 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div className="mb-1 flex items-start justify-between gap-1">
+          {/* Wrapping, not truncating: "Marrickville–Dulwich Hill" was an ellipsis
           on every screen, and a location you cannot name is not on the map. */}
-        <span className="text-xs font-semibold leading-tight">
-          <span className="text-muted-foreground">{station.location.ordinal}.</span>{' '}
-          {station.location.name}
-        </span>
-        <span className="mt-0.5 flex shrink-0 items-center gap-1">
-          {maintenanceNow(station.location.id).on ? (
-            <Wrench className="h-3 w-3 text-sev-warning-strong" aria-label="In maintenance mode" />
-          ) : null}
-          <StatusDot tone={tone} />
-        </span>
-      </div>
-      <dl className="space-y-0.5">
-        {shown.map((r) => (
-          <div
-            key={r.sensorId + r.parameter}
-            className="flex items-baseline justify-between gap-2 text-[11px]"
-          >
-            <dt className="truncate text-muted-foreground">
-              {shortLabel(r.parameter)}
-              {r.sensorId.includes('-UP-') ? ' up' : r.sensorId.includes('-DN-') ? ' down' : ''}
-            </dt>
-            <dd
-              className={cn(
-                'tabular font-medium',
-                r.status === 'alert' && 'text-sev-alert-strong',
-                r.status === 'warning' && 'text-sev-warning-strong',
-              )}
+          <span className="text-xs font-semibold leading-tight">
+            <span className="text-muted-foreground">{station.location.ordinal}.</span>{' '}
+            {station.location.name}
+          </span>
+          <span className="mt-0.5 flex shrink-0 items-center gap-1">
+            {maintenanceNow(station.location.id).on ? (
+              <Wrench
+                className="h-3 w-3 text-sev-warning-strong"
+                aria-label="In maintenance mode"
+              />
+            ) : null}
+            <StatusDot tone={tone} />
+          </span>
+        </div>
+        <dl className="space-y-0.5">
+          {shown.map((r) => (
+            <div
+              key={r.sensorId + r.parameter}
+              className="flex items-baseline justify-between gap-2 text-[11px]"
             >
-              {renderValue(r.parameter, r.value)}
-              {/* Figure 6: each reading is shown against its line. */}
-              {LINE[r.parameter] !== undefined ? (
-                <span className="font-normal text-muted-foreground"> /{LINE[r.parameter]}</span>
-              ) : null}
-              <span className="ml-0.5 font-normal text-muted-foreground">{r.unit}</span>
-              {r.status === 'alert' ? ' ▲' : ''}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-1 truncate text-[11px] text-muted-foreground">
-        {showHealth
-          ? `batt ${station.location.loggers[0].batteryPct}% · ${station.location.loggers[0].signal.network} ${station.location.loggers[0].signal.rssiDbm} · `
-          : 'updated '}
-        {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
-      </p>
-    </Link>
+              <dt className="truncate text-muted-foreground">
+                {shortLabel(r.parameter)}
+                {r.sensorId.includes('-UP-') ? ' up' : r.sensorId.includes('-DN-') ? ' down' : ''}
+              </dt>
+              <dd
+                className={cn(
+                  'tabular font-medium',
+                  r.status === 'alert' && 'text-sev-alert-strong',
+                  r.status === 'warning' && 'text-sev-warning-strong',
+                )}
+              >
+                {renderValue(r.parameter, r.value)}
+                {/* Figure 6: each reading is shown against its line. */}
+                {LINE[r.parameter] !== undefined ? (
+                  <span className="font-normal text-muted-foreground"> /{LINE[r.parameter]}</span>
+                ) : null}
+                <span className="ml-0.5 font-normal text-muted-foreground">{r.unit}</span>
+                {r.status === 'alert' ? ' ▲' : ''}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+          {showHealth
+            ? `batt ${station.location.loggers[0].batteryPct}% · ${station.location.loggers[0].signal.network} ${station.location.loggers[0].signal.rssiDbm} · `
+            : 'updated '}
+          {fmtRelative(station.updatedAt, station.updatedAt + 30_000)}
+        </p>
+      </Link>
+    </div>
   );
 }
 
 /** Top right of every map view: hide/show the cards, and the legend. Cards only
  *  show from xl, so the controls do too. */
 export function MapControls({
-  cardsOpen,
-  onToggleCards,
+  anyOpen,
+  onToggleAll,
   children,
 }: {
-  cardsOpen: boolean;
-  onToggleCards: () => void;
+  anyOpen: boolean;
+  onToggleAll: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="absolute right-3 top-3 z-10 hidden items-start gap-2 xl:flex">
-      <CardsToggle open={cardsOpen} onToggle={onToggleCards} />
+      <CardsToggle anyOpen={anyOpen} onToggle={onToggleAll} />
       <MapLegend>{children}</MapLegend>
     </div>
   );

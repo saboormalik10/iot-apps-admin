@@ -8,7 +8,7 @@ import type { Map as MapboxMap, Marker, StyleSpecification } from 'mapbox-gl';
 import type { LocationId, StationLive } from '@/lib/api/types';
 import { DEMO_COORDINATES } from '@/lib/map/demo-coordinates';
 import { LegendBody, MapControls, PinFace, StationCardBody, quickView } from './corridor-map';
-import { useCardsOpen } from './map-cards';
+import { pinClick, useCards } from './map-cards';
 import { cn } from '@/lib/utils';
 
 /**
@@ -96,7 +96,8 @@ export function GeoMap({
   const heights = useRef<Record<string, number>>({});
   const [, remeasured] = useState(0);
   const [failed, setFailed] = useState(false);
-  const [cardsOpen, toggleCards] = useCardsOpen();
+  const cards = useCards();
+  const ids = stations.map((s) => s.location.id);
 
   // Create the map once; the style switch below swaps only the background.
   useEffect(() => {
@@ -198,7 +199,12 @@ export function GeoMap({
     );
   }
 
-  const layout = place(stations, points, size, heights.current);
+  const layout = place(
+    stations.filter((s) => cards.isOpen(s.location.id)),
+    points,
+    size,
+    heights.current,
+  );
   const online = stations.filter((s) => s.status !== 'offline').length;
 
   return (
@@ -213,7 +219,7 @@ export function GeoMap({
           ? createPortal(
               <Link
                 href={`/stations/${s.location.id}`}
-                onClick={quickView(s, onSelect)}
+                onClick={pinClick(s.location.id, cards, quickView(s, onSelect))}
                 title={s.location.name}
                 className="relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -227,48 +233,51 @@ export function GeoMap({
 
       {/* The reading cards and the lines back to their pins. As on the plain map,
           below xl the cards give way to the station list under the map. */}
-      {cardsOpen ? (
-        <div className="pointer-events-none absolute inset-0 hidden xl:block">
-          <svg className="absolute inset-0 h-full w-full" aria-hidden>
-            {layout.map(({ id, pin, card, above }) => {
-              const x2 = Math.min(Math.max(pin.x, card.left + 12), card.left + card.w - 12);
-              const y2 = above ? card.top + card.h : card.top;
-              const y1 = pin.y + (above ? -14 : 14);
-              return (
-                <g key={id}>
-                  {/* A dark line under a light one reads on streets and on photos alike. */}
-                  <line
-                    x1={pin.x}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke="rgb(0 0 0 / 0.45)"
-                    strokeWidth={3}
-                  />
-                  <line
-                    x1={pin.x}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke="rgb(255 255 255 / 0.95)"
-                    strokeWidth={1.25}
-                  />
-                </g>
-              );
-            })}
-          </svg>
-          {layout.map(({ id, station, card }) => (
-            <div
-              key={id}
-              ref={measure(id)}
-              className="pointer-events-auto absolute"
-              style={{ left: card.left, top: card.top, width: CARD_W }}
-            >
-              <StationCardBody station={station} showHealth={showHealth} onSelect={onSelect} />
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <div className="pointer-events-none absolute inset-0 hidden xl:block">
+        <svg className="absolute inset-0 h-full w-full" aria-hidden>
+          {layout.map(({ id, pin, card, above }) => {
+            const x2 = Math.min(Math.max(pin.x, card.left + 12), card.left + card.w - 12);
+            const y2 = above ? card.top + card.h : card.top;
+            const y1 = pin.y + (above ? -14 : 14);
+            return (
+              <g key={id}>
+                {/* A dark line under a light one reads on streets and on photos alike. */}
+                <line
+                  x1={pin.x}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="rgb(0 0 0 / 0.45)"
+                  strokeWidth={3}
+                />
+                <line
+                  x1={pin.x}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="rgb(255 255 255 / 0.95)"
+                  strokeWidth={1.25}
+                />
+              </g>
+            );
+          })}
+        </svg>
+        {layout.map(({ id, station, card }) => (
+          <div
+            key={id}
+            ref={measure(id)}
+            className="pointer-events-auto absolute"
+            style={{ left: card.left, top: card.top, width: CARD_W }}
+          >
+            <StationCardBody
+              station={station}
+              showHealth={showHealth}
+              onSelect={onSelect}
+              onClose={() => cards.close(id)}
+            />
+          </div>
+        ))}
+      </div>
 
       {failed ? (
         <p className="absolute inset-x-6 top-1/2 z-10 -translate-y-1/2 rounded-md border bg-card px-3 py-2 text-center text-sm text-muted-foreground shadow">
@@ -276,7 +285,7 @@ export function GeoMap({
         </p>
       ) : null}
 
-      <MapControls cardsOpen={cardsOpen} onToggleCards={toggleCards}>
+      <MapControls anyOpen={ids.some(cards.isOpen)} onToggleAll={() => cards.toggleAll(ids)}>
         <LegendBody online={online} total={stations.length} />
         <p className="mt-1.5 border-t pt-1.5 text-muted-foreground">
           Positions are demo coordinates
