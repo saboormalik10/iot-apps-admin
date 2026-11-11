@@ -10,6 +10,7 @@ import { SHOW_EXTRAS } from '@/lib/extras';
 import { THRESHOLDS } from '@/lib/mock/seed/thresholds';
 import { Wrench } from 'lucide-react';
 import { MapLegend } from './map-legend';
+import { CardsToggle, useCardsOpen } from './map-cards';
 
 /**
  * The corridor, drawn as a schematic.
@@ -64,6 +65,7 @@ export function CorridorMap({
   showHealth?: boolean;
 }) {
   const online = stations.filter((s) => s.status !== 'offline').length;
+  const [cardsOpen, toggleCards] = useCardsOpen();
   return (
     <div className={cn('relative w-full overflow-hidden rounded-lg border bg-muted/40', className)}>
       <svg
@@ -102,25 +104,29 @@ export function CorridorMap({
           the schematic readable on a phone, where the cards move to the list. */}
       {stations.map((s) => (
         <div key={s.location.id} className="contents">
-          <StationPin station={s} onSelect={onSelect} />
+          <StationPin station={s} onSelect={onSelect} stem={cardsOpen} />
         </div>
       ))}
 
       {/* Reading cards, positioned from the same percentages. Below `xl` there is
           not room for seven of them without overlap, so the map keeps the numbered
           pins and the cards become the list underneath. */}
-      <div className="pointer-events-none absolute inset-0 hidden xl:block">
-        {stations.map((s) => (
-          <StationCard
-            key={s.location.id}
-            station={s}
-            showHealth={showHealth}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
+      {cardsOpen ? (
+        <div className="pointer-events-none absolute inset-0 hidden xl:block">
+          {stations.map((s) => (
+            <StationCard
+              key={s.location.id}
+              station={s}
+              showHealth={showHealth}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      ) : null}
 
-      <Legend online={online} total={stations.length} />
+      <MapControls cardsOpen={cardsOpen} onToggleCards={toggleCards}>
+        <LegendBody online={online} total={stations.length} />
+      </MapControls>
     </div>
   );
 }
@@ -182,7 +188,15 @@ export function PinFace({ station }: { station: StationLive }) {
   );
 }
 
-function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Select }) {
+function StationPin({
+  station,
+  onSelect,
+  stem,
+}: {
+  station: StationLive;
+  onSelect?: Select;
+  stem: boolean;
+}) {
   const { x, y, labelSide } = station.location.map;
   return (
     <Link
@@ -195,13 +209,15 @@ function StationPin({ station, onSelect }: { station: StationLive; onSelect?: Se
       <span className="sr-only">{station.location.name}</span>
       <PinFace station={station} />
       {/* A stem pointing at this station's card, so pin and reading read as one. */}
-      <span
-        className={cn(
-          'absolute left-1/2 hidden w-px -translate-x-1/2 bg-border xl:block',
-          labelSide === 'above' ? 'bottom-7 h-4' : 'top-7 h-4',
-        )}
-        aria-hidden
-      />
+      {stem ? (
+        <span
+          className={cn(
+            'absolute left-1/2 hidden w-px -translate-x-1/2 bg-border xl:block',
+            labelSide === 'above' ? 'bottom-7 h-4' : 'top-7 h-4',
+          )}
+          aria-hidden
+        />
+      ) : null}
     </Link>
   );
 }
@@ -307,12 +323,21 @@ export function StationCardBody({
   );
 }
 
-function Legend({ online, total }: { online: number; total: number }) {
+/** Top right of every map view: hide/show the cards, and the legend. Cards only
+ *  show from xl, so the controls do too. */
+export function MapControls({
+  cardsOpen,
+  onToggleCards,
+  children,
+}: {
+  cardsOpen: boolean;
+  onToggleCards: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="absolute right-3 top-3 z-10 hidden xl:block">
-      <MapLegend>
-        <LegendBody online={online} total={total} />
-      </MapLegend>
+    <div className="absolute right-3 top-3 z-10 hidden items-start gap-2 xl:flex">
+      <CardsToggle open={cardsOpen} onToggle={onToggleCards} />
+      <MapLegend>{children}</MapLegend>
     </div>
   );
 }

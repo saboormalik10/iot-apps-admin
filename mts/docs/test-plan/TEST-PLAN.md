@@ -71,7 +71,7 @@ The proposal promises 30 features in scope, and MTS has asked for 7 more (9 Nov 
 | 31 | Station menu: a list of every station to go straight to | MTS request | Prototype, System | MAP-09 |
 | 32 | Map backgrounds: plain schematic, street map or satellite (Mapbox) | MTS request | Prototype, System | MAP-10, 11 |
 | 33 | Station quick view over the map | MTS request | Prototype, System | MAP-12 |
-| 34 | Map legend that minimises and expands | MTS request | Prototype, System | MAP-13 |
+| 34 | Map legend and station cards that minimise and expand | MTS request | Prototype, System | MAP-13 |
 | 35 | Battery and signal shown on demand, not by default | MTS request | Prototype, System | MAP-14 |
 | 36 | Station health: last connected time; "no data" after 15 minutes | MTS request | Prototype, System | STN-04, 05 |
 | 37 | Recipient groups: add, edit members and channels, remove | §7.3, MTS request | Prototype, System | RCP-01 to 04 |
@@ -102,7 +102,7 @@ The proposal promises 30 features in scope, and MTS has asked for 7 more (9 Nov 
 | MAP-10 | Map backgrounds | Choose **Plain**, **Map**, then **Satellite**; reload | Schematic, street map and satellite each show all seven stations; the choice is remembered | Prototype, System | |
 | MAP-11 | Pins on the map | On Map, hover a pin, then click it | Pins carry the station number in its status colour; hover shows the live readings; click opens the quick view | Prototype, System | |
 | MAP-12 | Station quick view | Click a station on any map view; select **Open station page**; Ctrl-click a station | A panel over the map: readings, pumps, last connected, latest alerts; the button opens the station; Ctrl-click opens it in a new tab | Prototype, System | |
-| MAP-13 | Legend | Minimise the legend; reload; switch view; expand it | It shrinks to a "Legend" tab, stays minimised after reload and across views, and opens again | Prototype, System | |
+| MAP-13 | Legend and cards | Minimise the legend and click **Hide cards**; reload; switch view; expand both | The legend shrinks to a "Legend" tab and the cards hide, leaving the numbered pins; both stay that way after reload and across Plain, Map and Satellite, and come back | Prototype, System | |
 | MAP-14 | Battery and signal on demand | Open the map; select **Show station health**; reload | Hidden at first; the button adds Battery and Signal to the table and the map cards; the choice is remembered | Prototype, System | |
 
 ### Trends (TRD)
