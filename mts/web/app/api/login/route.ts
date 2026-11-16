@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE, SESSION_MAX_AGE, safeEqual, safeNext, sessionToken, siteAccount } from '@/lib/gate';
+import { SESSION_COOKIE, SESSION_MAX_AGE, safeEqual, safeNext, sessionToken, siteAccounts } from '@/lib/gate';
 
 /**
  * Sign in. A plain form post, so it works before any script has loaded.
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const password = String(form.get('password') ?? '');
   const next = safeNext(String(form.get('next') ?? '/'));
   const remember = form.get('remember') === 'on';
-  const account = siteAccount();
+  const accounts = siteAccounts();
 
   const fail = async (error: string) => {
     // Slow every failure down; there is no lockout counter to keep without a database.
@@ -24,14 +24,20 @@ export async function POST(req: NextRequest) {
     return seeOther(`/login?${q}`);
   };
 
-  if (!account) return fail('config');
+  if (accounts.length === 0) return fail('config');
   if (!(await humanCheck(String(form.get('cf-turnstile-response') ?? ''), req))) return fail('human');
 
-  const ok = safeEqual(await sessionToken(email, password), await sessionToken(account.email, account.password));
-  if (!ok) return fail('credentials');
+  // Every account is compared, so a wrong guess takes as long whichever it was meant for.
+  const given = await sessionToken(email, password);
+  let token: string | undefined;
+  for (const a of accounts) {
+    const t = await sessionToken(a.email, a.password);
+    if (safeEqual(given, t)) token = t;
+  }
+  if (!token) return fail('credentials');
 
   const res = seeOther(next);
-  res.cookies.set(SESSION_COOKIE, await sessionToken(account.email, account.password), {
+  res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

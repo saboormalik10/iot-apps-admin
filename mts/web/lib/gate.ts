@@ -1,8 +1,11 @@
 /**
  * Sign-in for the hosted portal.
  *
- * One account, configured on the server: SITE_EMAIL and SITE_PASSWORD (in
- * .env.local locally, in Vercel's environment variables when deployed). Every
+ * Accounts are configured on the server (in .env.local locally, in Vercel's
+ * environment variables when deployed): SITE_EMAIL and SITE_PASSWORD, plus
+ * SITE_EMAIL_2 / SITE_PASSWORD_2 … _5 for further logins (client, 16 Nov 2026).
+ * Every login has the same full Administrator access, and each works on any
+ * number of devices at once. Every
  * route needs a signed-in session; signing out ends it, and the next visit asks
  * for the email and password again.
  *
@@ -19,10 +22,31 @@ export const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 /** Pages anyone may open: signing in, and getting back in if the password is forgotten. */
 export const PUBLIC_PATHS = ['/login', '/api/login', '/forgot-password', '/reset-password', '/locked', '/accept-invite'];
 
-export function siteAccount(): { email: string; password: string } | undefined {
-  const email = process.env.SITE_EMAIL?.trim().toLowerCase();
-  const password = process.env.SITE_PASSWORD;
-  return email && password && password.trim() ? { email, password } : undefined;
+export type SiteAccount = { email: string; password: string };
+
+export function siteAccounts(): SiteAccount[] {
+  const env = process.env;
+  // Spelled out, not looked up by a built name: Next only inlines env vars it can see.
+  const pairs = [
+    [env.SITE_EMAIL, env.SITE_PASSWORD],
+    [env.SITE_EMAIL_2, env.SITE_PASSWORD_2],
+    [env.SITE_EMAIL_3, env.SITE_PASSWORD_3],
+    [env.SITE_EMAIL_4, env.SITE_PASSWORD_4],
+    [env.SITE_EMAIL_5, env.SITE_PASSWORD_5],
+  ];
+  return pairs.flatMap(([e, password]) => {
+    const email = e?.trim().toLowerCase();
+    return email && password && password.trim() ? [{ email, password }] : [];
+  });
+}
+
+/** True when the cookie is the session of one of the configured accounts. */
+export async function validSession(cookie: string | undefined): Promise<boolean> {
+  if (!cookie) return false;
+  for (const a of siteAccounts()) {
+    if (safeEqual(cookie, await sessionToken(a.email, a.password))) return true;
+  }
+  return false;
 }
 
 export async function sessionToken(email: string, password: string): Promise<string> {
